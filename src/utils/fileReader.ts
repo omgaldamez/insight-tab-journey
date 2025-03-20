@@ -10,34 +10,41 @@ async function tryFetchFile(folder: string, filename: string, isDemo: boolean): 
   // Adjust for the link filename if it's links.csv
   const adjustedFilename = filename === 'links.csv' ? 'links.csv' : filename;
   
-  // Your specific path pattern
-  const path = `/public/src-data/${folder}/${adjustedFilename}`;
+  // Try multiple path patterns - in production, files from 'public' are served at root
+  const pathsToTry = [
+    `/src-data/${folder}/${adjustedFilename}`,       // Most likely production path
+    `src-data/${folder}/${adjustedFilename}`,        // Alternative without leading slash
+    `/public/src-data/${folder}/${adjustedFilename}`, // Original development path
+    `./src-data/${folder}/${adjustedFilename}`       // Relative path
+  ];
   
-  try {
-    console.log(`Attempting to fetch from: ${path}`);
-    const response = await fetch(path);
-    
-    if (response.ok) {
-      console.log(`✅ Successfully fetched file from: ${path}`);
-      const text = await response.text();
+  for (const path of pathsToTry) {
+    try {
+      console.log(`Attempting to fetch from: ${path}`);
+      const response = await fetch(path);
       
-      // Check if we got HTML instead of CSV
-      if (text.trim().toLowerCase().startsWith('<!doctype html>') || 
-          text.trim().toLowerCase().startsWith('<html')) {
-        console.warn(`❌ Got HTML instead of CSV from ${path}`);
-        return null;
+      if (response.ok) {
+        console.log(`✅ Successfully fetched file from: ${path}`);
+        const text = await response.text();
+        
+        // Check if we got HTML instead of CSV
+        if (text.trim().toLowerCase().startsWith('<!doctype html>') || 
+            text.trim().toLowerCase().startsWith('<html')) {
+          console.warn(`❌ Got HTML instead of CSV from ${path}`);
+          continue; // Try next path
+        }
+        
+        console.log(`File content starts with: ${text.substring(0, 100)}...`);
+        return text;
+      } else {
+        console.warn(`❌ Failed to fetch ${path}: ${response.status} ${response.statusText}`);
       }
-      
-      console.log(`File content starts with: ${text.substring(0, 100)}...`);
-      return text;
-    } else {
-      console.warn(`❌ Failed to fetch ${path}: ${response.status} ${response.statusText}`);
+    } catch (error) {
+      console.warn(`❌ Error fetching ${path}:`, error);
     }
-  } catch (error) {
-    console.warn(`❌ Error fetching ${path}:`, error);
   }
   
-  console.error(`❌ Failed to fetch ${folder}/${adjustedFilename}`);
+  console.error(`❌ Failed to fetch ${folder}/${adjustedFilename} - tried multiple paths`);
   return null;
 }
 

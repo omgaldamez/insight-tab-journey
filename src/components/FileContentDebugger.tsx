@@ -75,7 +75,7 @@ const FileContentDebugger: React.FC<FileContentDebuggerProps> = ({
       const folderName = getFolderNameById(folderId);
       
       // Your specific path
-      const basePath = `/public/src-data/${folderName}/`;
+      const basePath = `/src-data/${folderName}/`;
       
       for (const fileType of fileTypes) {
         let fileData: FileData | null = null;
@@ -380,7 +380,7 @@ const FileContentDebugger: React.FC<FileContentDebuggerProps> = ({
                         <ul className="list-disc pl-5 space-y-1 text-gray-700">
                           <li>Your folder name should be: <code className="bg-gray-100 px-1">{getFolderNameById(folderId)}</code></li>
                           <li>File name should be: <code className="bg-gray-100 px-1">{fileKey === 'links' ? 'links.csv' : 'nodes.csv'}</code></li>
-                          <li>Full path should be: <code className="bg-gray-100 px-1">/public/src-data/{getFolderNameById(folderId)}/{fileKey === 'links' ? 'links.csv' : 'nodes.csv'}</code></li>
+                          <li>Full path should be: <code className="bg-gray-100 px-1">/src-data/{getFolderNameById(folderId)}/{fileKey === 'links' ? 'links.csv' : 'nodes.csv'}</code></li>
                         </ul>
                       </div>
                     </div>
