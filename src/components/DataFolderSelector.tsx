@@ -11,7 +11,7 @@ import {
   getNodeFileInfo, 
   getLinkFileInfo
 } from "@/utils/fileReader";
-import FolderCard from "./FOlderCard";
+import FolderCard from "./FolderCard";
 
 interface DataFolder {
   id: string;
