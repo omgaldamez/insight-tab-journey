@@ -484,70 +484,98 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           .on("end", dragended);
       }
       
-      // Tooltip functions - Improved positioning based on zoom
-      function showTooltip(event: MouseEvent, d: Node) {
-        if (!tooltipRef.current) return;
-        
-        // Find connections for this node
-        const sourceLinks = processedData.links.filter(link => {
-          return typeof link.source === 'object' 
-            ? link.source.id === d.id 
-            : link.source === d.id;
-        });
-        
-        const targetLinks = processedData.links.filter(link => {
-          return typeof link.target === 'object' 
-            ? link.target.id === d.id 
-            : link.target === d.id;
-        });
-        
-        let tooltipContent = `<strong>${d.id}</strong><br>Category: ${d.category}<br><br>`;
-        
-        // Add connections info
-        if (sourceLinks.length > 0) {
-          tooltipContent += `<strong>Connected to:</strong><br>`;
-          sourceLinks.forEach(link => {
-            const targetName = typeof link.target === 'object' ? link.target.id : link.target;
-            tooltipContent += `${targetName}<br>`;
-          });
-          tooltipContent += `<br>`;
-        }
-        
-        if (targetLinks.length > 0) {
-          tooltipContent += `<strong>Connected from:</strong><br>`;
-          targetLinks.forEach(link => {
-            const sourceName = typeof link.source === 'object' ? link.source.id : link.source;
-            tooltipContent += `${sourceName}<br>`;
-          });
-        }
-        
-        const tooltip = d3.select(tooltipRef.current);
-        
-        // Improved positioning: position tooltip closer to node rather than mouse
-        // Fix: TypeScript is warning about 'x' and 'y' properties on Node type
-        const nodeX = 'x' in d ? (d as SimulatedNode).x : 0;
-        const nodeY = 'y' in d ? (d as SimulatedNode).y : 0;
-        
-        // Use const instead of let to avoid linting warnings
-        const xPos = event.pageX;
-        const yPos = event.pageY;
-        
-        // Set tooltip content and position
-        tooltip
-          .html(tooltipContent)
-          .style("left", `${xPos + 5}px`)
-          .style("top", `${yPos - 10}px`)
-          .style("opacity", "0.9");
-      }
+// Tooltip functions - Fixed positioning outside SVG flow
+function showTooltip(event: MouseEvent, d: Node) {
+  if (!tooltipRef.current || !svgRef.current || !containerRef.current) return;
+  
+  // Find connections for this node
+  const sourceLinks = processedData.links.filter(link => {
+    return typeof link.source === 'object' 
+      ? link.source.id === d.id 
+      : link.source === d.id;
+  });
+  
+  const targetLinks = processedData.links.filter(link => {
+    return typeof link.target === 'object' 
+      ? link.target.id === d.id 
+      : link.target === d.id;
+  });
+  
+  let tooltipContent = `<strong>${d.id}</strong><br>Category: ${d.category}<br><br>`;
+  
+  // Add connections info
+  if (sourceLinks.length > 0) {
+    tooltipContent += `<strong>Connected to:</strong><br>`;
+    sourceLinks.forEach(link => {
+      const targetName = typeof link.target === 'object' ? link.target.id : link.target;
+      tooltipContent += `${targetName}<br>`;
+    });
+    tooltipContent += `<br>`;
+  }
+  
+  if (targetLinks.length > 0) {
+    tooltipContent += `<strong>Connected from:</strong><br>`;
+    targetLinks.forEach(link => {
+      const sourceName = typeof link.source === 'object' ? link.source.id : link.source;
+      tooltipContent += `${sourceName}<br>`;
+    });
+  }
+  
+  // Set the content
+  const tooltip = d3.select(tooltipRef.current);
+  tooltip.html(tooltipContent);
+  
+  // Use the mouse event position directly for immediate feedback
+  const mouseX = event.clientX;
+  const mouseY = event.clientY;
+  
+  // Position the tooltip adjacent to cursor with offsets
+  const xOffset = 15;
+  const yOffset = -10;
+  
+  // Apply position and make visible
+  tooltip
+    .style("position", "fixed")
+    .style("left", `${mouseX + xOffset}px`)
+    .style("top", `${mouseY + yOffset}px`)
+    .style("opacity", "1")
+    .style("visibility", "visible")
+    .style("z-index", "9999");
+}
       
-      function moveTooltip(event: MouseEvent) {
-        if (!tooltipRef.current) return;
-        
-        // Follow the mouse but with better positioning
-        d3.select(tooltipRef.current)
-          .style("left", `${event.pageX + 5}px`)
-          .style("top", `${event.pageY - 10}px`);
-      }
+function moveTooltip(event: MouseEvent) {
+  if (!tooltipRef.current) return;
+  
+  const rect = svgRef.current?.getBoundingClientRect();
+  if (!rect) return;
+  
+  // Calculate tooltip dimensions to prevent it from going off-screen
+  const tooltipWidth = tooltipRef.current.offsetWidth || 200;
+  const tooltipHeight = tooltipRef.current.offsetHeight || 100;
+  
+  // Small offset from cursor
+  const offsetX = 15;
+  const offsetY = 10;
+  
+  // Adjust position if tooltip would go off the right or bottom edge
+  let xPos = event.clientX + offsetX;
+  let yPos = event.clientY + offsetY;
+  
+  // Check if tooltip would go off right edge of window
+  if (xPos + tooltipWidth > window.innerWidth) {
+    xPos = event.clientX - tooltipWidth - offsetX;
+  }
+  
+  // Check if tooltip would go off bottom edge of window
+  if (yPos + tooltipHeight > window.innerHeight) {
+    yPos = event.clientY - tooltipHeight - offsetY;
+  }
+  
+  // Follow the mouse with intelligent positioning
+  d3.select(tooltipRef.current)
+    .style("left", `${xPos}px`)
+    .style("top", `${yPos}px`);
+}
       
       function hideTooltip() {
         if (!tooltipRef.current) return;
@@ -1385,14 +1413,17 @@ const handleDownloadGraph = (format: string) => {
             
             {/* Tooltip - Better styling and positioning */}
             <div 
-              ref={tooltipRef} 
-              className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-60" 
-              style={{ 
-                opacity: 0,
-                transition: 'opacity 0.2s ease-in-out',
-                boxShadow: '0 4px 8px rgba(0,0,0,0.2)'
-              }}
-            ></div>
+  ref={tooltipRef} 
+  className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
+  style={{ 
+    opacity: 0,
+    transition: 'opacity 0.15s ease-in-out',
+    boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+    transform: 'translate(0, 0)', // Remove any existing transform
+    maxHeight: '300px',
+    overflowY: 'auto',
+  }}
+></div>
             
             {/* Legend */}
             <div className="absolute bottom-5 right-5 bg-white/90 p-2.5 rounded-md shadow-md">
