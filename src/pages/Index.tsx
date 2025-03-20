@@ -1,8 +1,7 @@
-
 import React, { useState } from "react";
 import TabsContainer from "@/components/TabsContainer";
 import IntroContent from "@/components/IntroContent";
-import NetworkVisualization from "@/components/NetworkVisualization";
+import NetworkExplorer from "@/components/NetworkExplorer";
 import AboutContent from "@/components/AboutContent";
 import CreditsDialog from "@/components/CreditsDialog";
 
@@ -40,7 +39,7 @@ const Index = () => {
       <main className="container pt-8 pb-16">
         <TabsContainer
           introContent={<IntroContent />}
-          visualizationContent={<NetworkVisualization onCreditsClick={handleCreditsClick} />}
+          visualizationContent={<NetworkExplorer onCreditsClick={handleCreditsClick} />}
           aboutContent={<AboutContent />}
         />
       </main>
