@@ -14,7 +14,7 @@ async function tryFetchFile(folder: string, filename: string, isDemo: boolean): 
   const pathsToTry = [
     `/src-data/${folder}/${adjustedFilename}`,       // Most likely production path
     `src-data/${folder}/${adjustedFilename}`,        // Alternative without leading slash
-    `/public/src-data/${folder}/${adjustedFilename}`, // Original development path
+    `/src-data/${folder}/${adjustedFilename}`, // Original development path
     `./src-data/${folder}/${adjustedFilename}`       // Relative path
   ];
   
