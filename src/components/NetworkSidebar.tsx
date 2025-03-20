@@ -259,7 +259,9 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
           <PanelRightClose className="w-5 h-5" />
         </button>
       </div>
-      
+
+      {/* Removed fullscreen button */}
+
       {/* Network Controls Section */}
       <div className="px-5 mb-3">
         <button 
