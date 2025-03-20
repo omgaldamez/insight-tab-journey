@@ -45,6 +45,7 @@ interface NetworkSidebarProps {
   backgroundColor: string;
   textColor: string;
   linkColor: string;
+  nodeStrokeColor: string;
   backgroundOpacity: number;
   title: string;
   isCollapsed: boolean;
@@ -52,10 +53,10 @@ interface NetworkSidebarProps {
   onParameterChange: (type: string, value: number) => void;
   onNodeGroupChange: (group: string) => void;
   onColorThemeChange: (theme: string) => void;
-  onApplyGroupColors: () => void;
+  onApplyGroupColors: (categoryColorMap: {[key: string]: string}) => void;
   onApplyIndividualColor: (nodeId: string, color: string) => void;
   onResetIndividualColor: (nodeId: string) => void;
-  onApplyBackgroundColors: (bgColor: string, textColor: string, linkColor: string, opacity: number) => void;
+  onApplyBackgroundColors: (bgColor: string, textColor: string, linkColor: string, opacity: number, nodeStrokeColor: string) => void;
   onResetBackgroundColors: () => void;
   onResetSimulation: () => void;
   onDownloadData: (format: string) => void;
@@ -85,6 +86,7 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   backgroundColor,
   textColor,
   linkColor,
+  nodeStrokeColor,
   backgroundOpacity,
   title,
   isCollapsed,
@@ -120,6 +122,7 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   const [bgColor, setBgColor] = useState(backgroundColor);
   const [txtColor, setTxtColor] = useState(textColor);
   const [lnkColor, setLnkColor] = useState(linkColor);
+  const [nodeStrokeClr, setNodeStrokeClr] = useState(nodeStrokeColor);
   const [bgOpacity, setBgOpacity] = useState(backgroundOpacity);
   
   // Update category colors when theme changes
@@ -133,6 +136,15 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
     
     setCategoryColors(newCategoryColors);
   }, [colorTheme, colorThemes, uniqueCategories]);
+  
+  // Update background colors when props change
+  useEffect(() => {
+    setBgColor(backgroundColor);
+    setTxtColor(textColor);
+    setLnkColor(linkColor);
+    setNodeStrokeClr(nodeStrokeColor);
+    setBgOpacity(backgroundOpacity);
+  }, [backgroundColor, textColor, linkColor, nodeStrokeColor, backgroundOpacity]);
   
   // Handle individual node color selection
   const handleNodeSelect = (node: Node) => {
@@ -151,14 +163,13 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   
   // Handle group colors apply
   const handleApplyGroupColors = () => {
-    // Create a new custom theme based on user selections
-    // Pass the updated theme to the parent component
-    onApplyGroupColors();
+    // Pass the category colors to the parent component
+    onApplyGroupColors(categoryColors);
   };
   
   // Handle background colors apply
   const handleApplyBackgroundColors = () => {
-    onApplyBackgroundColors(bgColor, txtColor, lnkColor, bgOpacity);
+    onApplyBackgroundColors(bgColor, txtColor, lnkColor, bgOpacity, nodeStrokeClr);
   };
   
   // Handle title editing
@@ -538,6 +549,15 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
                     className="w-12 h-8 mr-2 bg-transparent border-none" 
                   />
                 </div>
+                <div className="flex items-center mb-2">
+                  <label className="w-24 inline-block text-sm">Node Stroke:</label>
+                  <input 
+                    type="color" 
+                    value={nodeStrokeClr}
+                    onChange={(e) => setNodeStrokeClr(e.target.value)}
+                    className="w-12 h-8 mr-2 bg-transparent border-none" 
+                  />
+                </div>
                 
                 <div className="mt-3 mb-2">
                   <label className="block mb-1 text-sm">Background Opacity:</label>
@@ -649,27 +669,7 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         )}
       </div>
       
-      {/* Download Buttons */}
-      <div className="px-5 mt-auto mb-4">
-        <div className="flex gap-2 w-full">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex-1 bg-gray-700 text-white hover:bg-gray-600 border-none"
-            onClick={() => onDownloadData('csv')}
-          >
-            Download Data
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex-1 bg-gray-700 text-white hover:bg-gray-600 border-none"
-            onClick={() => onDownloadGraph('svg')}
-          >
-            Download Image
-          </Button>
-        </div>
-      </div>
+      {/* Removed download buttons from the sidebar */}
     </div>
   );
 };

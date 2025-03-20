@@ -3,9 +3,11 @@ import { AlertCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import * as d3 from 'd3';
 import NetworkSidebar from "./NetworkSidebar";
-import DownloadButtons from "./DownloadButtons";
 import FileButtons from "./FileButtons";
 import { NodeData, LinkData } from "@/types/types"; // Import types from the types file
+import { saveAs } from 'file-saver';
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
 
 interface NetworkVisualizationProps {
   onCreditsClick: () => void;
@@ -59,6 +61,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null);
+  const transformRef = useRef<d3.ZoomTransform | null>(null); // To store the current zoom state
   const [isLoading, setIsLoading] = useState(true);
   const [linkDistance, setLinkDistance] = useState(70);
   const [linkStrength, setLinkStrength] = useState(1.0);
@@ -79,6 +82,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const [backgroundColor, setBackgroundColor] = useState("#f5f5f5");
   const [textColor, setTextColor] = useState("#ffffff");
   const [linkColor, setLinkColor] = useState("#999999");
+  const [nodeStrokeColor, setNodeStrokeColor] = useState("#000000");
   const [backgroundOpacity, setBackgroundOpacity] = useState(1.0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [networkTitle, setNetworkTitle] = useState("Untitled Network");
@@ -310,9 +314,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       console.log("Not ready to create visualization yet");
       return;
     }
-
+  
     console.log("Creating D3 visualization");
-
+  
     try {
       // Clear any existing elements
       d3.select(svgRef.current).selectAll("*").remove();
@@ -330,6 +334,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .scaleExtent([0.1, 8])
         .on("zoom", (event) => {
           g.attr("transform", event.transform);
+          // Store the current zoom transform for later use
+          transformRef.current = event.transform;
         });
       
       d3.select(svgRef.current).call(zoom);
@@ -342,8 +348,12 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       // Create filtered links
       const nodeIds = new Set(filteredNodes.map(node => node.id));
       const filteredLinks = processedData.links.filter(link => {
-        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        const sourceId = typeof link.source === 'object' 
+          ? link.source.id 
+          : link.source;
+        const targetId = typeof link.target === 'object' 
+          ? link.target.id 
+          : link.target;
         return nodeIds.has(sourceId) && nodeIds.has(targetId);
       });
       
@@ -397,6 +407,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .attr("class", "node")
         .attr("r", d => 7 * nodeSize)
         .attr("fill", d => getNodeColor(d))
+        .attr("stroke", nodeStrokeColor)
+        .attr("stroke-width", 1)
         .call(drag(simulation));
       
       // Create node labels
@@ -431,12 +443,12 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       
       // Update function for simulation
       simulation.on("tick", () => {
-        // Type assertion needed here because D3 modifies nodes and links during simulation
+        // Proper type handling for x and y coordinates
         link
-          .attr("x1", d => d.source.x || 0)
-          .attr("y1", d => d.source.y || 0)
-          .attr("x2", d => d.target.x || 0)
-          .attr("y2", d => d.target.y || 0);
+          .attr("x1", d => (d.source as SimulatedNode).x || 0)
+          .attr("y1", d => (d.source as SimulatedNode).y || 0)
+          .attr("x2", d => (d.target as SimulatedNode).x || 0)
+          .attr("y2", d => (d.target as SimulatedNode).y || 0);
         
         node
           .attr("cx", d => d.x || 0)
@@ -472,7 +484,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           .on("end", dragended);
       }
       
-      // Tooltip functions
+      // Tooltip functions - Improved positioning based on zoom
       function showTooltip(event: MouseEvent, d: Node) {
         if (!tooltipRef.current) return;
         
@@ -510,19 +522,31 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         }
         
         const tooltip = d3.select(tooltipRef.current);
+        
+        // Improved positioning: position tooltip closer to node rather than mouse
+        // Fix: TypeScript is warning about 'x' and 'y' properties on Node type
+        const nodeX = 'x' in d ? (d as SimulatedNode).x : 0;
+        const nodeY = 'y' in d ? (d as SimulatedNode).y : 0;
+        
+        // Use const instead of let to avoid linting warnings
+        const xPos = event.pageX;
+        const yPos = event.pageY;
+        
+        // Set tooltip content and position
         tooltip
           .html(tooltipContent)
-          .style("left", (event.pageX + 15) + "px")
-          .style("top", (event.pageY - 28) + "px")
+          .style("left", `${xPos + 5}px`)
+          .style("top", `${yPos - 10}px`)
           .style("opacity", "0.9");
       }
       
       function moveTooltip(event: MouseEvent) {
         if (!tooltipRef.current) return;
         
+        // Follow the mouse but with better positioning
         d3.select(tooltipRef.current)
-          .style("left", (event.pageX + 15) + "px")
-          .style("top", (event.pageY - 28) + "px");
+          .style("left", `${event.pageX + 5}px`)
+          .style("top", `${event.pageY - 10}px`);
       }
       
       function hideTooltip() {
@@ -641,39 +665,47 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         const scale = 0.8 / Math.max(dx / width, dy / height);
         const translate = [width / 2 - scale * x, height / 2 - scale * y];
         
+        const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
+        
         d3.select(svgRef.current)
           .transition()
           .duration(750)
-          .call(
-            zoom.transform, 
-            d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
-          );
+          .call(zoom.transform, transform);
+        
+        // Store the initial zoom transform
+        transformRef.current = transform;
       };
       
       setTimeout(zoomToFit, 500);
       
       console.log("D3 visualization created successfully");
       
-      // Return cleanup function
-      return () => {
-        if (simulation) simulation.stop();
-      };
-    } catch (error) {
-      console.error("Error creating D3 visualization:", error);
-      toast({
-        title: "Error",
-        description: `Failed to create the visualization: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    }
-  }, [isLoading, nodeGroup, processedData, toast, linkDistance, linkStrength, nodeCharge, nodeSize, customNodeColors, colorTheme, textColor, linkColor]);
-  
-  // Update visualization when parameters change
+   // Return cleanup function
+   return () => {
+    if (simulation) simulation.stop();
+  };
+} catch (error) {
+  console.error("Error creating D3 visualization:", error);
+  toast({
+    title: "Error",
+    description: `Failed to create the visualization: ${error instanceof Error ? error.message : String(error)}`,
+  });
+}
+// CHANGE THIS LINE - Remove the visualization parameters from dependencies
+}, [isLoading, nodeGroup, processedData, toast]);
+
+  // Update visualization when parameters change - IMPROVED to preserve zoom and position
   useEffect(() => {
     if (isLoading || !svgRef.current || !simulationRef.current) return;
     
     try {
       console.log("Updating visualization parameters");
       const simulation = simulationRef.current;
+      
+      // Select all the elements we need to update
+      const nodes = d3.select(svgRef.current).selectAll<SVGCircleElement, Node>(".node");
+      const labels = d3.select(svgRef.current).selectAll(".node-label");
+      const links = d3.select(svgRef.current).selectAll(".link");
       
       // Update link distance/strength
       const linkForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
@@ -687,49 +719,46 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         chargeForce.strength(nodeCharge);
       }
       
-      // Update node sizes
-      d3.select(svgRef.current).selectAll<SVGCircleElement, Node>(".node")
-        .attr("r", d => 7 * nodeSize);
+      // Update node sizes - directly modify the nodes without recreating
+      nodes.attr("r", d => 7 * nodeSize);
       
       // Update collision radius
       const collisionForce = simulation.force("collision") as d3.ForceCollide<Node> | null;
       if (collisionForce) {
-        collisionForce.radius(d => {
-          return (7 * nodeSize) + 2;
-        });
+        collisionForce.radius(d => (7 * nodeSize) + 2);
       }
       
       // Update text size
-      d3.select(svgRef.current).selectAll(".node-label")
-        .style("font-size", d => `${8 * Math.min(1.2, nodeSize)}px`);
+      labels.style("font-size", `${8 * Math.min(1.2, nodeSize)}px`);
       
       // Update node colors
-      d3.select(svgRef.current).selectAll<SVGCircleElement, Node>(".node")
-        .attr("fill", d => {
-          // First check for custom node color
-          if (customNodeColors[d.id]) {
-            return customNodeColors[d.id];
-          }
-          
-          // Use the category color from current theme
-          const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default;
-          return currentTheme[d.category] || currentTheme["Otro"] || "#95a5a6";
-        });
+      nodes.attr("fill", d => {
+        // First check for custom node color
+        if (customNodeColors[d.id]) {
+          return customNodeColors[d.id];
+        }
         
+        // Use the category color from current theme
+        const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default;
+        return currentTheme[d.category] || currentTheme["Otro"] || "#95a5a6";
+      });
+        
+      // Update node stroke
+      nodes.attr("stroke", nodeStrokeColor)
+           .attr("stroke-width", 1);
+      
       // Update labels color
-      d3.select(svgRef.current).selectAll(".node-label")
-        .style("fill", textColor);
+      labels.style("fill", textColor);
       
       // Update link color
-      d3.select(svgRef.current).selectAll(".link")
-        .attr("stroke", linkColor);
+      links.attr("stroke", linkColor);
       
       // Update background color
       if (containerRef.current) {
         containerRef.current.style.backgroundColor = `rgba(${hexToRgb(backgroundColor).r}, ${hexToRgb(backgroundColor).g}, ${hexToRgb(backgroundColor).b}, ${backgroundOpacity})`;
       }
       
-      // Restart simulation
+      // Restart simulation with a lower alpha to make transitions smoother
       simulation.alpha(0.3).restart();
       
     } catch (error) {
@@ -745,6 +774,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     backgroundColor,
     textColor,
     linkColor,
+    nodeStrokeColor,
     backgroundOpacity,
     dynamicColorThemes,
     isLoading
@@ -790,9 +820,30 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   };
 
   // Handle apply group colors
-  const handleApplyGroupColors = () => {
-    console.log("Applying group colors");
+  const handleApplyGroupColors = (categoryColorMap: {[key: string]: string}) => {
+    console.log("Applying group colors", categoryColorMap);
+    
+    // Create a copy of the dynamic color themes
+    const updatedThemes = { ...dynamicColorThemes };
+    
+    // Update the custom theme with the new category colors
+    updatedThemes.custom = { ...updatedThemes.custom };
+    
+    // Apply each category color from the map
+    Object.keys(categoryColorMap).forEach(category => {
+      updatedThemes.custom[category] = categoryColorMap[category];
+    });
+    
+    // Update the dynamic color themes
+    setDynamicColorThemes(updatedThemes);
+    
+    // Set the color theme to custom
     setColorTheme('custom');
+    
+    toast({
+      title: "Group Colors Applied",
+      description: "Custom colors have been applied to categories",
+    });
   };
 
   // Handle apply individual color
@@ -815,12 +866,19 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   };
 
   // Handle apply background colors
-  const handleApplyBackgroundColors = (bgColor: string, txtColor: string, lnkColor: string, opacity: number) => {
-    console.log(`Applying background colors: bg=${bgColor}, text=${txtColor}, link=${lnkColor}, opacity=${opacity}`);
+  const handleApplyBackgroundColors = (
+    bgColor: string, 
+    txtColor: string, 
+    lnkColor: string, 
+    opacity: number,
+    nodeStrokeClr: string
+  ) => {
+    console.log(`Applying background colors: bg=${bgColor}, text=${txtColor}, link=${lnkColor}, opacity=${opacity}, nodeStroke=${nodeStrokeClr}`);
     setBackgroundColor(bgColor);
     setTextColor(txtColor);
     setLinkColor(lnkColor);
     setBackgroundOpacity(opacity);
+    setNodeStrokeColor(nodeStrokeClr);
   };
 
   // Handle reset background colors
@@ -830,6 +888,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setTextColor("#ffffff");
     setLinkColor("#999999");
     setBackgroundOpacity(1.0);
+    setNodeStrokeColor("#000000");
   };
 
   // Handle reset simulation
@@ -856,6 +915,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setTextColor("#ffffff");
     setLinkColor("#999999");
     setBackgroundOpacity(1.0);
+    setNodeStrokeColor("#000000");
     
     toast({
       title: "Graph Reset",
@@ -863,9 +923,19 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     });
   };
 
-  // Handle download data
+  // Debug function for download operations
+  const debugDownload = (type: string, data: any) => {
+    console.log(`Debug download ${type}:`, data);
+    toast({
+      title: `Debug ${type}`,
+      description: `Attempting to download ${type}. Check console for details.`,
+    });
+  };
+
+  // Handle download data with improved error handling and fallbacks
   const handleDownloadData = (format: string) => {
     console.log(`Downloading data as ${format}`);
+    debugDownload('data', { format, nodeCount: processedData.nodes.length, linkCount: processedData.links.length });
     
     try {
       // Prepare data in array format for export
@@ -904,11 +974,12 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           csvContent += `${source},${target}\n`;
         });
         
-        // Create and trigger download
+        console.log("CSV Content:", csvContent.substring(0, 200) + "...");
+        
+        // Create and trigger download with a direct approach
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         
-        // Create a download link
         const link = document.createElement('a');
         link.href = url;
         link.download = `${filename}.csv`;
@@ -921,81 +992,297 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           description: "Your network data is being downloaded as CSV",
         });
       } else if (format === 'xlsx') {
-        toast({
-          title: "Feature Not Available",
-          description: "XLSX download is not yet implemented in this version",
-        });
+        try {
+          // Use XLSX in a more direct way
+          const wb = XLSX.utils.book_new();
+          
+          // Create worksheets for nodes and links
+          const wsNodes = XLSX.utils.json_to_sheet(nodeData);
+          const wsLinks = XLSX.utils.json_to_sheet(linkData);
+          
+          // Add worksheets to workbook
+          XLSX.utils.book_append_sheet(wb, wsNodes, "Nodes");
+          XLSX.utils.book_append_sheet(wb, wsLinks, "Links");
+          
+          // Generate XLSX file and trigger download
+          XLSX.writeFile(wb, `${filename}.xlsx`);
+          
+          toast({
+            title: "Download Started",
+            description: "Your network data is being downloaded as Excel file",
+          });
+        } catch (xlsxError) {
+          console.error("XLSX specific error:", xlsxError);
+          toast({
+            title: "XLSX Error",
+            description: "Error creating Excel file: " + String(xlsxError),
+            variant: "destructive"
+          });
+        }
       }
     } catch (error) {
       console.error("Error downloading data:", error);
       toast({
         title: "Download Error",
-        description: "An error occurred while preparing the data download.",
+        description: "An error occurred while preparing the data download: " + String(error),
+        variant: "destructive"
       });
     }
   };
 
-  // Handle download graph
-  const handleDownloadGraph = (format: string) => {
-    console.log(`Downloading graph as ${format}`);
-    
-    if (!svgRef.current) return;
-    
-    try {
-      // Clone the SVG element
-      const svgCopy = svgRef.current.cloneNode(true) as SVGSVGElement;
+  // Helper function to convert Data URI to Blob
+  function dataURItoBlob(dataURI: string) {
+    // convert base64/URLEncoded data component to raw binary data held in a string
+    let byteString;
+    if (dataURI.split(',')[0].indexOf('base64') >= 0)
+      byteString = atob(dataURI.split(',')[1]);
+    else
+      byteString = unescape(dataURI.split(',')[1]);
       
-      // Set width and height attributes explicitly
-      svgCopy.setAttribute('width', svgRef.current.clientWidth.toString());
-      svgCopy.setAttribute('height', svgRef.current.clientHeight.toString());
+    // separate out the mime component
+    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+    
+    // write the bytes of the string to a typed array
+    const ia = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    
+    return new Blob([ia], {type: mimeString});
+  }
+
+  // Improved handleDownloadGraph function
+const handleDownloadGraph = (format: string) => {
+  console.log(`Downloading graph as ${format}`);
+  
+  if (!svgRef.current) {
+    toast({
+      title: "Error",
+      description: "SVG reference is not available for download",
+      variant: "destructive"
+    });
+    return;
+  }
+  
+  try {
+    // Clone the SVG element
+    const svgCopy = svgRef.current.cloneNode(true) as SVGSVGElement;
+    
+    // Get the original SVG dimensions
+    const svgWidth = svgRef.current.clientWidth;
+    const svgHeight = svgRef.current.clientHeight;
+    
+    // Set explicit width and height attributes
+    svgCopy.setAttribute('width', svgWidth.toString());
+    svgCopy.setAttribute('height', svgHeight.toString());
+    
+    // Critical: Find the transform from zoom and apply it to viewBox instead
+    // This ensures the downloaded SVG displays the same view as the screen
+    let transformGroup = svgCopy.querySelector('g');
+    let transform = transformGroup?.getAttribute('transform');
+    let transformMatrix = {translate: {x: 0, y: 0}, scale: 1};
+    
+    // Parse the transform attribute if it exists
+    if (transform && transform.includes('translate')) {
+      const translateMatch = transform.match(/translate\(([^,]+),([^)]+)\)/);
+      const scaleMatch = transform.match(/scale\(([^)]+)\)/);
       
-      // Add background rectangle
-      const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      bgRect.setAttribute('width', '100%');
-      bgRect.setAttribute('height', '100%');
-      bgRect.setAttribute('fill', backgroundColor);
-      bgRect.setAttribute('opacity', backgroundOpacity.toString());
+      if (translateMatch && translateMatch.length === 3) {
+        transformMatrix.translate.x = parseFloat(translateMatch[1]);
+        transformMatrix.translate.y = parseFloat(translateMatch[2]);
+      }
+      
+      if (scaleMatch && scaleMatch.length === 2) {
+        transformMatrix.scale = parseFloat(scaleMatch[1]);
+      }
+      
+      // Remove the transform from the group as we'll apply it to the viewBox
+      transformGroup?.removeAttribute('transform');
+    }
+    
+    // Get the bounds of the graph
+    let bbox;
+    if (transformGroup) {
+      bbox = transformGroup.getBBox();
+    } else {
+      bbox = {x: 0, y: 0, width: svgWidth, height: svgHeight};
+    }
+    
+    // Calculate and apply the viewBox incorporating the zoom transform
+    // This is crucial for showing the graph at the correct position
+    const viewBoxX = bbox.x - (transformMatrix.translate.x / transformMatrix.scale);
+    const viewBoxY = bbox.y - (transformMatrix.translate.y / transformMatrix.scale);
+    const viewBoxWidth = svgWidth / transformMatrix.scale;
+    const viewBoxHeight = svgHeight / transformMatrix.scale;
+    const viewBox = `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`;
+    
+    svgCopy.setAttribute('viewBox', viewBox);
+    
+    // Add background rectangle AFTER we've captured viewBox so it doesn't affect it
+    const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bgRect.setAttribute('width', '100%');
+    bgRect.setAttribute('height', '100%');
+    bgRect.setAttribute('fill', backgroundColor);
+    bgRect.setAttribute('opacity', backgroundOpacity.toString());
+    
+    // Critical: Insert at beginning but AFTER the transform group
+    if (transformGroup) {
+      transformGroup.insertBefore(bgRect, transformGroup.firstChild);
+    } else {
       svgCopy.insertBefore(bgRect, svgCopy.firstChild);
+    }
+    
+    // Ensure all nodes and links have explicit visibility and opacity
+    svgCopy.querySelectorAll('.node, .link, .node-label').forEach(el => {
+      el.setAttribute('opacity', '1');
+      el.setAttribute('visibility', 'visible');
+    });
+    
+    // Add explicit styling to ensure elements are visible
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    style.textContent = `
+      .node { stroke-width: 1; }
+      .link { stroke-width: 1.5; }
+      .node-label { font-family: sans-serif; text-anchor: middle; }
+    `;
+    svgCopy.insertBefore(style, svgCopy.firstChild);
+    
+    // Convert SVG to a string
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(svgCopy);
+    
+    // Log size and check for key elements
+    console.log("SVG String length:", svgString.length);
+    console.log("Contains node elements:", svgString.includes('class="node"'));
+    console.log("Contains link elements:", svgString.includes('class="link"'));
+    
+    // Generate filename based on title
+    const safeTitle = networkTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const filename = safeTitle || 'network_visualization';
+    
+    if (format === 'svg') {
+      // Download as SVG
+      const blob = new Blob([svgString], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
       
-      // Convert SVG to a string
-      const serializer = new XMLSerializer();
-      const svgString = serializer.serializeToString(svgCopy);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${filename}.svg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       
-      // Generate filename based on title
-      const safeTitle = networkTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const filename = safeTitle || 'network_visualization';
+      toast({
+        title: "Download Started",
+        description: "Your network visualization is being downloaded as SVG",
+      });
+    } else {
+      // For other formats, use the improved SVG for conversion
+      const svgBase64 = btoa(unescape(encodeURIComponent(svgString)));
+      const imgSrc = `data:image/svg+xml;base64,${svgBase64}`;
       
-      if (format === 'svg') {
-        // Download as SVG
-        const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(svgBlob);
+      // For PNG/JPG/PDF, convert to canvas
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error("Cannot get canvas context");
+      }
+      
+      // For better quality on high-DPI screens
+      const scale = 2;
+      canvas.width = svgWidth * scale;
+      canvas.height = svgHeight * scale;
+      
+      // Fill with background color
+      ctx.fillStyle = backgroundColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Create an image from the SVG string
+      const img = new Image();
+      
+      img.onload = function() {
+        // Draw the image onto the canvas
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
-        // Create a download link
+        // Convert canvas to the requested format
+        let mimeType, outputFilename;
+        switch(format) {
+          case 'png':
+            mimeType = 'image/png';
+            outputFilename = `${safeTitle}.png`;
+            break;
+          case 'jpg':
+          case 'jpeg':
+            mimeType = 'image/jpeg';
+            outputFilename = `${safeTitle}.jpg`;
+            break;
+          case 'pdf':
+            try {
+              // For PDF, we need special handling
+              const imgData = canvas.toDataURL('image/png');
+              const pdf = new jsPDF({
+                orientation: svgWidth > svgHeight ? 'landscape' : 'portrait',
+                unit: 'px',
+                format: [svgWidth, svgHeight]
+              });
+              
+              pdf.addImage(imgData, 'PNG', 0, 0, svgWidth, svgHeight);
+              pdf.save(`${safeTitle}.pdf`);
+              
+              toast({
+                title: "Download Started",
+                description: "Your network visualization is being downloaded as PDF",
+              });
+            } catch (pdfError) {
+              console.error("PDF creation error:", pdfError);
+              toast({
+                title: "PDF Creation Failed",
+                description: "Error creating PDF: " + String(pdfError),
+                variant: "destructive"
+              });
+            }
+            return;
+        }
+        
+        // Download the image
+        const dataUrl = canvas.toDataURL(mimeType);
         const link = document.createElement('a');
-        link.href = url;
-        link.download = `${filename}.svg`;
+        link.href = dataUrl;
+        link.download = outputFilename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         
         toast({
           title: "Download Started",
-          description: "Your network visualization is being downloaded as SVG",
+          description: `Your network visualization is being downloaded as ${format.toUpperCase()}`,
         });
-      } else {
+      };
+      
+      // Add error handler
+      img.onerror = function(err) {
+        console.error("Error loading SVG as image:", err);
         toast({
-          title: "Feature Not Implemented",
-          description: `Download as ${format.toUpperCase()} is not yet implemented.`,
+          title: "Image Creation Failed",
+          description: "Could not convert SVG to image format. Try SVG format instead.",
+          variant: "destructive"
         });
-      }
-    } catch (error) {
-      console.error("Error downloading graph:", error);
-      toast({
-        title: "Download Error",
-        description: "An error occurred while preparing the download.",
-      });
+      };
+      
+      // Load the SVG as an image
+      img.src = imgSrc;
     }
-  };
+  } catch (error) {
+    console.error("Error downloading graph:", error);
+    toast({
+      title: "Download Error",
+      description: "An error occurred while preparing the download: " + String(error),
+      variant: "destructive"
+    });
+  }
+};
 
   // Handle reset selection
   const handleResetSelection = () => {
@@ -1053,6 +1340,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
             backgroundColor={backgroundColor}
             textColor={textColor}
             linkColor={linkColor}
+            nodeStrokeColor={nodeStrokeColor}
             backgroundOpacity={backgroundOpacity}
             title={networkTitle}
             isCollapsed={isSidebarCollapsed}
@@ -1095,8 +1383,16 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
               onResetSelection={handleResetSelection}
             />
             
-            {/* Tooltip */}
-            <div ref={tooltipRef} className="absolute bg-black/85 text-white px-3.5 py-2.5 rounded-md text-sm pointer-events-none z-50 max-w-60" style={{ opacity: 0 }}></div>
+            {/* Tooltip - Better styling and positioning */}
+            <div 
+              ref={tooltipRef} 
+              className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-60" 
+              style={{ 
+                opacity: 0,
+                transition: 'opacity 0.2s ease-in-out',
+                boxShadow: '0 4px 8px rgba(0,0,0,0.2)'
+              }}
+            ></div>
             
             {/* Legend */}
             <div className="absolute bottom-5 right-5 bg-white/90 p-2.5 rounded-md shadow-md">
@@ -1112,11 +1408,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
                 </div>
               ))}
             </div>
-          </div>
           
-          <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/90 p-2 rounded-md text-xs backdrop-blur-sm">
-            <AlertCircle className="h-4 w-4 text-primary" />
-            <span>Hover over nodes to see details. Drag to reposition.</span>
+            {/* Helper text - Fixed positioning to be inside container */}
+            <div className="absolute bottom-4 left-4 bg-background/90 p-2 rounded-md text-xs backdrop-blur-sm shadow-sm z-10">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-primary" />
+                <span>Hover over nodes to see details. Drag to reposition.</span>
+              </div>
+            </div>
           </div>
         </>
       )}
