@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Folder, FileText, AlertCircle, Loader2, Search, Users, ChevronDown, ChevronUp } from "lucide-react";
+import { Folder, FileText, AlertCircle, Loader2, Search, Users, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import FileContentDebugger from "./FileContentDebugger";
 
 interface FolderDetail {
@@ -19,6 +19,7 @@ interface FolderCardProps {
   name: string;
   description: string;
   author: string;
+  url?: string;
   details: FolderDetail;
   isDemo: boolean;
   isLoading: boolean;
@@ -30,6 +31,7 @@ const FolderCard: React.FC<FolderCardProps> = ({
   name,
   description,
   author,
+  url,
   details,
   isDemo,
   isLoading,
@@ -109,6 +111,22 @@ const FolderCard: React.FC<FolderCardProps> = ({
       
       <CardContent className="p-3">
         <p className="text-xs text-gray-600 line-clamp-2 mb-2 h-8">{description}</p>
+        
+        {/* Dataset website link */}
+        {url && (
+          <div className="mb-2">
+            <a 
+              href={url} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center"
+              onClick={(e) => e.stopPropagation()} // Prevent triggering card's click
+            >
+              <ExternalLink className="h-3 w-3 mr-1" />
+              Canva and Flourish
+            </a>
+          </div>
+        )}
         
         <div className="flex flex-row items-center justify-between">
           {/* File information */}

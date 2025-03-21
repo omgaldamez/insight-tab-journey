@@ -18,6 +18,7 @@ interface DataFolder {
   name: string;
   description: string;
   authors: string;
+  url?: string;
 }
 
 interface FolderDetail {
@@ -293,16 +294,17 @@ const DataFolderSelector: React.FC<DataFolderSelectorProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {dataFolders.map((folder) => (
             <FolderCard
-              key={folder.id}
-              id={folder.id}
-              name={folder.name}
-              description={folder.description}
-              author={folder.authors}
-              details={folderDetails[folder.id]}
-              isDemo={isDemo}
-              isLoading={loadingFolder === folder.id}
-              onSelect={() => handleFolderSelect(folder.id)}
-            />
+            key={folder.id}
+            id={folder.id}
+            name={folder.name}
+            description={folder.description}
+            author={folder.authors}
+            url={folder.url}
+            details={folderDetails[folder.id]}
+            isDemo={isDemo}
+            isLoading={loadingFolder === folder.id}
+            onSelect={() => handleFolderSelect(folder.id)}
+          />
           ))}
         </div>
       ) : (

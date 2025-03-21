@@ -1,22 +1,26 @@
 [
-    {
-      "id": "movies",
-      "name": "Movies Network",
-      "description": "Network of movies, actors, and their relationships"
-    },
-    {
-      "id": "social",
-      "name": "Social Network",
-      "description": "Social network of people and their interactions"
-    },
-    {
-      "id": "science",
-      "name": "Scientific Papers",
-      "description": "Citation network between scientific papers and authors"
-    },
-    {
-      "id": "companies",
-      "name": "Company Network",
-      "description": "Business relationships between companies and executives"
-    }
-  ]
+  {
+    "id": "movies",
+    "name": "Movies Network",
+    "description": "Network of movies, actors, and their relationships",
+    "url": "https://www.google.com"
+  },
+  {
+    "id": "social",
+    "name": "Social Network",
+    "description": "Social network of people and their interactions",
+    "url": "https://www.google.com"
+  },
+  {
+    "id": "science",
+    "name": "Scientific Papers",
+    "description": "Citation network between scientific papers and authors",
+    "url": "https://www.google.com"
+  },
+  {
+    "id": "companies",
+    "name": "Company Network",
+    "description": "Business relationships between companies and executives",
+    "url": "https://www.google.com"
+  }
+]
