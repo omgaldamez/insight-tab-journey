@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ChevronDown, ChevronRight, Search, PanelRightClose, PanelRightOpen, Edit2, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, PanelRightClose, PanelRightOpen, Edit2, Check, LayoutGrid, Circle, GitBranch } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+
+// Define visualization type
+export type VisualizationType = 'network' | 'radial' | 'arc';
 
 interface ColorTheme {
   [key: string]: string;
@@ -32,6 +35,7 @@ interface NetworkSidebarProps {
     nodeControls: boolean;
     colorControls: boolean;
     networkInfo: boolean;
+    visualizationType: boolean; // Added for visualization type section
   };
   selectedNode: Node | null;
   selectedNodeConnections: {
@@ -50,6 +54,8 @@ interface NetworkSidebarProps {
   title: string;
   isCollapsed: boolean;
   uniqueCategories: string[];
+  fixNodesOnDrag: boolean; // Add this new prop
+  visualizationType: VisualizationType; // Add this prop for visualization type
   onParameterChange: (type: string, value: number) => void;
   onNodeGroupChange: (group: string) => void;
   onColorThemeChange: (theme: string) => void;
@@ -66,6 +72,8 @@ interface NetworkSidebarProps {
   onColorTabChange: (tab: string) => void;
   onTitleChange: (title: string) => void;
   onToggleSidebar: () => void;
+  onToggleFixNodes: () => void; // Add this new handler
+  onVisualizationTypeChange: (type: VisualizationType) => void; // Add this handler
 }
 
 const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
@@ -91,6 +99,8 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   title,
   isCollapsed,
   uniqueCategories,
+  fixNodesOnDrag,
+  visualizationType,
   onParameterChange,
   onNodeGroupChange,
   onColorThemeChange,
@@ -106,7 +116,9 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   onToggleSection,
   onColorTabChange,
   onTitleChange,
-  onToggleSidebar
+  onToggleSidebar,
+  onToggleFixNodes,
+  onVisualizationTypeChange
 }) => {
   const { toast } = useToast();
   const [nodeSearch, setNodeSearch] = useState('');
@@ -260,7 +272,64 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         </button>
       </div>
 
-      {/* Removed fullscreen button */}
+      {/* Visualization Type Section - New section for visualization type selection */}
+      <div className="px-5 mb-3">
+        <button 
+          className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
+          onClick={() => onToggleSection('visualizationType')}
+        >
+          <h2 className="text-base font-medium text-blue-400 m-0">Visualization Type</h2>
+          {expandedSections.visualizationType ? 
+            <ChevronDown className="w-4 h-4 text-white" /> : 
+            <ChevronRight className="w-4 h-4 text-white" />
+          }
+        </button>
+        
+        {expandedSections.visualizationType && (
+          <div className="mb-4 bg-gray-700 p-3 rounded-md">
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                className={`flex items-center px-3 py-2 rounded-md ${
+                  visualizationType === 'network' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+                }`}
+                onClick={() => onVisualizationTypeChange('network')}
+              >
+                <LayoutGrid className="w-4 h-4 mr-2" />
+                <span>Network Graph</span>
+              </button>
+              
+              <button
+                className={`flex items-center px-3 py-2 rounded-md ${
+                  visualizationType === 'radial' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+                }`}
+                onClick={() => onVisualizationTypeChange('radial')}
+              >
+                <Circle className="w-4 h-4 mr-2" />
+                <span>Radial Graph</span>
+              </button>
+              
+              <button
+                className={`flex items-center px-3 py-2 rounded-md ${
+                  visualizationType === 'arc' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+                }`}
+                onClick={() => onVisualizationTypeChange('arc')}
+              >
+                <GitBranch className="w-4 h-4 mr-2" />
+                <span>Arc Graph</span>
+              </button>
+            </div>
+            <div className="mt-3 text-xs text-gray-400">
+              <p>Select different visualization types to explore your network data from various perspectives.</p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Network Controls Section */}
       <div className="px-5 mb-3">
@@ -316,6 +385,28 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
                 />
                 <span className="w-8 text-right ml-2 text-xs">{(Math.abs(nodeCharge) / 300).toFixed(1)}</span>
               </div>
+              
+              {/* Add the toggle button for fix nodes on drag */}
+              <div className="flex items-center justify-between mt-3 mb-2">
+                <label className="text-sm">Fix Nodes on Drag:</label>
+                <button
+                  onClick={onToggleFixNodes}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                    fixNodesOnDrag ? 'bg-blue-600' : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      fixNodesOnDrag ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mb-3">
+                {fixNodesOnDrag 
+                  ? "Nodes will stay where you drop them" 
+                  : "Nodes will return to simulation flow after drag"}
+              </p>
               
               <Button 
                 variant="outline" 
@@ -670,8 +761,6 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
           </div>
         )}
       </div>
-      
-      {/* Removed download buttons from the sidebar */}
     </div>
   );
 };

@@ -4,20 +4,25 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Upload, FileText, AlertCircle, Users, Share2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import NetworkVisualization from './NetworkVisualization';
+import RadialVisualization from './RadialVisualization';
+import ArcVisualization from './ArcVisualization';
+import { VisualizationType } from './NetworkSidebar';
+import { NodeData, LinkData } from '@/types/types';
 
-const NetworkVisualizer = () => {
+const NetworkVisualizer: React.FC = () => {
   const { toast } = useToast();
-  const [step, setStep] = useState('upload'); // 'upload', 'preview', 'visualization'
-  const [nodeFile, setNodeFile] = useState(null);
-  const [linkFile, setLinkFile] = useState(null);
-  const [nodeData, setNodeData] = useState([]);
-  const [linkData, setLinkData] = useState([]);
+  const [step, setStep] = useState<'upload' | 'preview' | 'visualization'>('upload');
+  const [nodeFile, setNodeFile] = useState<File | null>(null);
+  const [linkFile, setLinkFile] = useState<File | null>(null);
+  const [nodeData, setNodeData] = useState<NodeData[]>([]);
+  const [linkData, setLinkData] = useState<LinkData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const nodeInputRef = useRef(null);
-  const linkInputRef = useRef(null);
+  const [visualizationType, setVisualizationType] = useState<VisualizationType>('network');
+  const nodeInputRef = useRef<HTMLInputElement>(null);
+  const linkInputRef = useRef<HTMLInputElement>(null);
 
   // File handling
-  const handleFileSelect = (e, fileType) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, fileType: 'node' | 'link') => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       
@@ -38,13 +43,13 @@ const NetworkVisualizer = () => {
   };
 
   // Parse CSV files
-  const parseCSV = (fileContent) => {
+  const parseCSV = (fileContent: string): Record<string, string>[] => {
     const rows = fileContent.split('\n');
     const headers = rows[0].split(',').map(h => h.trim());
     
     return rows.slice(1).filter(row => row.trim() !== '').map(row => {
       const values = row.split(',');
-      const rowData = {};
+      const rowData: Record<string, string> = {};
       
       headers.forEach((header, index) => {
         rowData[header] = values[index] ? values[index].trim() : '';
@@ -68,14 +73,14 @@ const NetworkVisualizer = () => {
     try {
       // Read and parse node file
       const nodeReader = new FileReader();
-      nodeReader.onload = (nodeEvent) => {
-        const nodeContent = nodeEvent.target.result;
+      nodeReader.onload = (nodeEvent: ProgressEvent<FileReader>) => {
+        const nodeContent = nodeEvent.target?.result as string;
         const parsedNodes = parseCSV(nodeContent);
         
         // Read and parse link file
         const linkReader = new FileReader();
-        linkReader.onload = (linkEvent) => {
-          const linkContent = linkEvent.target.result;
+        linkReader.onload = (linkEvent: ProgressEvent<FileReader>) => {
+          const linkContent = linkEvent.target?.result as string;
           const parsedLinks = parseCSV(linkContent);
           
           // Transform data for visualization
@@ -143,12 +148,21 @@ const NetworkVisualizer = () => {
     setStep('upload');
   };
 
+  // Handle visualization type change
+  const handleVisualizationTypeChange = (type: VisualizationType) => {
+    setVisualizationType(type);
+    toast({
+      title: "Visualization Changed",
+      description: `Switched to ${type.charAt(0).toUpperCase() + type.slice(1)} Visualization`,
+    });
+  };
+
   // Demo data loader
   const loadDemoData = () => {
     setIsLoading(true);
     
     // Sample demo data
-    const demoNodes = [
+    const demoNodes: NodeData[] = [
       { id: "películas", category: "Tema" },
       { id: "Son como niños", category: "Película" },
       { id: "Forrest Gump", category: "Película" },
@@ -160,7 +174,7 @@ const NetworkVisualizer = () => {
       { id: "Angelina Jolie", category: "Actor" }
     ];
     
-    const demoLinks = [
+    const demoLinks: LinkData[] = [
       { source: "películas", target: "Son como niños" },
       { source: "películas", target: "Forrest Gump" },
       { source: "películas", target: "Sr. y Sra. Smith" },
@@ -185,6 +199,52 @@ const NetworkVisualizer = () => {
         description: "Sample network data has been loaded",
       });
     }, 1000);
+  };
+
+  // Render the appropriate visualization based on type
+  const renderVisualization = () => {
+    switch (visualizationType) {
+      case 'network':
+        return (
+          <NetworkVisualization 
+            onCreditsClick={() => {}} 
+            nodeData={nodeData}
+            linkData={linkData}
+            visualizationType={visualizationType}
+            onVisualizationTypeChange={handleVisualizationTypeChange}
+          />
+        );
+      case 'radial':
+        return (
+          <RadialVisualization 
+            onCreditsClick={() => {}} 
+            nodeData={nodeData}
+            linkData={linkData}
+            visualizationType={visualizationType}
+            onVisualizationTypeChange={handleVisualizationTypeChange}
+          />
+        );
+      case 'arc':
+        return (
+          <ArcVisualization 
+            onCreditsClick={() => {}} 
+            nodeData={nodeData}
+            linkData={linkData}
+            visualizationType={visualizationType}
+            onVisualizationTypeChange={handleVisualizationTypeChange}
+          />
+        );
+      default:
+        return (
+          <NetworkVisualization 
+            onCreditsClick={() => {}} 
+            nodeData={nodeData}
+            linkData={linkData}
+            visualizationType={visualizationType}
+            onVisualizationTypeChange={handleVisualizationTypeChange}
+          />
+        );
+    }
   };
 
   // Render upload view
@@ -408,11 +468,7 @@ const NetworkVisualizer = () => {
       </div>
       
       {nodeData.length > 0 && linkData.length > 0 ? (
-        <NetworkVisualization 
-          onCreditsClick={() => {}} 
-          nodeData={nodeData}
-          linkData={linkData}
-        />
+        renderVisualization()
       ) : (
         <div className="w-full h-[calc(100vh-14rem)] rounded-lg border border-border overflow-hidden flex items-center justify-center">
           <div className="text-center">

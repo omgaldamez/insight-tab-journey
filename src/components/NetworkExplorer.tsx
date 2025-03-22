@@ -1,9 +1,9 @@
 // Enhanced NetworkExplorer.tsx
 import React, { useState, useEffect } from "react";
 import WelcomeSelector from "./WelcomeSelector";
-import NetworkVisualization from "./NetworkVisualization";
+import VisualizationCoordinator from "./VisualizationCoordinator"; // Importar el coordinador
 import { NodeData, LinkData } from "@/types/types";
-import { loadNodeData, loadLinkData } from "@/utils/fileReader"; // Import from the enhanced fileReader
+import { loadNodeData, loadLinkData } from "@/utils/fileReader";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, AlertCircle } from "lucide-react";
@@ -156,7 +156,8 @@ const NetworkExplorer: React.FC<NetworkExplorerProps> = ({ onCreditsClick }) => 
             </div>
           </div>
           
-          <NetworkVisualization 
+          {/* Usar el coordinador de visualizaciones en lugar de NetworkVisualization directamente */}
+          <VisualizationCoordinator 
             onCreditsClick={onCreditsClick}
             nodeData={nodeData}
             linkData={linkData}

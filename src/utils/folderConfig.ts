@@ -43,7 +43,7 @@ export interface FolderInfo {
       name: "Cocina",
       description: "Network visualization for Cocina dataset",
       authors: "Ainne Tello\nKarla Gutiérrez\nRegina Franco\nCamila Millán",
-      url: "https://www.kaggle.com/"
+      url: "https://www.canva.com/design/DAGhp6jXL0Q/Ek4ZSnwxk0Hiwj-mQBe_zQ/view?utm_content=DAGhp6jXL0Q&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h70f146a6da"
     },
     {
       id: "TasteAtlas",
