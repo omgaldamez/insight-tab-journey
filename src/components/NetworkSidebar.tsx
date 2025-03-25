@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ChevronDown, ChevronRight, Search, PanelRightClose, PanelRightOpen, Edit2, Check, LayoutGrid, Circle, GitBranch } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, PanelRightClose, PanelRightOpen, Edit2, Check, LayoutGrid, Circle, GitBranch, ZoomIn } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 // Define visualization type
@@ -74,6 +74,7 @@ interface NetworkSidebarProps {
   onToggleSidebar: () => void;
   onToggleFixNodes: () => void; // Add this new handler
   onVisualizationTypeChange: (type: VisualizationType) => void; // Add this handler
+  onZoomToFit?: () => void; // New prop for zoom to fit
 }
 
 const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
@@ -118,7 +119,8 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   onTitleChange,
   onToggleSidebar,
   onToggleFixNodes,
-  onVisualizationTypeChange
+  onVisualizationTypeChange,
+  onZoomToFit
 }) => {
   const { toast } = useToast();
   const [nodeSearch, setNodeSearch] = useState('');
@@ -331,95 +333,113 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         )}
       </div>
 
-      {/* Network Controls Section */}
-      <div className="px-5 mb-3">
-        <button 
-          className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
-          onClick={() => onToggleSection('networkControls')}
-        >
-          <h2 className="text-base font-medium text-blue-400 m-0">Network Controls</h2>
-          {expandedSections.networkControls ? 
-            <ChevronDown className="w-4 h-4 text-white" /> : 
-            <ChevronRight className="w-4 h-4 text-white" />
-          }
-        </button>
-        
-        {expandedSections.networkControls && (
-          <div className="mb-4 bg-gray-700 p-3 rounded-md">
-            <div className="mb-4">
-              <div className="flex items-center mb-2">
-                <label className="w-32 inline-block text-sm">Node Size:</label>
-                <Slider
-                  value={[nodeSize]}
-                  min={0.5}
-                  max={2.0}
-                  step={0.1}
-                  onValueChange={(vals) => onParameterChange("nodeSize", vals[0])}
-                  className="flex-grow"
-                />
-                <span className="w-8 text-right ml-2 text-xs">{nodeSize.toFixed(1)}</span>
-              </div>
-              
-              <div className="flex items-center mb-2">
-                <label className="w-32 inline-block text-sm">Link Strength:</label>
-                <Slider
-                  value={[linkStrength]}
-                  min={0.1}
-                  max={2.0}
-                  step={0.1}
-                  onValueChange={(vals) => onParameterChange("linkStrength", vals[0])}
-                  className="flex-grow"
-                />
-                <span className="w-8 text-right ml-2 text-xs">{linkStrength.toFixed(1)}</span>
-              </div>
-              
-              <div className="flex items-center mb-2">
-                <label className="w-32 inline-block text-sm">Repulsion Force:</label>
-                <Slider
-                  value={[Math.abs(nodeCharge) / 300]}
-                  min={0.5}
-                  max={3.0}
-                  step={0.1}
-                  onValueChange={(vals) => onParameterChange("nodeCharge", -vals[0] * 300)}
-                  className="flex-grow"
-                />
-                <span className="w-8 text-right ml-2 text-xs">{(Math.abs(nodeCharge) / 300).toFixed(1)}</span>
-              </div>
-              
-              {/* Add the toggle button for fix nodes on drag */}
-              <div className="flex items-center justify-between mt-3 mb-2">
-                <label className="text-sm">Fix Nodes on Drag:</label>
-                <button
-                  onClick={onToggleFixNodes}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                    fixNodesOnDrag ? 'bg-blue-600' : 'bg-gray-600'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      fixNodesOnDrag ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+      {/* Network Controls Section - Only shown for network visualization type */}
+      {visualizationType === 'network' && (
+        <div className="px-5 mb-3">
+          <button 
+            className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
+            onClick={() => onToggleSection('networkControls')}
+          >
+            <h2 className="text-base font-medium text-blue-400 m-0">Network Physics</h2>
+            {expandedSections.networkControls ? 
+              <ChevronDown className="w-4 h-4 text-white" /> : 
+              <ChevronRight className="w-4 h-4 text-white" />
+            }
+          </button>
+          
+          {expandedSections.networkControls && (
+            <div className="mb-4 bg-gray-700 p-3 rounded-md">
+              <div className="mb-4">
+                <div className="flex items-center mb-2">
+                  <label className="w-32 inline-block text-sm">Node Size:</label>
+                  <Slider
+                    value={[nodeSize]}
+                    min={0.5}
+                    max={2.0}
+                    step={0.1}
+                    onValueChange={(vals) => onParameterChange("nodeSize", vals[0])}
+                    className="flex-grow"
                   />
-                </button>
+                  <span className="w-8 text-right ml-2 text-xs">{nodeSize.toFixed(1)}</span>
+                </div>
+                
+                <div className="flex items-center mb-2">
+                  <label className="w-32 inline-block text-sm">Link Strength:</label>
+                  <Slider
+                    value={[linkStrength]}
+                    min={0.1}
+                    max={2.0}
+                    step={0.1}
+                    onValueChange={(vals) => onParameterChange("linkStrength", vals[0])}
+                    className="flex-grow"
+                  />
+                  <span className="w-8 text-right ml-2 text-xs">{linkStrength.toFixed(1)}</span>
+                </div>
+                
+                <div className="flex items-center mb-2">
+                  <label className="w-32 inline-block text-sm">Repulsion Force:</label>
+                  <Slider
+                    value={[Math.abs(nodeCharge) / 300]}
+                    min={0.5}
+                    max={3.0}
+                    step={0.1}
+                    onValueChange={(vals) => onParameterChange("nodeCharge", -vals[0] * 300)}
+                    className="flex-grow"
+                  />
+                  <span className="w-8 text-right ml-2 text-xs">{(Math.abs(nodeCharge) / 300).toFixed(1)}</span>
+                </div>
+                
+                {/* Toggle button for fix nodes on drag */}
+                <div className="flex items-center justify-between mt-3 mb-2">
+                  <label className="text-sm">Fix Nodes on Drag:</label>
+                  <button
+                    onClick={onToggleFixNodes}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                      fixNodesOnDrag ? 'bg-blue-600' : 'bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        fixNodesOnDrag ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mb-3">
+                  {fixNodesOnDrag 
+                    ? "Nodes will stay where you drop them" 
+                    : "Nodes will return to simulation flow after dragging"}
+                </p>
+                
+                {/* Control buttons */}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1 text-xs bg-gray-600 text-white hover:bg-gray-500"
+                    onClick={onResetSimulation}
+                  >
+                    Reset Physics
+                  </Button>
+                  
+                  {/* New zoom to fit button */}
+                  {onZoomToFit && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1 text-xs bg-gray-600 text-white hover:bg-gray-500"
+                      onClick={onZoomToFit}
+                    >
+                      <ZoomIn className="w-3 h-3 mr-1" />
+                      Fit to View
+                    </Button>
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-gray-400 mb-3">
-                {fixNodesOnDrag 
-                  ? "Nodes will stay where you drop them" 
-                  : "Nodes will return to simulation flow after drag"}
-              </p>
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-1 text-xs bg-gray-600 text-white hover:bg-gray-500"
-                onClick={onResetSimulation}
-              >
-                Reset Physics
-              </Button>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
       
       {/* Node Controls Section */}
       <div className="px-5 mb-3">

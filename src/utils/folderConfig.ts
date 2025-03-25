@@ -15,7 +15,7 @@ export interface FolderInfo {
       name: "Movies",
       description: "Network visualization for Movies dataset",
       authors: "Maria Castañeda\nAlexa Manzano\nAna Mayo\nAnabella Reyes",
-      url: "https://www.kaggle.com/"
+      url: "https://www.canva.com/design/DAGirVZ1zgs/epcEAuQMRZCsbK-fm3LJ0Q/view?utm_content=DAGirVZ1zgs&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=hc4785fec00"
     },
     {
       id: "Artists",

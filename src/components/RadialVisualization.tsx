@@ -12,7 +12,7 @@ interface RadialVisualizationProps {
   linkData: LinkData[];
   visualizationType: VisualizationType;
   onVisualizationTypeChange: (type: VisualizationType) => void;
-  // Propiedades de estilo
+  // Style properties
   colorTheme?: string;
   nodeSize?: number;
   linkColor?: string;
@@ -633,6 +633,16 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
           .duration(750)
           .call(zoom.transform, d3.zoomIdentity);
       });
+
+      // Adjust radial visualization to fit within the SVG properly
+      const svgWidth = svgRef.current.clientWidth;
+      const svgHeight = svgRef.current.clientHeight;
+      
+      // Set a fixed transform to center the visualization
+      const centerX = svgWidth / 2;
+      const centerY = svgHeight / 2;
+      
+      svg.attr("transform", `translate(${centerX}, ${centerY})`);
       
     } catch (error) {
       console.error("Error creating D3 radial visualization:", error);
@@ -677,58 +687,58 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
     );
   }
 
+  // Return just the visualization content (will be wrapped by BaseVisualization)
   return (
-    <div className="w-full h-full relative">
-      {/* Visualización */}
-      <div 
-        ref={containerRef} 
+    <div 
+      ref={containerRef} 
+      className="w-full h-full"
+      style={{ 
+        backgroundColor: `rgba(${hexToRgb(backgroundColor).r}, ${hexToRgb(backgroundColor).g}, ${hexToRgb(backgroundColor).b}, ${backgroundOpacity})`
+      }}
+    >
+      <svg 
+        ref={svgRef} 
         className="w-full h-full"
+        viewBox={`0 0 ${containerRef.current?.clientWidth || 800} ${containerRef.current?.clientHeight || 600}`}
+        preserveAspectRatio="xMidYMid meet"
+      />
+      
+      {/* File Buttons */}
+      <FileButtons 
+        onDownloadData={() => {}}
+        onDownloadGraph={() => {}}
+        onResetSelection={() => {}}
+        nodeData={nodeData}
+        linkData={linkData}
+      />
+      
+      {/* Tooltip */}
+      <div 
+        ref={tooltipRef} 
+        className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
         style={{ 
-          backgroundColor: `rgba(${hexToRgb(backgroundColor).r}, ${hexToRgb(backgroundColor).g}, ${hexToRgb(backgroundColor).b}, ${backgroundOpacity})`
+          opacity: 0,
+          visibility: "hidden",
+          transition: 'opacity 0.15s ease-in-out',
+          boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+          position: 'absolute',
+          top: 0,
+          left: 0
         }}
-      >
-        <svg 
-          ref={svgRef} 
-          className="w-full h-full"
-        />
-        
-        {/* File Buttons */}
-        <FileButtons 
-          onDownloadData={() => {}}
-          onDownloadGraph={() => {}}
-          onResetSelection={() => {}}
-          nodeData={nodeData}
-          linkData={linkData}
-        />
-        
-        {/* Tooltip */}
-        <div 
-          ref={tooltipRef} 
-          className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
-          style={{ 
-            opacity: 0,
-            visibility: "hidden",
-            transition: 'opacity 0.15s ease-in-out',
-            boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
-            position: 'absolute',
-            top: 0,
-            left: 0
-          }}
-        ></div>
-        
-        {/* Mensaje de error */}
-        {visualizationError && (
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded shadow-lg z-50 max-w-md">
-            <div className="flex items-center">
-              <AlertCircle className="h-6 w-6 text-red-500 mr-2" />
-              <div>
-                <h3 className="font-medium text-sm">Visualization Error</h3>
-                <p className="text-xs mt-1">{visualizationError}</p>
-              </div>
+      ></div>
+      
+      {/* Error message */}
+      {visualizationError && (
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded shadow-lg z-50 max-w-md">
+          <div className="flex items-center">
+            <AlertCircle className="h-6 w-6 text-red-500 mr-2" />
+            <div>
+              <h3 className="font-medium text-sm">Visualization Error</h3>
+              <p className="text-xs mt-1">{visualizationError}</p>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

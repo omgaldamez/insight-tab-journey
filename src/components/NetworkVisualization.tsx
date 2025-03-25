@@ -1,77 +1,68 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-import React, { useEffect, useRef, useState } from "react";
-import { AlertCircle } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as d3 from 'd3';
-import NetworkSidebar from "./NetworkSidebar";
+import { useToast } from "@/components/ui/use-toast";
 import FileButtons from "./FileButtons";
-import { NodeData, LinkData } from "@/types/types"; // Import types from the types file
-import { saveAs } from 'file-saver';
-import * as XLSX from 'xlsx';
-import { jsPDF } from 'jspdf';
-import { fullscreenStyles } from "@/utils/FullscreenStyles"; // Import fullscreen styles
+import { 
+  NetworkVisualizationProps, 
+  Node, 
+  Link, 
+  SimulatedNode, 
+  SimulatedLink,
+  CategoryCounts 
+} from '@/types/networkTypes';
 import RadialVisualization from './RadialVisualization';
 import ArcVisualization from './ArcVisualization';
+import BaseVisualization from './BaseVisualization';
+import { 
+  hexToRgb, 
+  generateDynamicColorThemes,
+  getNodeColor
+} from '@/utils/visualizationUtils';
+import NetworkTooltip from './NetworkTooltip';
+// Import utility functions from separate file
+import { 
+  showTooltip, 
+  moveTooltip, 
+  hideTooltip,
+  findNodeConnections 
+} from './TooltipUtils';
+import {
+  NetworkLegend,
+  NetworkHelper,
+  EmptyData
+} from './NetworkComponents';
+import useZoomPan from '@/hooks/useZoomPan';
+import useFileExport from '@/hooks/useFileExport';
 
-// Define visualization type
-export type VisualizationType = 'network' | 'radial' | 'arc';
+// Import VisualizationType explicitly 
+import { VisualizationType } from './NetworkSidebar';
 
-// Extend Window interface to include our custom property
+// Declare global type for timeout IDs
 declare global {
   interface Window {
     resizeTimeoutId?: number;
+    paramUpdateTimeout?: number;
   }
 }
 
-// Complete interface with all required props
-interface NetworkVisualizationProps {
-  onCreditsClick: () => void;
-  nodeData: NodeData[]; 
-  linkData: LinkData[];
-  visualizationType?: VisualizationType;
-  onVisualizationTypeChange?: (type: VisualizationType) => void;
-  fixNodesOnDrag?: boolean;
-  colorTheme?: string;
-  nodeSize?: number;
-  linkColor?: string;
-  backgroundColor?: string;
-  backgroundOpacity?: number;
-  customNodeColors?: {[key: string]: string};
-  dynamicColorThemes?: {[key: string]: {[key: string]: string}};
-}
-
-// Define node data structure for D3
-interface Node extends d3.SimulationNodeDatum {
-  id: string;
-  category: string;
-  customColor?: string | null;
-}
-
-// Define link data structure for D3
-interface Link extends d3.SimulationLinkDatum<Node> {
-  source: string | Node;
-  target: string | Node;
-  value?: number;
-}
-
-// D3 modified types during simulation
-interface SimulatedNode extends Node {
-  x: number;
-  y: number;
-  fx: number | null;
-  fy: number | null;
-}
-
-interface SimulatedLink extends Omit<Link, 'source' | 'target'> {
-  source: SimulatedNode;
-  target: SimulatedNode;
-}
-
-// Category counter interface
-interface CategoryCounts {
-  [key: string]: number;
-  total: number;
-}
+// Define color palette
+const COLOR_PALETTE = [
+  "#e74c3c", // Red
+  "#3498db", // Blue
+  "#2ecc71", // Green
+  "#f39c12", // Orange
+  "#9b59b6", // Purple
+  "#1abc9c", // Teal
+  "#34495e", // Dark Blue
+  "#e67e22", // Dark Orange
+  "#27ae60", // Dark Green
+  "#8e44ad", // Dark Purple
+  "#16a085", // Dark Teal
+  "#d35400", // Rust
+  "#2980b9", // Royal Blue
+  "#c0392b", // Dark Red
+  "#f1c40f"  // Yellow
+];
 
 const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({ 
   onCreditsClick, 
@@ -86,38 +77,28 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   backgroundColor = '#f5f5f5',
   backgroundOpacity = 1.0,
   customNodeColors = {},
-  dynamicColorThemes = {}
+  dynamicColorThemes = {},
+  onSvgRef
 }) => {
-  // Add debug log at the beginning of the component
-  console.log("NetworkVisualization received data:", 
-    { nodeDataLength: nodeData.length, linkDataLength: linkData.length });
-    
-  // Inject fullscreen styles when component mounts
-  useEffect(() => {
-    // Create a style element
-    const styleElement = document.createElement('style');
-    styleElement.textContent = fullscreenStyles;
-    document.head.appendChild(styleElement);
-    
-    // Cleanup when component unmounts
-    return () => {
-      if (document.head.contains(styleElement)) {
-        document.head.removeChild(styleElement);
-      }
-    };
-  }, []);
-
+  // References
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<SVGGElement>(null);
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null);
-  const transformRef = useRef<d3.ZoomTransform | null>(null); // To store the current zoom state
+  
+  // References to track previous parameter values for determining significant changes
+  const prevLinkDistanceRef = useRef<number>(70);
+  const prevNodeChargeRef = useRef<number>(-300);
+  const prevLinkStrengthRef = useRef<number>(1.0);
+
+  // State
   const [isLoading, setIsLoading] = useState(true);
   const [linkDistance, setLinkDistance] = useState(70);
   const [linkStrength, setLinkStrength] = useState(1.0);
   const [nodeCharge, setNodeCharge] = useState(-300);
   const [localNodeSize, setLocalNodeSize] = useState(nodeSize);
-  const [customNodeColorsState, setCustomNodeColorsState] = useState<{[key: string]: string}>(customNodeColors || {});
+  const [customNodeColorsState, setCustomNodeColorsState] = useState<Record<string, string>>(customNodeColors || {});
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [selectedNodeConnections, setSelectedNodeConnections] = useState<{ to: string[]; from: string[] }>({ to: [], from: [] });
   const [expandedSections, setExpandedSections] = useState({
@@ -140,106 +121,48 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const [processedData, setProcessedData] = useState<{ nodes: Node[], links: Link[] }>({ nodes: [], links: [] });
   const [nodeCounts, setNodeCounts] = useState<CategoryCounts>({ total: 0 });
   const [uniqueCategories, setUniqueCategories] = useState<string[]>([]);
-  const [dynamicColorThemesState, setDynamicColorThemesState] = useState<{[key: string]: {[key: string]: string}}>(dynamicColorThemes || {});
+  const [dynamicColorThemesState, setDynamicColorThemesState] = useState<Record<string, Record<string, string>>>(dynamicColorThemes || {});
   const [visualizationError, setVisualizationError] = useState<string | null>(null);
-  // Add state for fix nodes on drag behavior
   const [localFixNodesOnDrag, setLocalFixNodesOnDrag] = useState(fixNodesOnDrag);
-  // Add state for visualization type
   const [localVisualizationType, setLocalVisualizationType] = useState<VisualizationType>(visualizationType);
+  
   const { toast } = useToast();
 
-  // Define default color palette
-  const colorPalette = [
-    "#e74c3c", // Red
-    "#3498db", // Blue
-    "#2ecc71", // Green
-    "#f39c12", // Orange
-    "#9b59b6", // Purple
-    "#1abc9c", // Teal
-    "#34495e", // Dark Blue
-    "#e67e22", // Dark Orange
-    "#27ae60", // Dark Green
-    "#8e44ad", // Dark Purple
-    "#16a085", // Dark Teal
-    "#d35400", // Rust
-    "#2980b9", // Royal Blue
-    "#c0392b", // Dark Red
-    "#f1c40f"  // Yellow
-  ];
+  // Pass SVG ref to parent if needed (for fullscreen mode)
+  useEffect(() => {
+    if (onSvgRef && svgRef.current) {
+      onSvgRef(svgRef.current);
+    }
+  }, [onSvgRef, svgRef.current]);
 
-  // Generate dynamic color themes based on unique categories
-  const generateDynamicColorThemes = (categories: string[]) => {
-    const baseThemes = {
-      default: {} as Record<string, string>,
-      bright: {} as Record<string, string>,
-      pastel: {} as Record<string, string>,
-      ocean: {} as Record<string, string>,
-      autumn: {} as Record<string, string>,
-      monochrome: {} as Record<string, string>,
-      custom: {} as Record<string, string>
-    };
+  const { zoomToFit, getTransform } = useZoomPan({
+    svgRef, 
+    contentRef,
+    containerRef,
+    isReady: !isLoading && processedData.nodes.length > 0
+  });
 
-    // Default theme with standard colors
-    categories.forEach((category, index) => {
-      const colorIndex = index % colorPalette.length;
-      baseThemes.default[category] = colorPalette[colorIndex];
-    });
+  const { downloadData, downloadGraph } = useFileExport({
+    svgRef,
+    nodes: processedData.nodes,
+    links: processedData.links,
+    networkTitle,
+    onNotify: (title, message, isError) => {
+      toast({
+        title,
+        description: message,
+        variant: isError ? "destructive" : "default"
+      });
+    },
+    backgroundColor: localBackgroundColor,
+    backgroundOpacity: localBackgroundOpacity,
+    textColor,
+    linkColor: localLinkColor,
+    nodeStrokeColor,
+    getTransform
+  });
 
-    // Bright theme with vibrant colors
-    categories.forEach((category, index) => {
-      const colorIndex = index % colorPalette.length;
-      const baseColor = d3.rgb(colorPalette[colorIndex]);
-      baseThemes.bright[category] = d3.rgb(
-        Math.min(255, baseColor.r + 40),
-        Math.min(255, baseColor.g + 40),
-        Math.min(255, baseColor.b + 40)
-      ).toString();
-    });
-
-    // Pastel theme with lighter colors
-    categories.forEach((category, index) => {
-      const colorIndex = index % colorPalette.length;
-      const baseColor = d3.rgb(colorPalette[colorIndex]);
-      const h = d3.hsl(baseColor).h;
-      baseThemes.pastel[category] = d3.hsl(h, 0.6, 0.8).toString();
-    });
-
-    // Ocean theme with blue variants
-    categories.forEach((category, index) => {
-      baseThemes.ocean[category] = d3.rgb(
-        40 + (index * 15) % 100,
-        100 + (index * 20) % 155,
-        150 + (index * 15) % 105
-      ).toString();
-    });
-
-    // Autumn theme with warm colors
-    categories.forEach((category, index) => {
-      baseThemes.autumn[category] = d3.rgb(
-        180 + (index * 15) % 75,
-        70 + (index * 25) % 120,
-        40 + (index * 10) % 50
-      ).toString();
-    });
-
-    // Monochrome theme with grayscale
-    categories.forEach((category, index) => {
-      const value = 60 + (index * 25) % 180;
-      baseThemes.monochrome[category] = d3.rgb(value, value, value).toString();
-    });
-
-    // Custom theme (starts as copy of default)
-    baseThemes.custom = {...baseThemes.default};
-
-    // Add "Otro" (Other) category for all themes
-    Object.keys(baseThemes).forEach(theme => {
-      baseThemes[theme as keyof typeof baseThemes]["Otro"] = "#95a5a6";
-    });
-
-    return baseThemes;
-  };
-
-  // Process the imported data
+  // Process imported data
   useEffect(() => {
     if (nodeData.length === 0 || linkData.length === 0) {
       console.log("Data not yet available in processing effect");
@@ -257,18 +180,18 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           key.toLowerCase() === 'name' || 
           key.toLowerCase() === 'node' ||
           key.toLowerCase() === 'node id'
-        ) || '';
+        ) || Object.keys(node)[0]; // Fallback to first key if none found
 
         const categoryKey = Object.keys(node).find(key => 
           key.toLowerCase() === 'category' || 
           key.toLowerCase() === 'type' || 
           key.toLowerCase() === 'node type' ||
           key.toLowerCase() === 'node category'
-        ) || '';
+        ) || (Object.keys(node).length > 1 ? Object.keys(node)[1] : 'default'); // Fallback to second key or 'default'
 
         return {
-          id: String(node[idKey]),
-          category: String(node[categoryKey])
+          id: String(node[idKey] || 'node-' + Math.random().toString(36).substring(2, 9)),
+          category: String(node[categoryKey] || 'default')
         };
       });
 
@@ -277,26 +200,31 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         const sourceKey = Object.keys(link).find(key => 
           key.toLowerCase() === 'source' || 
           key.toLowerCase() === 'from'
-        ) || '';
+        ) || Object.keys(link)[0]; // Fallback to first key
 
         const targetKey = Object.keys(link).find(key => 
           key.toLowerCase() === 'target' || 
           key.toLowerCase() === 'to'
-        ) || '';
+        ) || (Object.keys(link).length > 1 ? Object.keys(link)[1] : null); // Fallback to second key
+
+        if (!sourceKey || !targetKey) {
+          console.error("Cannot identify source or target keys in link data:", link);
+          return { source: "", target: "" }; // Will be filtered out later
+        }
 
         return {
-          source: String(link[sourceKey]),
-          target: String(link[targetKey])
+          source: String(link[sourceKey] || ''),
+          target: String(link[targetKey] || '')
         };
-      });
+      }).filter(link => link.source && link.target); // Filter out invalid links
 
       // Find unique categories
       const categories = processedNodes.map(node => node.category);
-      const uniqueCats = Array.from(new Set(categories));
+      const uniqueCats = Array.from(new Set(categories)).filter(Boolean);
       setUniqueCategories(uniqueCats);
 
       // Generate dynamic color themes
-      const themes = generateDynamicColorThemes(uniqueCats);
+      const themes = generateDynamicColorThemes(uniqueCats, COLOR_PALETTE);
       setDynamicColorThemesState(themes);
 
       // Calculate node counts by category
@@ -327,6 +255,565 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   }, [nodeData, linkData, toast]);
 
+  // Create drag behavior
+  const createDragBehavior = useCallback((simulation: d3.Simulation<Node, Link>) => {
+    return d3.drag<SVGCircleElement, SimulatedNode>()
+      .on("start", function(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+        
+        // Make the dragged node appear on top
+        d3.select(this).raise();
+      })
+      .on("drag", function(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+        
+        // Ensure smooth dragging by applying changes immediately
+        d3.select(this)
+          .attr("cx", d.fx)
+          .attr("cy", d.fy);
+          
+        // Update connected links immediately for responsive dragging
+        const svg = d3.select(svgRef.current);
+        svg.selectAll<SVGLineElement, Link>(".link")
+          .filter(l => {
+            const source = typeof l.source === 'object' ? l.source.id : l.source;
+            const target = typeof l.target === 'object' ? l.target.id : l.target;
+            return source === d.id || target === d.id;
+          })
+          .each(function(l) {
+            const isSource = (typeof l.source === 'object' ? l.source.id : l.source) === d.id;
+            
+            if (isSource) {
+              d3.select(this)
+                .attr("x1", d.fx)
+                .attr("y1", d.fy);
+            } else {
+              d3.select(this)
+                .attr("x2", d.fx)
+                .attr("y2", d.fy);
+            }
+          });
+          
+        // Update the label position
+        svg.selectAll<SVGTextElement, Node>(".node-label")
+          .filter(n => n.id === d.id)
+          .attr("x", d.fx)
+          .attr("y", d.fy);
+      })
+      .on("end", function(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        
+        // If fixNodesOnDrag is false, release the node back to the simulation
+        if (!localFixNodesOnDrag) {
+          d.fx = null;
+          d.fy = null;
+          
+          // Very gentle alpha to allow local repositioning without disrupting the whole layout
+          simulation.alpha(0.05).restart();
+          console.log("Node released with minimal alpha to avoid layout shifts");
+        }
+      });
+  }, [localFixNodesOnDrag]);
+
+  // Create D3 visualization
+  useEffect(() => {
+    // Make sure all refs are ready
+    if (isLoading || !svgRef.current || processedData.nodes.length === 0 || localVisualizationType !== 'network') {
+      console.log("Not ready to create visualization yet:", {
+        isLoading,
+        hasSvgRef: !!svgRef.current,
+        hasContainerRef: !!containerRef.current,
+        nodeCount: processedData.nodes.length,
+        visualizationType: localVisualizationType
+      });
+      return;
+    }
+
+    // This is a critical check to ensure the container is rendered
+    if (!containerRef.current) {
+      console.log("Container ref not ready, waiting...");
+      // Try again after a short delay
+      const timer = setTimeout(() => {
+        console.log("Retrying visualization after delay");
+        if (containerRef.current) {
+          // Force a re-render once the container is ready
+          setIsLoading(prev => !prev);
+          setTimeout(() => setIsLoading(prev => !prev), 10);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  
+    console.log("Creating D3 visualization");
+    
+    try {
+      // Clear any existing elements
+      d3.select(svgRef.current).selectAll("*").remove();
+      
+      // Create a new root SVG group
+      const g = d3.select(svgRef.current)
+        .append("g");
+      
+      // Store reference to the content group
+      contentRef.current = g.node() as SVGGElement;
+      
+      const width = containerRef.current.clientWidth || 800; // Fallback width
+      const height = containerRef.current.clientHeight || 600; // Fallback height
+      
+      console.log(`Container dimensions: ${width}x${height}`);
+      
+      // Filter nodes based on selection
+      const filteredNodes = nodeGroup === 'all' 
+        ? processedData.nodes
+        : processedData.nodes.filter(node => node.category === nodeGroup);
+      
+      // Create filtered links
+      const nodeIds = new Set(filteredNodes.map(node => node.id));
+      const filteredLinks = processedData.links.filter(link => {
+        const sourceId = typeof link.source === 'object' 
+          ? link.source.id 
+          : link.source;
+        const targetId = typeof link.target === 'object' 
+          ? link.target.id 
+          : link.target;
+        return nodeIds.has(sourceId) && nodeIds.has(targetId);
+      });
+      
+      console.log(`Rendering ${filteredNodes.length} nodes and ${filteredLinks.length} links`);
+      
+      // Create simulation with stronger initial forces to spread nodes
+      const simulation = d3.forceSimulation<Node>(filteredNodes)
+        .force("link", d3.forceLink<Node, Link>(filteredLinks)
+          .id(d => d.id)
+          .distance(linkDistance * 2) // Double distance initially to spread nodes
+          .strength(linkStrength))
+        .force("charge", d3.forceManyBody()
+          .strength(nodeCharge * 2)) // Stronger repulsion initially
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(d => 10 * localNodeSize));
+
+      // Store current parameter values in refs
+      prevLinkDistanceRef.current = linkDistance;
+      prevNodeChargeRef.current = nodeCharge;
+      prevLinkStrengthRef.current = linkStrength;
+
+      // CRITICAL: Store the simulation in our ref
+      simulationRef.current = simulation;
+
+      // Add x/y positions if not already set
+      filteredNodes.forEach(node => {
+        if (node.x === undefined) {
+          // Position nodes in a circle for better initial layout
+          const angle = Math.random() * 2 * Math.PI;
+          const radius = Math.min(width, height) * 0.4 * Math.random();
+          node.x = width / 2 + radius * Math.cos(angle);
+          node.y = height / 2 + radius * Math.sin(angle);
+        }
+      });
+
+      // Run simulation with high alpha to allow nodes to spread out
+      simulation.alpha(1).restart();
+
+      // After initial positioning, restore normal parameters
+      setTimeout(() => {
+        const linkForce = simulation.force("link") as d3.ForceLink<Node, Link>;
+        if (linkForce) {
+          linkForce.distance(linkDistance);
+        }
+        
+        const chargeForce = simulation.force("charge") as d3.ForceManyBody<Node>;
+        if (chargeForce) {
+          chargeForce.strength(nodeCharge);
+        }
+        
+        simulation.alpha(0.3).restart();
+      }, 1000);
+      
+      // Create links with proper type casting
+      const link = g.append("g")
+        .attr("class", "links")
+        .selectAll("line")
+        .data(filteredLinks)
+        .enter()
+        .append("line")
+        .attr("class", "link")
+        .attr("stroke", localLinkColor)
+        .attr("stroke-width", 1.5);
+      
+      // Create nodes
+      const node = g.append("g")
+        .attr("class", "nodes")
+        .selectAll("circle")
+        .data(filteredNodes)
+        .enter()
+        .append("circle")
+        .attr("class", "node")
+        .attr("r", d => 7 * localNodeSize)
+        .attr("fill", d => getNodeColor(d, customNodeColorsState, localColorTheme, dynamicColorThemesState))
+        .attr("stroke", nodeStrokeColor)
+        .attr("stroke-width", 1);
+      
+      // Create node labels
+      const nodeLabel = g.append("g")
+        .attr("class", "node-labels")
+        .selectAll("text")
+        .data(filteredNodes)
+        .enter()
+        .append("text")
+        .attr("class", "node-label")
+        .attr("dy", "0.3em")
+        .text(d => d.id.length > 15 ? d.id.substring(0, 12) + '...' : d.id)
+        .style("fill", textColor)
+        .style("font-size", d => `${8 * Math.min(1.2, localNodeSize)}px`)
+        .style("text-shadow", `0 1px 2px rgba(0, 0, 0, 0.7)`);
+      
+      // Create and apply drag behavior
+      const dragBehavior = createDragBehavior(simulation);
+      node.call(dragBehavior as d3.DragBehavior<SVGCircleElement, unknown, Node>);
+      
+      // Event handlers
+      node
+        .on("mouseover", function(event, d) {
+          showTooltip(event, d, tooltipRef, processedData.links);
+        })
+        .on("mousemove", function(event) {
+          moveTooltip(event, tooltipRef, svgRef);
+        })
+        .on("mouseout", function() {
+          hideTooltip(tooltipRef);
+        })
+        .on("click", function(event, d) {
+          event.stopPropagation();
+          handleNodeClick(d);
+        });
+      
+      // Click anywhere else to reset highlighting
+      d3.select(svgRef.current).on("click", resetNodeSelection);
+      
+      // Update function for simulation
+      simulation.on("tick", () => {
+        // Update link positions
+        link
+          .attr("x1", d => {
+            const source = d.source as SimulatedNode;
+            return source.x !== undefined ? source.x : 0;
+          })
+          .attr("y1", d => {
+            const source = d.source as SimulatedNode;
+            return source.y !== undefined ? source.y : 0;
+          })
+          .attr("x2", d => {
+            const target = d.target as SimulatedNode;
+            return target.x !== undefined ? target.x : 0;
+          })
+          .attr("y2", d => {
+            const target = d.target as SimulatedNode;
+            return target.y !== undefined ? target.y : 0;
+          });
+        
+        // Update node positions
+        node
+          .attr("cx", d => d.x !== undefined ? d.x : 0)
+          .attr("cy", d => d.y !== undefined ? d.y : 0);
+        
+        // Update label positions
+        nodeLabel
+          .attr("x", d => d.x !== undefined ? d.x : 0)
+          .attr("y", d => d.y !== undefined ? d.y : 0);
+      });
+      
+      // Apply background color to the container
+      if (containerRef.current) {
+        const bgColor = hexToRgb(localBackgroundColor);
+        containerRef.current.style.backgroundColor = `rgba(${bgColor.r}, ${bgColor.g}, ${bgColor.b}, ${localBackgroundOpacity})`;
+      }
+      
+      console.log("D3 visualization created successfully");
+
+      // Return cleanup function
+      return () => {
+        if (simulation) simulation.stop();
+        simulationRef.current = null;
+      };
+
+    } catch (error) {
+      console.error("Error creating D3 visualization:", error);
+      setVisualizationError(error instanceof Error ? error.message : "Unknown error creating visualization");
+      toast({
+        title: "Error",
+        description: `Failed to create the visualization: ${error instanceof Error ? error.message : String(error)}`,
+        variant: "destructive"
+      });
+    }
+  }, [
+    isLoading, 
+    nodeGroup, 
+    processedData, 
+    localVisualizationType, 
+    createDragBehavior, 
+    linkDistance, 
+    linkStrength, 
+    nodeCharge, 
+    localNodeSize, 
+    localColorTheme, 
+    customNodeColorsState, 
+    dynamicColorThemesState, 
+    textColor, 
+    localLinkColor, 
+    nodeStrokeColor, 
+    localBackgroundColor, 
+    localBackgroundOpacity
+  ]);
+
+  // Update visualization when parameters change - with gentle approach to prevent flickering
+  useEffect(() => {
+    if (isLoading || !svgRef.current || !simulationRef.current) return;
+    
+    // Clear any existing timeout to prevent rapid updates
+    if (window.paramUpdateTimeout) {
+      clearTimeout(window.paramUpdateTimeout);
+    }
+    
+    // Use a debounce timeout to handle rapid parameter changes (e.g. slider dragging)
+    window.paramUpdateTimeout = window.setTimeout(() => {
+      try {
+        console.log("Updating visualization parameters with gentle approach");
+        const simulation = simulationRef.current;
+        
+        // Select all the elements we need to update
+        const svg = d3.select(svgRef.current);
+        const nodes = svg.selectAll<SVGCircleElement, Node>(".node");
+        const labels = svg.selectAll<SVGTextElement, Node>(".node-label");
+        const links = svg.selectAll<SVGLineElement, Link>(".link");
+        
+        // Update link distance/strength
+        const linkForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
+        if (linkForce) {
+          linkForce.distance(linkDistance).strength(linkStrength);
+        }
+        
+        // Update charge
+        const chargeForce = simulation.force("charge") as d3.ForceManyBody<Node> | null;
+        if (chargeForce) {
+          chargeForce.strength(nodeCharge);
+        }
+        
+        // Update node sizes
+        nodes.attr("r", d => 7 * localNodeSize);
+        
+        // Update collision radius
+        const collisionForce = simulation.force("collision") as d3.ForceCollide<Node> | null;
+        if (collisionForce) {
+          collisionForce.radius(d => (7 * localNodeSize) + 2);
+        }
+        
+        // Update text size
+        labels.style("font-size", `${8 * Math.min(1.2, localNodeSize)}px`);
+        
+        // Update node colors
+        nodes.attr("fill", d => getNodeColor(d, customNodeColorsState, localColorTheme, dynamicColorThemesState));
+          
+        // Update node stroke
+        nodes.attr("stroke", nodeStrokeColor)
+             .attr("stroke-width", 1);
+        
+        // Update labels color
+        labels.style("fill", textColor);
+        
+        // Update link color
+        links.attr("stroke", localLinkColor);
+        
+        // Update background color
+        if (containerRef.current) {
+          const bgColor = hexToRgb(localBackgroundColor);
+          containerRef.current.style.backgroundColor = `rgba(${bgColor.r}, ${bgColor.g}, ${bgColor.b}, ${localBackgroundOpacity})`;
+        }
+        
+        // IMPORTANT: Determine if this is a significant change that needs higher alpha
+        const isSignificantChange = 
+          Math.abs(linkDistance - prevLinkDistanceRef.current) > 5 ||
+          Math.abs(nodeCharge - prevNodeChargeRef.current) > 50 ||
+          Math.abs(linkStrength - prevLinkStrengthRef.current) > 0.2;
+        
+        // Choose alpha based on significance of change
+        const alphaValue = isSignificantChange ? 0.3 : 0.01;
+        
+        // Store current values for next comparison
+        prevLinkDistanceRef.current = linkDistance;
+        prevNodeChargeRef.current = nodeCharge;
+        prevLinkStrengthRef.current = linkStrength;
+        
+        // Apply gentle alpha and restart simulation
+        simulation.alpha(alphaValue).restart();
+        
+        // CRITICAL: Don't call zoomToFit() here - we want to preserve the current zoom level
+        console.log(`Applied physics update with alpha: ${alphaValue}`);
+        
+      } catch (error) {
+        console.error("Error updating visualization:", error);
+        setVisualizationError(error instanceof Error ? error.message : "Unknown error updating visualization");
+      }
+    }, 150); // Increased debounce delay to prevent too many updates while dragging sliders
+    
+    return () => {
+      if (window.paramUpdateTimeout) {
+        clearTimeout(window.paramUpdateTimeout);
+      }
+    };
+  }, [
+    localNodeSize, 
+    linkDistance, 
+    linkStrength, 
+    nodeCharge, 
+    localColorTheme, 
+    customNodeColorsState,
+    localBackgroundColor,
+    textColor,
+    localLinkColor,
+    nodeStrokeColor,
+    localBackgroundOpacity,
+    dynamicColorThemesState,
+    isLoading
+  ]);
+
+  // Add a new useEffect hook for handling resize events without auto zoom
+  useEffect(() => {
+    if (isLoading || !svgRef.current || !containerRef.current) return;
+
+    const handleResize = () => {
+      // Clear any existing timeout to prevent multiple executions
+      if (window.resizeTimeoutId) {
+        window.clearTimeout(window.resizeTimeoutId);
+      }
+
+      // Delay execution to avoid too many consecutive calls
+      window.resizeTimeoutId = window.setTimeout(() => {
+        console.log("Window resize detected - updating visualization");
+        
+        if (!simulationRef.current || !containerRef.current || !svgRef.current) return;
+        
+        // Get the new container dimensions
+        const width = containerRef.current.clientWidth;
+        const height = containerRef.current.clientHeight;
+        
+        console.log(`New container dimensions: ${width}x${height}`);
+        
+        // Update the center force
+        const centerForce = simulationRef.current.force("center") as d3.ForceCenter<Node>;
+        if (centerForce) {
+          centerForce.x(width / 2).y(height / 2);
+        }
+        
+        // IMPORTANT: Don't automatically zoom to fit on resize
+        // Only restart the simulation with low alpha
+        simulationRef.current.alpha(0.1).restart();
+        
+      }, 200);
+    };
+
+    // Add event listener for window resize
+    window.addEventListener('resize', handleResize);
+    
+    // Cleanup function
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (window.resizeTimeoutId) {
+        window.clearTimeout(window.resizeTimeoutId);
+      }
+    };
+  }, [isLoading]);
+
+  // Handle node click
+  const handleNodeClick = useCallback((d: Node) => {
+    console.log("Node selected:", d);
+    setSelectedNode(d);
+    
+    // Find connections for this node
+    const { sourceLinks, targetLinks } = findNodeConnections(d, processedData.links);
+    
+    // Prepare connected nodes lists for the UI
+    const toConnections = sourceLinks.map(link => {
+      const targetName = typeof link.target === 'object' ? link.target.id : link.target;
+      return targetName;
+    });
+    
+    const fromConnections = targetLinks.map(link => {
+      const sourceName = typeof link.source === 'object' ? link.source.id : link.source;
+      return sourceName;
+    });
+    
+    setSelectedNodeConnections({
+      to: toConnections,
+      from: fromConnections
+    });
+    
+    // Make network info section visible if it's not already
+    if (!expandedSections.networkInfo) {
+      setExpandedSections(prev => ({
+        ...prev,
+        networkInfo: true
+      }));
+    }
+    
+    // Highlight connections in the visualization
+    if (svgRef.current) {
+      const svg = d3.select(svgRef.current);
+      
+      svg.selectAll(".node")
+        .attr('opacity', (n: Node) => {
+          if (n.id === d.id) return 1;
+          
+          const isConnected = sourceLinks.some(link => {
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            return targetId === n.id;
+          }) || targetLinks.some(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            return sourceId === n.id;
+          });
+          
+          return isConnected ? 1 : 0.2;
+        });
+      
+      svg.selectAll(".link")
+        .attr('opacity', (l: Link) => {
+          const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+          const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+          const isConnected = (sourceId === d.id || targetId === d.id);
+          return isConnected ? 1 : 0.1;
+        });
+      
+      svg.selectAll(".node-label")
+        .attr('opacity', (n: Node) => {
+          if (n.id === d.id) return 1;
+          
+          const isConnected = sourceLinks.some(link => {
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            return targetId === n.id;
+          }) || targetLinks.some(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            return sourceId === n.id;
+          });
+          
+          return isConnected ? 1 : 0.2;
+        });
+    }
+  }, [expandedSections, processedData.links]);
+
+  // Reset node selection
+  const resetNodeSelection = useCallback(() => {
+    setSelectedNode(null);
+    
+    if (svgRef.current) {
+      const svg = d3.select(svgRef.current);
+      svg.selectAll('.node').attr('opacity', 1);
+      svg.selectAll('.link').attr('opacity', 1);
+      svg.selectAll('.node-label').attr('opacity', 1);
+    }
+  }, []);
+
   // Function to toggle section expansion
   const toggleSection = (section: string) => {
     console.log("Toggling section:", section);
@@ -341,7 +828,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setIsSidebarCollapsed(!isSidebarCollapsed);
     
     // When expanding the sidebar after being collapsed, we need to refit the visualization
-    if (simulationRef.current) {
+    if (isSidebarCollapsed) {
       // Delay to allow DOM to update first
       setTimeout(() => {
         // Trigger a resize to refit the visualization
@@ -360,12 +847,47 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     const newValue = !localFixNodesOnDrag;
     console.log("Toggling fixNodesOnDrag:", newValue);
     setLocalFixNodesOnDrag(newValue);
-    toast({
-      title: newValue ? "Nodes will stay fixed" : "Nodes will follow simulation",
-      description: newValue 
-        ? "Nodes will remain where you drop them" 
-        : "Nodes will return to simulation flow after dragging"
-    });
+    
+    // Get current simulation
+    const currentSimulation = simulationRef.current;
+    
+    // Apply changes immediately
+    if (svgRef.current && currentSimulation) {
+      try {
+        console.log("Applying fixNodesOnDrag change to simulation");
+        
+        // When turning off fixed nodes, reset all fx/fy values
+        if (!newValue) {
+          const svg = d3.select(svgRef.current);
+          svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
+            .each(function(d) {
+              // Unfix all nodes
+              d.fx = null;
+              d.fy = null;
+            });
+          
+          // Apply higher alpha
+          currentSimulation.alpha(0.3).restart();
+          console.log("Restarted simulation with moderate alpha 0.3 after unfixing nodes");
+        }
+        
+        toast({
+          title: newValue ? "Nodes will stay fixed" : "Nodes will follow simulation",
+          description: newValue 
+            ? "Nodes will remain where you drop them" 
+            : "Nodes will return to simulation flow after dragging"
+        });
+      } catch (error) {
+        console.error("Error toggling fix nodes:", error);
+        toast({
+          title: "Error",
+          description: "Failed to update node behavior",
+          variant: "destructive"
+        });
+      }
+    } else {
+      console.log("Cannot apply fix nodes toggle - references not available");
+    }
   };
 
   // Handle visualization type change
@@ -389,16 +911,6 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   };
 
-  // Helper function to convert hex color to RGB
-  const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-      r: parseInt(result[1], 16),
-      g: parseInt(result[2], 16),
-      b: parseInt(result[3], 16)
-    } : { r: 245, g: 245, b: 245 }; // Default to #f5f5f5
-  };
-
   // Function to properly clean up and reinitialize the visualization
   const reinitializeVisualization = () => {
     console.log("Reinitializing visualization");
@@ -407,9 +919,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       // Clean up existing simulation
       if (simulationRef.current) {
         simulationRef.current.stop();
+        simulationRef.current = null;
       }
       
-      // Clear SVG to start fresh
+      // Clear SVG
       if (svgRef.current) {
         d3.select(svgRef.current).selectAll("*").remove();
       }
@@ -424,677 +937,17 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       
       // Clear any error state
       setVisualizationError(null);
-      
     } catch (error) {
       console.error("Error reinitializing visualization:", error);
       setVisualizationError(error instanceof Error ? error.message : "Unknown error during reinitialization");
     }
   };
 
-  // Function to safely attempt visualization updates with error boundary
-  const safeUpdateVisualization = (updateFunc: () => void) => {
-    try {
-      if (!svgRef.current || !simulationRef.current) {
-        console.warn("Visualization references not available");
-        return;
-      }
-      
-      // Reset any previous errors
-      setVisualizationError(null);
-      
-      // Execute the update
-      updateFunc();
-      
-    } catch (error) {
-      console.error("Visualization update error:", error);
-      setVisualizationError(error instanceof Error ? error.message : "Unknown visualization error");
-      
-      // Attempt to recover
-      setTimeout(() => {
-        try {
-          // Reset simulation if possible
-          if (simulationRef.current) {
-            simulationRef.current.stop();
-          }
-        } catch (recoveryError) {
-          console.error("Error during recovery:", recoveryError);
-        }
-      }, 100);
-    }
-  };
-
-  // Add a new useEffect hook for handling resize events
-  useEffect(() => {
-    if (isLoading || !svgRef.current || !containerRef.current) return;
-
-    const handleResize = () => {
-      // Clear any existing timeout to prevent multiple executions
-      if (window.resizeTimeoutId) {
-        window.clearTimeout(window.resizeTimeoutId);
-      }
-
-      // Delay execution to avoid too many consecutive calls
-      window.resizeTimeoutId = window.setTimeout(() => {
-        console.log("Window resize detected - recalculating visualization");
-        
-        safeUpdateVisualization(() => {
-          if (!simulationRef.current || !containerRef.current || !svgRef.current) return;
-          
-          // Get the new container dimensions
-          const width = containerRef.current.clientWidth;
-          const height = containerRef.current.clientHeight;
-          
-          console.log(`New container dimensions: ${width}x${height}`);
-          
-          // Update the center force
-          const centerForce = simulationRef.current.force("center") as d3.ForceCenter<Node>;
-          if (centerForce) {
-            centerForce.x(width / 2).y(height / 2);
-          }
-          
-          // Trigger a zoomToFit similar to the initial one
-          const svg = d3.select(svgRef.current);
-          const g = svg.select("g");
-          
-          // Get bounds of the graph
-          const gNode = g.node();
-          if (!gNode) return;
-          
-          const bounds = (gNode as SVGGraphicsElement).getBBox();
-          if (!bounds) return;
-          
-          const dx = bounds.width;
-          const dy = bounds.height;
-          const x = bounds.x + (bounds.width / 2);
-          const y = bounds.y + (bounds.height / 2);
-          
-          // Adjust padding to ensure content isn't too close to edges
-          const padding = 40;
-          const scale = 0.95 / Math.max(
-            dx / (width - padding * 2), 
-            dy / (height - padding * 2)
-          );
-          
-          const translate = [
-            width / 2 - scale * x, 
-            height / 2 - scale * y
-          ];
-          
-          // Create the new transform
-          const transform = d3.zoomIdentity
-            .translate(translate[0], translate[1])
-            .scale(scale);
-          
-          // Get the zoom behavior
-          const zoom = d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.1, 8])
-            .on("zoom", (event) => {
-              g.attr("transform", event.transform.toString());
-              transformRef.current = event.transform;
-            });
-          
-          // Apply the transform with transition
-          svg.transition()
-            .duration(500)
-            .call(zoom.transform, transform);
-          
-          // Store the new transform
-          transformRef.current = transform;
-          
-          // Restart the simulation with low alpha to adjust positions smoothly
-          simulationRef.current.alpha(0.1).restart();
-        });
-      }, 200);
-    };
-
-    // Add event listener for window resize
-    window.addEventListener('resize', handleResize);
-    
-    // Call once to ensure proper initial sizing
-    handleResize();
-    
-    // Cleanup function
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (window.resizeTimeoutId) {
-        window.clearTimeout(window.resizeTimeoutId);
-      }
-    };
-  }, [isLoading]);
-
-  // Create D3 visualization
-  useEffect(() => {
-    if (isLoading || !svgRef.current || !containerRef.current || processedData.nodes.length === 0) {
-      console.log("Not ready to create visualization yet");
-      return;
-    }
-  
-    console.log("Creating D3 visualization");
-  
-    try {
-      // Clear any existing elements
-      d3.select(svgRef.current).selectAll("*").remove();
-      
-      const width = containerRef.current.clientWidth;
-      const height = containerRef.current.clientHeight;
-      
-      console.log(`Container dimensions: ${width}x${height}`);
-      
-      // Create a group for the graph
-      const g = d3.select(svgRef.current).append("g");
-      
-      // Create zoom behavior
-      const zoom = d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.1, 8])
-        .on("zoom", (event) => {
-          g.attr("transform", event.transform.toString());
-          // Store the current zoom transform for later use
-          transformRef.current = event.transform;
-        });
-      
-      d3.select(svgRef.current).call(zoom);
-      
-      // Filter nodes based on selection
-      const filteredNodes = nodeGroup === 'all' 
-        ? processedData.nodes
-        : processedData.nodes.filter(node => node.category === nodeGroup);
-      
-      // Create filtered links
-      const nodeIds = new Set(filteredNodes.map(node => node.id));
-      const filteredLinks = processedData.links.filter(link => {
-        const sourceId = typeof link.source === 'object' 
-          ? link.source.id 
-          : link.source;
-        const targetId = typeof link.target === 'object' 
-          ? link.target.id 
-          : link.target;
-        return nodeIds.has(sourceId) && nodeIds.has(targetId);
-      });
-      
-      // Create simulation
-      const simulation = d3.forceSimulation<Node>(filteredNodes)
-        .force("link", d3.forceLink<Node, Link>(filteredLinks)
-          .id(d => d.id)
-          .distance(linkDistance)
-          .strength(linkStrength))
-        .force("charge", d3.forceManyBody().strength(nodeCharge))
-        .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collision", d3.forceCollide().radius(d => {
-          // Base size by category importance
-          const baseNodeSize = 7 * localNodeSize; // Default size
-          return baseNodeSize + 2;
-        }));
-      
-      // Store simulation reference for later updates
-      simulationRef.current = simulation;
-      
-      // Function to get node color based on customization
-      function getNodeColor(d: Node) {
-        // First check for custom node color
-        if (customNodeColorsState[d.id]) {
-          return customNodeColorsState[d.id];
-        }
-        
-        // Use the category color from current theme
-        const currentTheme = dynamicColorThemesState[localColorTheme] || dynamicColorThemesState.default;
-        return currentTheme[d.category] || currentTheme["Otro"] || "#95a5a6";
-      }
-      
-      // Create links
-      const link = g.append("g")
-        .attr("class", "links")
-        .selectAll<SVGLineElement, SimulatedLink>("line")
-        .data(filteredLinks)
-        .enter()
-        .append("line")
-        .attr("class", "link")
-        .attr("stroke", localLinkColor)
-        .attr("stroke-width", 1.5);
-      
-      // Create nodes
-      const node = g.append("g")
-        .attr("class", "nodes")
-        .selectAll<SVGCircleElement, SimulatedNode>("circle")
-        .data(filteredNodes)
-        .enter()
-        .append("circle")
-        .attr("class", "node")
-        .attr("r", d => 7 * localNodeSize)
-        .attr("fill", d => getNodeColor(d))
-        .attr("stroke", nodeStrokeColor)
-        .attr("stroke-width", 1)
-        .call(drag(simulation));
-      
-      // Create node labels
-      const nodeLabel = g.append("g")
-        .attr("class", "node-labels")
-        .selectAll<SVGTextElement, SimulatedNode>("text")
-        .data(filteredNodes)
-        .enter()
-        .append("text")
-        .attr("class", "node-label")
-        .attr("dy", "0.3em")
-        .text(d => d.id.length > 15 ? d.id.substring(0, 12) + '...' : d.id)
-        .style("fill", textColor)
-        .style("font-size", d => `${8 * Math.min(1.2, localNodeSize)}px`)
-        .style("text-shadow", `0 1px 2px rgba(0, 0, 0, 0.7)`);
-      
-      // Event handlers
-      node
-        .on("mouseover", (event, d) => showTooltip(event, d))
-        .on("mousemove", (event) => moveTooltip(event))
-        .on("mouseout", hideTooltip)
-        .on("click", (event, d) => {
-          event.stopPropagation();
-          showNodeDetails(d);
-        });
-      
-      // Click anywhere else to reset highlighting
-      d3.select(svgRef.current).on("click", () => {
-        setSelectedNode(null);
-        resetHighlighting();
-      });
-      
-      // Update function for simulation
-      simulation.on("tick", () => {
-        // Proper type handling for x and y coordinates
-        link
-          .attr("x1", d => (d.source as SimulatedNode).x || 0)
-          .attr("y1", d => (d.source as SimulatedNode).y || 0)
-          .attr("x2", d => (d.target as SimulatedNode).x || 0)
-          .attr("y2", d => (d.target as SimulatedNode).y || 0);
-        
-        node
-          .attr("cx", d => d.x || 0)
-          .attr("cy", d => d.y || 0);
-        
-        nodeLabel
-          .attr("x", d => d.x || 0)
-          .attr("y", d => d.y || 0);
-      });
-      
-      // Helper function to create drag behavior - UPDATED for fixNodesOnDrag option
-      function drag(simulation: d3.Simulation<Node, Link>) {
-        function dragstarted(event: d3.D3DragEvent<SVGCircleElement, SimulatedNode, SimulatedNode>, d: SimulatedNode) {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          d.fx = d.x;
-          d.fy = d.y;
-        }
-        
-        function dragged(event: d3.D3DragEvent<SVGCircleElement, SimulatedNode, SimulatedNode>, d: SimulatedNode) {
-          d.fx = event.x;
-          d.fy = event.y;
-        }
-        
-        function dragended(event: d3.D3DragEvent<SVGCircleElement, SimulatedNode, SimulatedNode>, d: SimulatedNode) {
-          if (!event.active) simulation.alphaTarget(0);
-          
-          // This is where we implement the fixNodesOnDrag toggle
-          if (!localFixNodesOnDrag) {
-            d.fx = null;
-            d.fy = null;
-          }
-          // If fixNodesOnDrag is true, we keep fx/fy set to where user dropped the node
-        }
-        
-        return d3.drag<SVGCircleElement, SimulatedNode>()
-          .on("start", dragstarted)
-          .on("drag", dragged)
-          .on("end", dragended);
-      }
-      
-      // Tooltip functions - Fixed positioning outside SVG flow
-      function showTooltip(event: MouseEvent, d: Node) {
-        if (!tooltipRef.current || !svgRef.current || !containerRef.current) return;
-        
-        // Find connections for this node
-        const sourceLinks = processedData.links.filter(link => {
-          return typeof link.source === 'object' 
-            ? link.source.id === d.id 
-            : link.source === d.id;
-        });
-        
-        const targetLinks = processedData.links.filter(link => {
-          return typeof link.target === 'object' 
-            ? link.target.id === d.id 
-            : link.target === d.id;
-        });
-        
-        let tooltipContent = `<strong>${d.id}</strong><br>Category: ${d.category}<br><br>`;
-        
-        // Add connections info
-        if (sourceLinks.length > 0) {
-          tooltipContent += `<strong>Connected to:</strong><br>`;
-          sourceLinks.forEach(link => {
-            const targetName = typeof link.target === 'object' ? link.target.id : link.target;
-            tooltipContent += `${targetName}<br>`;
-          });
-          tooltipContent += `<br>`;
-        }
-        
-        if (targetLinks.length > 0) {
-          tooltipContent += `<strong>Connected from:</strong><br>`;
-          targetLinks.forEach(link => {
-            const sourceName = typeof link.source === 'object' ? link.source.id : link.source;
-            tooltipContent += `${sourceName}<br>`;
-          });
-        }
-        
-        // Set the content
-        const tooltip = d3.select(tooltipRef.current);
-        tooltip.html(tooltipContent);
-        
-        // Use the mouse event position directly for immediate feedback
-        const mouseX = event.clientX;
-        const mouseY = event.clientY;
-        
-        // Position the tooltip adjacent to cursor with offsets
-        const xOffset = 15;
-        const yOffset = -10;
-        
-        // Apply position and make visible
-        tooltip
-          .style("position", "fixed")
-          .style("left", `${mouseX + xOffset}px`)
-          .style("top", `${mouseY + yOffset}px`)
-          .style("opacity", "1")
-          .style("visibility", "visible")
-          .style("z-index", "9999");
-      }
-      
-      function moveTooltip(event: MouseEvent) {
-        if (!tooltipRef.current) return;
-        
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        
-        // Calculate tooltip dimensions to prevent it from going off-screen
-        const tooltipWidth = tooltipRef.current.offsetWidth || 200;
-        const tooltipHeight = tooltipRef.current.offsetHeight || 100;
-        
-        // Small offset from cursor
-        const offsetX = 15;
-        const offsetY = 10;
-        
-        // Adjust position if tooltip would go off the right or bottom edge
-        let xPos = event.clientX + offsetX;
-        let yPos = event.clientY + offsetY;
-        
-        // Check if tooltip would go off right edge of window
-        if (xPos + tooltipWidth > window.innerWidth) {
-          xPos = event.clientX - tooltipWidth - offsetX;
-        }
-        
-        // Check if tooltip would go off bottom edge of window
-        if (yPos + tooltipHeight > window.innerHeight) {
-          yPos = event.clientY - tooltipHeight - offsetY;
-        }
-        
-        // Follow the mouse with intelligent positioning
-        d3.select(tooltipRef.current)
-          .style("left", `${xPos}px`)
-          .style("top", `${yPos}px`);
-      }
-      
-      function hideTooltip() {
-        if (!tooltipRef.current) return;
-        
-        d3.select(tooltipRef.current)
-          .style("opacity", "0");
-      }
-      
-      // Show node details and highlight connections
-      function showNodeDetails(d: Node) {
-        console.log("Node selected:", d);
-        setSelectedNode(d);
-        
-        // Find connections for this node
-        const sourceLinks = processedData.links.filter(link => {
-          return typeof link.source === 'object' 
-            ? link.source.id === d.id 
-            : link.source === d.id;
-        });
-        
-        const targetLinks = processedData.links.filter(link => {
-          return typeof link.target === 'object' 
-            ? link.target.id === d.id 
-            : link.target === d.id;
-        });
-        
-        // Prepare connected nodes lists for the UI
-        const toConnections = sourceLinks.map(link => {
-          const targetName = typeof link.target === 'object' ? link.target.id : link.target;
-          return targetName;
-        });
-        
-        const fromConnections = targetLinks.map(link => {
-          const sourceName = typeof link.source === 'object' ? link.source.id : link.source;
-          return sourceName;
-        });
-        
-        setSelectedNodeConnections({
-          to: toConnections,
-          from: fromConnections
-        });
-        
-        // Make network info section visible if it's not already
-        if (!expandedSections.networkInfo) {
-          setExpandedSections(prev => ({
-            ...prev,
-            networkInfo: true
-          }));
-        }
-        
-        // Highlight connections in the visualization
-        highlightConnections(d, sourceLinks, targetLinks);
-      }
-      
-      // Highlight connections for a selected node
-      function highlightConnections(d: Node, sourceLinks: Link[], targetLinks: Link[]) {
-        node.attr('opacity', (n: Node) => {
-          if (n.id === d.id) return 1;
-          
-          const isConnected = sourceLinks.some(link => {
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            return targetId === n.id;
-          }) || targetLinks.some(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            return sourceId === n.id;
-          });
-          
-          return isConnected ? 1 : 0.2;
-        });
-        
-        link.attr('opacity', (l: Link) => {
-          const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-          const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-          const isConnected = (sourceId === d.id || targetId === d.id);
-          return isConnected ? 1 : 0.1;
-        });
-        
-        nodeLabel.attr('opacity', (n: Node) => {
-          if (n.id === d.id) return 1;
-          
-          const isConnected = sourceLinks.some(link => {
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            return targetId === n.id;
-          }) || targetLinks.some(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            return sourceId === n.id;
-          });
-          
-          return isConnected ? 1 : 0.2;
-        });
-      }
-      
-      // Reset highlighting
-      function resetHighlighting() {
-        node.attr('opacity', 1);
-        link.attr('opacity', 1);
-        nodeLabel.attr('opacity', 1);
-      }
-      
-      // Apply background color
-      if (containerRef.current) {
-        containerRef.current.style.backgroundColor = `rgba(${hexToRgb(localBackgroundColor).r}, ${hexToRgb(localBackgroundColor).g}, ${hexToRgb(localBackgroundColor).b}, ${localBackgroundOpacity})`;
-      }
-      
-      // Initial zoom to fit
-      const zoomToFit = () => {
-        const gNode = g.node();
-        if (!gNode) return;
-        
-        const bounds = (gNode as SVGGraphicsElement).getBBox();
-        if (!bounds) return;
-        
-        const dx = bounds.width;
-        const dy = bounds.height;
-        const x = bounds.x + (bounds.width / 2);
-        const y = bounds.y + (bounds.height / 2);
-        
-        const scale = 0.8 / Math.max(dx / width, dy / height);
-        const translate = [width / 2 - scale * x, height / 2 - scale * y];
-        
-        const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
-        
-        d3.select(svgRef.current)
-          .transition()
-          .duration(750)
-          .call(zoom.transform, transform);
-        
-        // Store the initial zoom transform
-        transformRef.current = transform;
-      };
-      
-      setTimeout(zoomToFit, 500);
-      
-      console.log("D3 visualization created successfully");
-      
-      // Return cleanup function
-      return () => {
-        if (simulation) simulation.stop();
-      };
-    } catch (error) {
-      console.error("Error creating D3 visualization:", error);
-      setVisualizationError(error instanceof Error ? error.message : "Unknown error creating visualization");
-      toast({
-        title: "Error",
-        description: `Failed to create the visualization: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    }
-  }, [isLoading, nodeGroup, processedData, toast, localFixNodesOnDrag, localNodeSize, localColorTheme, localLinkColor, localBackgroundColor, localBackgroundOpacity, customNodeColorsState, dynamicColorThemesState]);
-
-  // Update visualization when parameters change - IMPROVED to prevent flickering
-  useEffect(() => {
-    if (isLoading || !svgRef.current || !simulationRef.current) return;
-    
-    // Use a small timeout to debounce rapid changes (e.g. slider dragging)
-    const debounceTimeout = setTimeout(() => {
-      try {
-        console.log("Updating visualization parameters");
-        const simulation = simulationRef.current;
-        
-        // Select all the elements we need to update
-        const nodes = d3.select(svgRef.current).selectAll<SVGCircleElement, Node>(".node");
-        const labels = d3.select(svgRef.current).selectAll<SVGTextElement, Node>(".node-label");
-        const links = d3.select(svgRef.current).selectAll<SVGLineElement, Link>(".link");
-        
-        // Update link distance/strength
-        const linkForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
-        if (linkForce) {
-          linkForce.distance(linkDistance).strength(linkStrength);
-        }
-        
-        // Update charge
-        const chargeForce = simulation.force("charge") as d3.ForceManyBody<Node> | null;
-        if (chargeForce) {
-          chargeForce.strength(nodeCharge);
-        }
-        
-        // Update node sizes - directly modify the nodes without recreating
-        nodes.attr("r", d => 7 * localNodeSize);
-        
-        // Update collision radius
-        const collisionForce = simulation.force("collision") as d3.ForceCollide<Node> | null;
-        if (collisionForce) {
-          collisionForce.radius(d => (7 * localNodeSize) + 2);
-        }
-        
-        // Update text size
-        labels.style("font-size", `${8 * Math.min(1.2, localNodeSize)}px`);
-        
-        // Update node colors
-        nodes.attr("fill", d => {
-          // First check for custom node color
-          if (customNodeColorsState[d.id]) {
-            return customNodeColorsState[d.id];
-          }
-          
-          // Use the category color from current theme
-          const currentTheme = dynamicColorThemesState[localColorTheme] || dynamicColorThemesState.default;
-          return currentTheme[d.category] || currentTheme["Otro"] || "#95a5a6";
-        });
-          
-        // Update node stroke
-        nodes.attr("stroke", nodeStrokeColor)
-             .attr("stroke-width", 1);
-        
-        // Update labels color
-        labels.style("fill", textColor);
-        
-        // Update link color
-        links.attr("stroke", localLinkColor);
-        
-        // Update background color
-        if (containerRef.current) {
-          containerRef.current.style.backgroundColor = `rgba(${hexToRgb(localBackgroundColor).r}, ${hexToRgb(localBackgroundColor).g}, ${hexToRgb(localBackgroundColor).b}, ${localBackgroundOpacity})`;
-        }
-        
-        // IMPORTANT: DON'T restart simulation with high alpha - this causes flickering
-        // Instead, just apply a tick with very low alpha to nudge things
-        // without disrupting current positions
-        simulation.alpha(0.01).tick();
-        
-        // Immediately update visual positions
-        nodes
-          .attr("cx", d => d.x || 0)
-          .attr("cy", d => d.y || 0);
-        
-        labels
-          .attr("x", d => d.x || 0)
-          .attr("y", d => d.y || 0);
-        
-        links
-          .attr("x1", d => (typeof d.source === 'object' ? d.source.x : 0) || 0)
-          .attr("y1", d => (typeof d.source === 'object' ? d.source.y : 0) || 0)
-          .attr("x2", d => (typeof d.target === 'object' ? d.target.x : 0) || 0)
-          .attr("y2", d => (typeof d.target === 'object' ? d.target.y : 0) || 0);
-        
-      } catch (error) {
-        console.error("Error updating visualization:", error);
-        setVisualizationError(error instanceof Error ? error.message : "Unknown error updating visualization");
-      }
-    }, 50); // Small debounce delay
-    
-    return () => clearTimeout(debounceTimeout);
-  }, [
-    localNodeSize, 
-    linkDistance, 
-    linkStrength, 
-    nodeCharge, 
-    localColorTheme, 
-    customNodeColorsState,
-    localBackgroundColor,
-    textColor,
-    localLinkColor,
-    nodeStrokeColor,
-    localBackgroundOpacity,
-    dynamicColorThemesState,
-    isLoading
-  ]);
-
-  // Handle parameter change
+  // Handle parameter change - ONLY update state values, don't apply directly to simulation
   const handleParameterChange = (type: string, value: number) => {
     console.log(`Parameter changed: ${type} = ${value}`);
+    
+    // Just update the state values - don't touch the simulation directly
     switch (type) {
       case "nodeSize":
         setLocalNodeSize(value);
@@ -1134,7 +987,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   };
 
   // Handle apply group colors
-  const handleApplyGroupColors = (categoryColorMap: {[key: string]: string}) => {
+  const handleApplyGroupColors = (categoryColorMap: Record<string, string>) => {
     console.log("Applying group colors", categoryColorMap);
     
     // Create a copy of the dynamic color themes
@@ -1205,23 +1058,90 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setNodeStrokeColor("#000000");
   };
 
-  // Handle reset simulation
+  // Handle reset simulation - IMPROVED VERSION
   const handleResetSimulation = () => {
     console.log("Resetting simulation");
+    
+    // Reset state values to defaults
     setLinkDistance(70);
     setLinkStrength(1.0);
     setNodeCharge(-300);
     setLocalNodeSize(1.0);
     
-    toast({
-      title: "Simulation Reset",
-      description: "Parameters have been reset to default values",
-    });
+    // Update reference values
+    prevLinkDistanceRef.current = 70;
+    prevNodeChargeRef.current = -300;
+    prevLinkStrengthRef.current = 1.0;
+    
+    // Get current simulation
+    const currentSimulation = simulationRef.current;
+    
+    // Apply changes to the simulation
+    if (currentSimulation && svgRef.current) {
+      try {
+        console.log("Applying reset to simulation directly");
+        
+        // Reset all node positions and fixed states
+        const svg = d3.select(svgRef.current);
+        svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
+          .each(function(d) {
+            // Completely unfix all nodes
+            d.fx = null;
+            d.fy = null;
+            
+            // Reset velocities
+            d.vx = 0;
+            d.vy = 0;
+          });
+        
+        // Apply default force parameters
+        const linkForce = currentSimulation.force("link") as d3.ForceLink<Node, Link>;
+        if (linkForce) {
+          linkForce.distance(70).strength(1.0);
+        }
+        
+        const chargeForce = currentSimulation.force("charge") as d3.ForceManyBody<Node>;
+        if (chargeForce) {
+          chargeForce.strength(-300);
+        }
+        
+        // Update visual elements
+        svg.selectAll<SVGCircleElement, Node>(".node")
+           .attr("r", 7);
+        
+        svg.selectAll<SVGTextElement, Node>(".node-label")
+           .style("font-size", "8px");
+        
+        // CRITICAL: Restart with high alpha
+        currentSimulation.alpha(1.0).restart();
+        console.log("Simulation fully reset with alpha 1.0");
+        
+        toast({
+          title: "Simulation Reset",
+          description: "Physics parameters have been reset to default values",
+        });
+      } catch (error) {
+        console.error("Error resetting simulation:", error);
+        toast({
+          title: "Error",
+          description: `Failed to reset simulation: ${error instanceof Error ? error.message : "Unknown error"}`,
+          variant: "destructive"
+        });
+      }
+    } else {
+      console.log("Cannot reset simulation - references not available");
+      toast({
+        title: "Reset Physics",
+        description: "Parameters reset to defaults but simulation not available for update",
+      });
+    }
   };
 
   // Handle reset graph
   const handleResetGraph = () => {
     console.log("Resetting graph");
+    
+    // Reset all visual properties
     setNodeGroup('all');
     setLocalColorTheme('default');
     setCustomNodeColorsState({});
@@ -1231,578 +1151,231 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setLocalBackgroundOpacity(1.0);
     setNodeStrokeColor("#000000");
     
+    // Reset nodes positions and unfix all nodes
+    if (svgRef.current && processedData.nodes.length > 0) {
+      const svg = d3.select(svgRef.current);
+      svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
+        .each(function(d) {
+          d.fx = null;
+          d.fy = null;
+        });
+    }
+    
+    // Reset simulation physics
+    handleResetSimulation();
+    
+    // Reinitialize visualization to ensure clean state
+    setTimeout(() => {
+      reinitializeVisualization();
+    }, 100);
+    
     toast({
       title: "Graph Reset",
       description: "All graph settings have been reset to default values",
     });
   };
 
-  // Debug function for download operations
-  const debugDownload = (type: string, data: unknown) => {
-    console.log(`Debug download ${type}:`, data);
-    toast({
-      title: `Debug ${type}`,
-      description: `Attempting to download ${type}. Check console for details.`,
-    });
-  };
-
-  // Handle download data with improved error handling and fallbacks
-  const handleDownloadData = (format: string) => {
-    console.log(`Downloading data as ${format}`);
-    debugDownload('data', { format, nodeCount: processedData.nodes.length, linkCount: processedData.links.length });
-    
-    try {
-      // Prepare data in array format for export
-      const nodeData = processedData.nodes.map(node => ({
-        id: String(node.id),
-        category: String(node.category)
-      }));
-      
-      const linkData = processedData.links.map(link => ({
-        source: typeof link.source === 'object' ? link.source.id : link.source,
-        target: typeof link.target === 'object' ? link.target.id : link.target
-      }));
-      
-      // Generate filename based on title
-      const safeTitle = networkTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const filename = safeTitle || 'network_data';
-      
-      if (format === 'csv') {
-        // Create CSV content
-        let csvContent = "";
-        
-        // Add nodes CSV
-        csvContent += "# Nodes\nid,category\n";
-        nodeData.forEach(node => {
-          // Escape commas in names if necessary
-          const id = String(node.id).includes(',') ? `"${node.id}"` : node.id;
-          csvContent += `${id},${node.category}\n`;
-        });
-        
-        // Add links CSV
-        csvContent += "\n# Links\nsource,target\n";
-        linkData.forEach(link => {
-          // Escape commas in names if necessary
-          const source = typeof link.source === 'string' && link.source.includes(',') ? `"${link.source}"` : link.source;
-          const target = typeof link.target === 'string' && link.target.includes(',') ? `"${link.target}"` : link.target;
-          csvContent += `${source},${target}\n`;
-        });
-        
-        console.log("CSV Content:", csvContent.substring(0, 200) + "...");
-        
-        // Create and trigger download with a direct approach
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${filename}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        toast({
-          title: "Download Started",
-          description: "Your network data is being downloaded as CSV",
-        });
-      } else if (format === 'xlsx') {
-        try {
-          // Use XLSX in a more direct way
-          const wb = XLSX.utils.book_new();
-          
-          // Create worksheets for nodes and links
-          const wsNodes = XLSX.utils.json_to_sheet(nodeData);
-          const wsLinks = XLSX.utils.json_to_sheet(linkData);
-          
-          // Add worksheets to workbook
-          XLSX.utils.book_append_sheet(wb, wsNodes, "Nodes");
-          XLSX.utils.book_append_sheet(wb, wsLinks, "Links");
-          
-          // Generate XLSX file and trigger download
-          XLSX.writeFile(wb, `${filename}.xlsx`);
-          
-          toast({
-            title: "Download Started",
-            description: "Your network data is being downloaded as Excel file",
-          });
-        } catch (xlsxError) {
-          console.error("XLSX specific error:", xlsxError);
-          toast({
-            title: "XLSX Error",
-            description: "Error creating Excel file: " + String(xlsxError),
-            variant: "destructive"
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Error downloading data:", error);
-      toast({
-        title: "Download Error",
-        description: "An error occurred while preparing the data download: " + String(error),
-        variant: "destructive"
-      });
-    }
-  };
-
-  // Helper function to convert Data URI to Blob
-  function dataURItoBlob(dataURI: string) {
-    // convert base64/URLEncoded data component to raw binary data held in a string
-    let byteString;
-    if (dataURI.split(',')[0].indexOf('base64') >= 0)
-      byteString = atob(dataURI.split(',')[1]);
-    else
-      byteString = unescape(decodeURIComponent(dataURI.split(',')[1]));
-      
-    // separate out the mime component
-    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
-    
-    // write the bytes of the string to a typed array
-    const ia = new Uint8Array(byteString.length);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    
-    return new Blob([ia], {type: mimeString});
-  }
-
-  // Improved handleDownloadGraph function
-  const handleDownloadGraph = (format: string) => {
-    console.log(`Downloading graph as ${format}`);
-    
-    if (!svgRef.current) {
-      toast({
-        title: "Error",
-        description: "SVG reference is not available for download",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    try {
-      // Clone the SVG element
-      const svgCopy = svgRef.current.cloneNode(true) as SVGSVGElement;
-      
-      // Get the original SVG dimensions
-      const svgWidth = svgRef.current.clientWidth;
-      const svgHeight = svgRef.current.clientHeight;
-      
-      // Set explicit width and height attributes
-      svgCopy.setAttribute('width', svgWidth.toString());
-      svgCopy.setAttribute('height', svgHeight.toString());
-      
-      // Critical: Find the transform from zoom and apply it to viewBox instead
-      // This ensures the downloaded SVG displays the same view as the screen
-      const transformGroup = svgCopy.querySelector('g');
-      const transform = transformGroup?.getAttribute('transform');
-      const transformMatrix = {translate: {x: 0, y: 0}, scale: 1};
-      
-      // Parse the transform attribute if it exists
-      if (transform && transform.includes('translate')) {
-        const translateMatch = transform.match(/translate\(([^,]+),([^)]+)\)/);
-        const scaleMatch = transform.match(/scale\(([^)]+)\)/);
-        
-        if (translateMatch && translateMatch.length === 3) {
-          transformMatrix.translate.x = parseFloat(translateMatch[1]);
-          transformMatrix.translate.y = parseFloat(translateMatch[2]);
-        }
-        
-        if (scaleMatch && scaleMatch.length === 2) {
-          transformMatrix.scale = parseFloat(scaleMatch[1]);
-        }
-        
-        // Remove the transform from the group as we'll apply it to the viewBox
-        transformGroup?.removeAttribute('transform');
-      }
-      
-      // Get the bounds of the graph
-      let bbox;
-      if (transformGroup) {
-        bbox = (transformGroup as SVGGraphicsElement).getBBox();
-      } else {
-        bbox = {x: 0, y: 0, width: svgWidth, height: svgHeight};
-      }
-      
-      // Calculate and apply the viewBox incorporating the zoom transform
-      // This is crucial for showing the graph at the correct position
-      const viewBoxX = bbox.x - (transformMatrix.translate.x / transformMatrix.scale);
-      const viewBoxY = bbox.y - (transformMatrix.translate.y / transformMatrix.scale);
-      const viewBoxWidth = svgWidth / transformMatrix.scale;
-      const viewBoxHeight = svgHeight / transformMatrix.scale;
-      const viewBox = `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`;
-      
-      svgCopy.setAttribute('viewBox', viewBox);
-      
-      // Add background rectangle AFTER we've captured viewBox so it doesn't affect it
-      const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      bgRect.setAttribute('width', '100%');
-      bgRect.setAttribute('height', '100%');
-      bgRect.setAttribute('fill', localBackgroundColor);
-      bgRect.setAttribute('opacity', localBackgroundOpacity.toString());
-      
-      // Critical: Insert at beginning but AFTER the transform group
-      if (transformGroup) {
-        transformGroup.insertBefore(bgRect, transformGroup.firstChild);
-      } else {
-        svgCopy.insertBefore(bgRect, svgCopy.firstChild);
-      }
-      
-      // Ensure all nodes and links have explicit visibility and opacity
-      svgCopy.querySelectorAll('.node, .link, .node-label').forEach(el => {
-        el.setAttribute('opacity', '1');
-        el.setAttribute('visibility', 'visible');
-      });
-      
-      // Add explicit styling to ensure elements are visible
-      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-      style.textContent = `
-        .node { stroke-width: 1; }
-        .link { stroke-width: 1.5; }
-        .node-label { font-family: sans-serif; text-anchor: middle; }
-      `;
-      svgCopy.insertBefore(style, svgCopy.firstChild);
-      
-      // Convert SVG to a string
-      const serializer = new XMLSerializer();
-      const svgString = serializer.serializeToString(svgCopy);
-      
-      // Log size and check for key elements
-      console.log("SVG String length:", svgString.length);
-      console.log("Contains node elements:", svgString.includes('class="node"'));
-      console.log("Contains link elements:", svgString.includes('class="link"'));
-      
-      // Generate filename based on title
-      const safeTitle = networkTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const filename = safeTitle || 'network_visualization';
-      
-      if (format === 'svg') {
-        // Download as SVG
-        const blob = new Blob([svgString], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(blob);
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${filename}.svg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        
-        toast({
-          title: "Download Started",
-          description: "Your network visualization is being downloaded as SVG",
-        });
-      } else {
-        // For other formats, use the improved SVG for conversion
-        const svgBase64 = btoa(unescape(encodeURIComponent(svgString)));
-        const imgSrc = `data:image/svg+xml;base64,${svgBase64}`;
-        
-        // For PNG/JPG/PDF, convert to canvas
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        if (!ctx) {
-          throw new Error("Cannot get canvas context");
-        }
-        
-        // For better quality on high-DPI screens
-        const scale = 2;
-        canvas.width = svgWidth * scale;
-        canvas.height = svgHeight * scale;
-        
-        // Fill with background color
-        ctx.fillStyle = localBackgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Create an image from the SVG string
-        const img = new Image();
-        
-        img.onload = function() {
-          // Draw the image onto the canvas
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          
-          // Convert canvas to the requested format
-          let mimeType, outputFilename;
-          switch(format) {
-            case 'png':
-              mimeType = 'image/png';
-              outputFilename = `${safeTitle}.png`;
-              break;
-            case 'jpg':
-            case 'jpeg':
-              mimeType = 'image/jpeg';
-              outputFilename = `${safeTitle}.jpg`;
-              break;
-            case 'pdf':
-              try {
-                // For PDF, we need special handling
-                const imgData = canvas.toDataURL('image/png');
-                const pdf = new jsPDF({
-                  orientation: svgWidth > svgHeight ? 'landscape' : 'portrait',
-                  unit: 'px',
-                  format: [svgWidth, svgHeight]
-                });
-                
-                pdf.addImage(imgData, 'PNG', 0, 0, svgWidth, svgHeight);
-                pdf.save(`${safeTitle}.pdf`);
-                
-                toast({
-                  title: "Download Started",
-                  description: "Your network visualization is being downloaded as PDF",
-                });
-                return;
-              } catch (pdfError) {
-                console.error("PDF creation error:", pdfError);
-                toast({
-                  title: "PDF Creation Failed",
-                  description: "Error creating PDF: " + String(pdfError),
-                  variant: "destructive"
-                });
-                return;
-              }
-            default:
-              mimeType = 'image/png';
-              outputFilename = `${safeTitle}.png`;
-          }
-          
-          // Download the image
-          const dataUrl = canvas.toDataURL(mimeType);
-          const link = document.createElement('a');
-          link.href = dataUrl;
-          link.download = outputFilename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          
-          toast({
-            title: "Download Started",
-            description: `Your network visualization is being downloaded as ${format.toUpperCase()}`,
-          });
-        };
-        
-        // Add error handler
-        img.onerror = function(err) {
-          console.error("Error loading SVG as image:", err);
-          toast({
-            title: "Image Creation Failed",
-            description: "Could not convert SVG to image format. Try SVG format instead.",
-            variant: "destructive"
-          });
-        };
-        
-        // Load the SVG as an image
-        img.src = imgSrc;
-      }
-    } catch (error) {
-      console.error("Error downloading graph:", error);
-      toast({
-        title: "Download Error",
-        description: "An error occurred while preparing the download: " + String(error),
-        variant: "destructive"
-      });
-    }
-  };
-
-  // Handle reset selection
+  // Handle reset selection (refreshes the page)
   const handleResetSelection = () => {
-    window.location.reload();
+    // Instead of window.location.reload(), let's do a soft reset
+    setNodeGroup('all');
+    setSelectedNode(null);
+    resetNodeSelection();
+    reinitializeVisualization();
   };
 
-  // Modify the empty data check with better messaging
+  // Check for empty data
   if (nodeData.length === 0 || linkData.length === 0) {
-    console.log("Empty data detected in NetworkVisualization:", 
-      { nodeDataEmpty: nodeData.length === 0, linkDataEmpty: linkData.length === 0 });
-    return (
-      <div className="w-full h-[calc(100vh-14rem)] rounded-lg border border-border overflow-hidden bg-card flex items-center justify-center">
-        <div className="text-center max-w-md p-6">
-          <h2 className="text-xl font-bold mb-4">Loading Network Visualization</h2>
-          <p className="text-gray-500 mb-6">
-            Waiting for node and link data...
-          </p>
-          
-          {/* Added a loading spinner */}
-          <div className="flex justify-center items-center my-6">
-            <div className="h-10 w-10 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin" />
-          </div>
-        </div>
-      </div>
-    );
+    return <EmptyData />;
   }
 
-  return (
-    <div className="w-full h-[calc(100vh-14rem)] rounded-lg border border-border overflow-hidden bg-card flex">
-      {isLoading ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-card">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-10 w-10 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin" />
-            <p className="text-sm text-muted-foreground animate-pulse">Loading Network Data...</p>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Display visualization error if any */}
-          {visualizationError && (
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded shadow-lg z-50 max-w-md">
-              <div className="flex items-center">
-                <AlertCircle className="h-6 w-6 text-red-500 mr-2" />
-                <div>
-                  <h3 className="font-medium text-sm">Visualization Error</h3>
-                  <p className="text-xs mt-1">{visualizationError}</p>
-                </div>
-              </div>
-              <div className="mt-3 flex justify-end">
-                <button
-                  className="px-3 py-1.5 bg-red-100 text-red-700 text-xs rounded hover:bg-red-200"
-                  onClick={reinitializeVisualization}
-                >
-                  Reset Visualization
-                </button>
-              </div>
-            </div>
-          )}
+  // Create sidebar state and handlers for passing to BaseVisualization
+  const sidebarState = {
+    linkDistance,
+    linkStrength,
+    nodeCharge,
+    localNodeSize,
+    nodeGroup,
+    localColorTheme,
+    activeColorTab,
+    localBackgroundColor,
+    textColor,
+    localLinkColor,
+    nodeStrokeColor,
+    localBackgroundOpacity,
+    isSidebarCollapsed,
+    networkTitle,
+    localFixNodesOnDrag,
+    localVisualizationType
+  };
 
-          {/* Sidebar Component */}
-          <NetworkSidebar
-            linkDistance={linkDistance}
-            linkStrength={linkStrength}
-            nodeCharge={nodeCharge}
-            nodeSize={localNodeSize}
-            nodeGroup={nodeGroup}
-            colorTheme={localColorTheme}
-            activeColorTab={activeColorTab}
-            expandedSections={expandedSections}
-            selectedNode={selectedNode}
-            selectedNodeConnections={selectedNodeConnections}
-            nodeCounts={nodeCounts}
-            colorThemes={dynamicColorThemesState[localColorTheme] || {}}
-            nodes={processedData.nodes}
-            customNodeColors={customNodeColorsState}
-            backgroundColor={localBackgroundColor}
-            textColor={textColor}
-            linkColor={localLinkColor}
-            nodeStrokeColor={nodeStrokeColor}
-            backgroundOpacity={localBackgroundOpacity}
-            title={networkTitle}
-            isCollapsed={isSidebarCollapsed}
-            fixNodesOnDrag={localFixNodesOnDrag}
-            visualizationType={localVisualizationType}
-            onParameterChange={handleParameterChange}
-            onNodeGroupChange={handleNodeGroupChange}
-            onColorThemeChange={handleColorThemeChange}
-            onApplyGroupColors={handleApplyGroupColors}
-            onApplyIndividualColor={handleApplyIndividualColor}
-            onResetIndividualColor={handleResetIndividualColor}
-            onApplyBackgroundColors={handleApplyBackgroundColors}
-            onResetBackgroundColors={handleResetBackgroundColors}
-            onResetSimulation={handleResetSimulation}
-            onDownloadData={handleDownloadData}
-            onDownloadGraph={handleDownloadGraph}
-            onResetGraph={handleResetGraph}
-            onToggleSection={toggleSection}
-            onColorTabChange={handleColorTabChange}
-            onTitleChange={handleTitleChange}
-            onToggleSidebar={toggleSidebar}
-            uniqueCategories={uniqueCategories}
-            onToggleFixNodes={handleToggleFixNodes}
-            onVisualizationTypeChange={handleVisualizationTypeChange}
-          />
-          
-          {/* Visualization Content - Conditionally render the correct visualization */}
-          <div className="flex-1 relative">
-            {localVisualizationType === 'network' ? (
-              <div 
-                id="network-visualization-container"
-                ref={containerRef} 
-                className="w-full h-full relative"
-                style={{ 
-                  backgroundColor: `rgba(${hexToRgb(localBackgroundColor).r}, ${hexToRgb(localBackgroundColor).g}, ${hexToRgb(localBackgroundColor).b}, ${localBackgroundOpacity})`
-                }}
-              >
-                <svg 
-                  ref={svgRef} 
-                  className="w-full h-full"
-                />
-                
-                {/* File Buttons in top-right corner */}
-                <FileButtons 
-                  onDownloadData={handleDownloadData}
-                  onDownloadGraph={handleDownloadGraph}
-                  onResetSelection={handleResetSelection}
-                  nodeData={nodeData}
-                  linkData={linkData}
-                />
-                
-                {/* Tooltip - Better styling and positioning */}
-                <div 
-                  ref={tooltipRef} 
-                  className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
-                  style={{ 
-                    opacity: 0,
-                    transition: 'opacity 0.15s ease-in-out',
-                    boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
-                    transform: 'translate(0, 0)', // Remove any existing transform
-                    maxHeight: '300px',
-                    overflowY: 'auto',
-                  }}
-                ></div>
-                
-                {/* Legend */}
-                <div className="absolute bottom-5 right-5 bg-white/90 p-2.5 rounded-md shadow-md">
-                  {uniqueCategories.map((category, index) => (
-                    <div className="flex items-center mb-1" key={category}>
-                      <div 
-                        className="legend-color w-3.5 h-3.5 rounded-full mr-2" 
-                        style={{ 
-                          backgroundColor: (dynamicColorThemesState[localColorTheme] || {})[category] || colorPalette[index % colorPalette.length]
-                        }}
-                      ></div>
-                      <span className="text-xs">{category}</span>
-                    </div>
-                  ))}
-                </div>
-              
-                {/* Helper text - Fixed positioning to be inside container */}
-                <div className="absolute bottom-4 left-4 bg-background/90 p-2 rounded-md text-xs backdrop-blur-sm shadow-sm z-10">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-primary" />
-                    <span>Hover over nodes to see details. Drag to reposition.</span>
-                  </div>
-                </div>
-              </div>
-            ) : localVisualizationType === 'radial' ? (
-              <RadialVisualization
-                onCreditsClick={onCreditsClick}
-                nodeData={nodeData}
-                linkData={linkData}
-                visualizationType={localVisualizationType}
-                onVisualizationTypeChange={handleVisualizationTypeChange}
-                colorTheme={localColorTheme}
-                nodeSize={localNodeSize}
-                linkColor={localLinkColor}
-                backgroundColor={localBackgroundColor}
-                backgroundOpacity={localBackgroundOpacity}
-                customNodeColors={customNodeColorsState}
-                dynamicColorThemes={dynamicColorThemesState[localColorTheme] || {}}
-              />
-            ) : (
-              <ArcVisualization
-                onCreditsClick={onCreditsClick}
-                nodeData={nodeData}
-                linkData={linkData}
-                visualizationType={localVisualizationType}
-                onVisualizationTypeChange={handleVisualizationTypeChange}
-                colorTheme={localColorTheme}
-                nodeSize={localNodeSize}
-                linkColor={localLinkColor}
-                backgroundColor={localBackgroundColor}
-                backgroundOpacity={localBackgroundOpacity}
-                customNodeColors={customNodeColorsState}
-                dynamicColorThemes={dynamicColorThemesState[localColorTheme] || {}}
-              />
-            )}
+  const handlers = {
+    handleParameterChange,
+    handleNodeGroupChange,
+    handleColorThemeChange,
+    handleApplyGroupColors,
+    handleApplyIndividualColor,
+    handleResetIndividualColor,
+    handleApplyBackgroundColors,
+    handleResetBackgroundColors,
+    handleResetSimulation,
+    handleResetGraph,
+    toggleSection,
+    handleColorTabChange,
+    handleTitleChange,
+    toggleSidebar,
+    handleToggleFixNodes,
+    handleVisualizationTypeChange,
+    reinitializeVisualization,
+    downloadData,
+    downloadGraph,
+    handleZoomToFit: zoomToFit // Pass zoomToFit to handlers
+  };
+
+  // Render appropriate visualization type with shared sidebar
+  if (localVisualizationType === 'radial') {
+    return (
+      <BaseVisualization
+        children={
+          <div className="w-full h-full">
+            <RadialVisualization
+              onCreditsClick={onCreditsClick}
+              nodeData={nodeData}
+              linkData={linkData}
+              visualizationType={localVisualizationType}
+              onVisualizationTypeChange={handleVisualizationTypeChange}
+              colorTheme={localColorTheme}
+              nodeSize={localNodeSize}
+              linkColor={localLinkColor}
+              backgroundColor={localBackgroundColor}
+              backgroundOpacity={localBackgroundOpacity}
+              customNodeColors={customNodeColorsState}
+              dynamicColorThemes={dynamicColorThemesState[localColorTheme] || {}}
+            />
+          </div>
+        }
+        nodeData={nodeData}
+        linkData={linkData}
+        onCreditsClick={onCreditsClick}
+        isLoading={isLoading}
+        visualizationError={visualizationError}
+        selectedNode={selectedNode}
+        selectedNodeConnections={selectedNodeConnections}
+        expandedSections={expandedSections}
+        uniqueCategories={uniqueCategories}
+        nodeCounts={nodeCounts}
+        processedData={processedData}
+        sidebar={sidebarState}
+        handlers={handlers}
+        customNodeColorsState={customNodeColorsState}
+        dynamicColorThemesState={dynamicColorThemesState}
+      />
+    );
+  } else if (localVisualizationType === 'arc') {
+    return (
+      <BaseVisualization
+        children={
+          <div className="w-full h-full">
+            <ArcVisualization
+              onCreditsClick={onCreditsClick}
+              nodeData={nodeData}
+              linkData={linkData}
+              visualizationType={localVisualizationType}
+              onVisualizationTypeChange={handleVisualizationTypeChange}
+              colorTheme={localColorTheme}
+              nodeSize={localNodeSize}
+              linkColor={localLinkColor}
+              backgroundColor={localBackgroundColor}
+              backgroundOpacity={localBackgroundOpacity}
+              customNodeColors={customNodeColorsState}
+              dynamicColorThemes={dynamicColorThemesState[localColorTheme] || {}}
+            />
+          </div>
+        }
+        nodeData={nodeData}
+        linkData={linkData}
+        onCreditsClick={onCreditsClick}
+        isLoading={isLoading}
+        visualizationError={visualizationError}
+        selectedNode={selectedNode}
+        selectedNodeConnections={selectedNodeConnections}
+        expandedSections={expandedSections}
+        uniqueCategories={uniqueCategories}
+        nodeCounts={nodeCounts}
+        processedData={processedData}
+        sidebar={sidebarState}
+        handlers={handlers}
+        customNodeColorsState={customNodeColorsState}
+        dynamicColorThemesState={dynamicColorThemesState}
+      />
+    );
+  } 
+
+  // For network visualization type
+  return (
+    <BaseVisualization
+      children={
+        <>
+          <div 
+            ref={containerRef} 
+            className="w-full h-full relative" 
+            id="network-visualization-container" 
+            style={{
+              backgroundColor: `rgba(${hexToRgb(localBackgroundColor).r}, ${hexToRgb(localBackgroundColor).g}, ${hexToRgb(localBackgroundColor).b}, ${localBackgroundOpacity})`
+            }}
+          >
+            <svg 
+              ref={svgRef} 
+              className="w-full h-full"
+            />
+            
+            {/* File Buttons */}
+            <FileButtons 
+              onDownloadData={downloadData}
+              onDownloadGraph={downloadGraph}
+              onResetSelection={handleResetSelection}
+              nodeData={nodeData}
+              linkData={linkData}
+            />
+            
+            {/* Tooltip */}
+            <div 
+              ref={tooltipRef} 
+              className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
+              style={{ 
+                opacity: 0,
+                transition: 'opacity 0.15s ease-in-out',
+                boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+                transform: 'translate(0, 0)',
+                maxHeight: '300px',
+                overflowY: 'auto',
+              }}
+            />
+            
+            {/* Network components */}
+            <NetworkTooltip tooltipRef={tooltipRef} nodes={processedData.nodes} links={processedData.links} />
+            <NetworkLegend categories={uniqueCategories} colorTheme={localColorTheme} dynamicColorThemes={dynamicColorThemesState} colorPalette={COLOR_PALETTE} />
+            <NetworkHelper />
           </div>
         </>
-      )}
-    </div>
+      }
+      nodeData={nodeData}
+      linkData={linkData}
+      onCreditsClick={onCreditsClick}
+      isLoading={isLoading}
+      visualizationError={visualizationError}
+      selectedNode={selectedNode}
+      selectedNodeConnections={selectedNodeConnections}
+      expandedSections={expandedSections}
+      uniqueCategories={uniqueCategories}
+      nodeCounts={nodeCounts}
+      processedData={processedData}
+      sidebar={sidebarState}
+      handlers={handlers}
+      customNodeColorsState={customNodeColorsState}
+      dynamicColorThemesState={dynamicColorThemesState}
+      onZoomToFit={zoomToFit} // Pass zoomToFit directly for use in the sidebar
+    />
   );
 };
 

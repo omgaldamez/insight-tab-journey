@@ -1,0 +1,149 @@
+/* Network Visualization Styles */
+
+/* SVG Element Styles */
+svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  
+  /* Node and Link styling */
+  .node {
+    cursor: pointer;
+    transition: r 0.2s ease-in-out, opacity 0.2s ease-in-out;
+  }
+  
+  .node:hover {
+    stroke-width: 2px;
+  }
+  
+  .link {
+    pointer-events: none;
+    transition: opacity 0.2s ease-in-out;
+  }
+  
+  .node-label {
+    pointer-events: none;
+    transition: opacity 0.2s ease-in-out;
+    dominant-baseline: middle;
+    text-anchor: middle;
+  }
+  
+  /* Tooltip styling */
+  .tooltip {
+    position: absolute;
+    background-color: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    pointer-events: none;
+    max-width: 16rem;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 9999;
+    transition: opacity 0.15s ease-in-out;
+    overflow-y: auto;
+    max-height: 300px;
+  }
+  
+  /* Visualization container */
+  .visualization-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  /* Make groups within the SVG take the full size */
+  svg g {
+    width: 100%;
+    height: 100%;
+  }
+  
+  /* Fix SVG viewBox for centering */
+  svg[viewBox] {
+    transform-origin: center center;
+  }
+  
+  /* Make sure the visualization fits within its container */
+  .network-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  /* Ensure content fills available space */
+  .visualization-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  
+/* Make sure sidebar is visible in fullscreen mode */
+.fullscreen-container {
+  display: flex !important;
+  width: 100% !important;
+  height: 100vh !important;
+  overflow: hidden;
+}
+
+/* Ensure zoom controls are always visible */
+.zoom-controls {
+  position: absolute;
+  bottom: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+  display: flex;
+  z-index: 100;
+}
+
+.zoom-controls button {
+  color: white;
+  background-color: transparent;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  margin: 0 0.125rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.zoom-controls button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Fix for the sidebar in fullscreen mode */
+.sidebar-container {
+  height: 100%;
+  min-width: 20rem;
+  flex-shrink: 0;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+/* Make sure the main content area expands properly */
+.visualization-content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Ensure SVG fills the container */
+svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Make sure elements in the SVG are visible */
+.node, .link, .node-label {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
