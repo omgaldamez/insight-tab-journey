@@ -33,6 +33,7 @@ import {
 } from './NetworkComponents';
 import useZoomPan from '@/hooks/useZoomPan';
 import useFileExport from '@/hooks/useFileExport';
+import ZoomControls from './ZoomControls';
 
 // Import VisualizationType explicitly 
 import { VisualizationType } from './NetworkSidebar';
@@ -133,14 +134,37 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     if (onSvgRef && svgRef.current) {
       onSvgRef(svgRef.current);
     }
-  }, [onSvgRef, svgRef.current]);
+  }, [onSvgRef]);
 
-  const { zoomToFit, getTransform } = useZoomPan({
+  // Enhanced zoom and pan functionality
+  const { 
+    zoomToFit, 
+    zoomIn, 
+    zoomOut, 
+    resetZoom, 
+    getTransform,
+    isZoomInitialized,
+    reinitializeZoom
+  } = useZoomPan({
     svgRef, 
     contentRef,
     containerRef,
-    isReady: !isLoading && processedData.nodes.length > 0
+    isReady: !isLoading && processedData.nodes.length > 0,
+    nodesDraggable: true  // Allow dragging nodes
   });
+
+  // Force reinitialize zoom after visualization is ready
+  useEffect(() => {
+    if (!isLoading && svgRef.current && contentRef.current) {
+      // Short delay to ensure D3 visualization is fully rendered
+      const timer = setTimeout(() => {
+        console.log("Force reinitializing zoom after visualization is ready");
+        reinitializeZoom();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, reinitializeZoom]);
 
   const { downloadData, downloadGraph } = useFileExport({
     svgRef,
@@ -244,7 +268,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           title: "Network Data Loaded",
           description: "Interactive visualization is now ready",
         });
-      }, 1000);
+      }, 500);
     } catch (error) {
       console.error("Error processing data:", error);
       toast({
@@ -255,10 +279,13 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   }, [nodeData, linkData, toast]);
 
-  // Create drag behavior
+  // Create drag behavior with enhanced handling to prevent zoom/pan conflicts
   const createDragBehavior = useCallback((simulation: d3.Simulation<Node, Link>) => {
     return d3.drag<SVGCircleElement, SimulatedNode>()
       .on("start", function(event, d) {
+        // Prevent event from propagating to avoid conflicts with zoom
+        event.sourceEvent.stopPropagation();
+        
         if (!event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
@@ -267,6 +294,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         d3.select(this).raise();
       })
       .on("drag", function(event, d) {
+        // Prevent event from propagating
+        event.sourceEvent.stopPropagation();
+        
         d.fx = event.x;
         d.fy = event.y;
         
@@ -304,6 +334,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           .attr("y", d.fy);
       })
       .on("end", function(event, d) {
+        // Prevent event from propagating
+        event.sourceEvent.stopPropagation();
+        
         if (!event.active) simulation.alphaTarget(0);
         
         // If fixNodesOnDrag is false, release the node back to the simulation
@@ -352,6 +385,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     try {
       // Clear any existing elements
       d3.select(svgRef.current).selectAll("*").remove();
+      
+      // Set explicit pointer-events to all to ensure zoom works
+      d3.select(svgRef.current).style("pointer-events", "all");
       
       // Create a new root SVG group
       const g = d3.select(svgRef.current)
@@ -532,6 +568,11 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       }
       
       console.log("D3 visualization created successfully");
+      
+      // Force reinitialize zoom after a short delay
+      setTimeout(() => {
+        reinitializeZoom();
+      }, 200);
 
       // Return cleanup function
       return () => {
@@ -548,6 +589,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         variant: "destructive"
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isLoading, 
     nodeGroup, 
@@ -565,119 +607,90 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     localLinkColor, 
     nodeStrokeColor, 
     localBackgroundColor, 
-    localBackgroundOpacity
+    localBackgroundOpacity,
+    toast,
+    reinitializeZoom
   ]);
 
-  // Update visualization when parameters change - with gentle approach to prevent flickering
-  useEffect(() => {
-    if (isLoading || !svgRef.current || !simulationRef.current) return;
+  // IMPROVED: Update simulation parameters immediately for smoother slider interactions
+  const handleSliderChange = useCallback((type: string, value: number) => {
+    console.log(`Slider changed: ${type} = ${value}`);
     
-    // Clear any existing timeout to prevent rapid updates
-    if (window.paramUpdateTimeout) {
-      clearTimeout(window.paramUpdateTimeout);
+    // Update state
+    switch (type) {
+      case "nodeSize":
+        setLocalNodeSize(value);
+        break;
+      case "linkDistance":
+        setLinkDistance(value);
+        break;
+      case "linkStrength":
+        setLinkStrength(value);
+        break;
+      case "nodeCharge":
+        setNodeCharge(value);
+        break;
+      default:
+        break;
     }
     
-    // Use a debounce timeout to handle rapid parameter changes (e.g. slider dragging)
-    window.paramUpdateTimeout = window.setTimeout(() => {
-      try {
-        console.log("Updating visualization parameters with gentle approach");
-        const simulation = simulationRef.current;
-        
-        // Select all the elements we need to update
-        const svg = d3.select(svgRef.current);
-        const nodes = svg.selectAll<SVGCircleElement, Node>(".node");
-        const labels = svg.selectAll<SVGTextElement, Node>(".node-label");
-        const links = svg.selectAll<SVGLineElement, Link>(".link");
-        
-        // Update link distance/strength
-        const linkForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
-        if (linkForce) {
-          linkForce.distance(linkDistance).strength(linkStrength);
-        }
-        
-        // Update charge
-        const chargeForce = simulation.force("charge") as d3.ForceManyBody<Node> | null;
-        if (chargeForce) {
-          chargeForce.strength(nodeCharge);
-        }
-        
-        // Update node sizes
-        nodes.attr("r", d => 7 * localNodeSize);
-        
-        // Update collision radius
-        const collisionForce = simulation.force("collision") as d3.ForceCollide<Node> | null;
-        if (collisionForce) {
-          collisionForce.radius(d => (7 * localNodeSize) + 2);
-        }
-        
-        // Update text size
-        labels.style("font-size", `${8 * Math.min(1.2, localNodeSize)}px`);
-        
-        // Update node colors
-        nodes.attr("fill", d => getNodeColor(d, customNodeColorsState, localColorTheme, dynamicColorThemesState));
+    // Apply changes directly to simulation if available
+    if (simulationRef.current && svgRef.current) {
+      const simulation = simulationRef.current;
+      const svg = d3.select(svgRef.current);
+      
+      switch (type) {
+        case "nodeSize": {
+          // Update node size
+          svg.selectAll<SVGCircleElement, Node>(".node")
+            .attr("r", d => 7 * value);
           
-        // Update node stroke
-        nodes.attr("stroke", nodeStrokeColor)
-             .attr("stroke-width", 1);
-        
-        // Update labels color
-        labels.style("fill", textColor);
-        
-        // Update link color
-        links.attr("stroke", localLinkColor);
-        
-        // Update background color
-        if (containerRef.current) {
-          const bgColor = hexToRgb(localBackgroundColor);
-          containerRef.current.style.backgroundColor = `rgba(${bgColor.r}, ${bgColor.g}, ${bgColor.b}, ${localBackgroundOpacity})`;
+          // Update font size
+          svg.selectAll<SVGTextElement, Node>(".node-label")
+            .style("font-size", `${8 * Math.min(1.2, value)}px`);
+          
+          // Update collision radius
+          const collisionForce = simulation.force("collision") as d3.ForceCollide<Node> | null;
+          if (collisionForce) {
+            collisionForce.radius(d => (7 * value) + 2);
+          }
+          break;
         }
-        
-        // IMPORTANT: Determine if this is a significant change that needs higher alpha
-        const isSignificantChange = 
-          Math.abs(linkDistance - prevLinkDistanceRef.current) > 5 ||
-          Math.abs(nodeCharge - prevNodeChargeRef.current) > 50 ||
-          Math.abs(linkStrength - prevLinkStrengthRef.current) > 0.2;
-        
-        // Choose alpha based on significance of change
-        const alphaValue = isSignificantChange ? 0.3 : 0.01;
-        
-        // Store current values for next comparison
-        prevLinkDistanceRef.current = linkDistance;
-        prevNodeChargeRef.current = nodeCharge;
-        prevLinkStrengthRef.current = linkStrength;
-        
-        // Apply gentle alpha and restart simulation
-        simulation.alpha(alphaValue).restart();
-        
-        // CRITICAL: Don't call zoomToFit() here - we want to preserve the current zoom level
-        console.log(`Applied physics update with alpha: ${alphaValue}`);
-        
-      } catch (error) {
-        console.error("Error updating visualization:", error);
-        setVisualizationError(error instanceof Error ? error.message : "Unknown error updating visualization");
+          
+        case "linkDistance": {
+          const linkForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
+          if (linkForce) {
+            linkForce.distance(value);
+          }
+          break;
+        }
+          
+        case "linkStrength": {
+          const linkStrForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
+          if (linkStrForce) {
+            linkStrForce.strength(value);
+          }
+          break;
+        }
+          
+        case "nodeCharge": {
+          const chargeForce = simulation.force("charge") as d3.ForceManyBody<Node> | null;
+          if (chargeForce) {
+            chargeForce.strength(value);
+          }
+          break;
+        }
       }
-    }, 150); // Increased debounce delay to prevent too many updates while dragging sliders
-    
-    return () => {
-      if (window.paramUpdateTimeout) {
-        clearTimeout(window.paramUpdateTimeout);
-      }
-    };
-  }, [
-    localNodeSize, 
-    linkDistance, 
-    linkStrength, 
-    nodeCharge, 
-    localColorTheme, 
-    customNodeColorsState,
-    localBackgroundColor,
-    textColor,
-    localLinkColor,
-    nodeStrokeColor,
-    localBackgroundOpacity,
-    dynamicColorThemesState,
-    isLoading
-  ]);
+      
+      // Store current values for future comparison
+      if (type === "linkDistance") prevLinkDistanceRef.current = value;
+      if (type === "nodeCharge") prevNodeChargeRef.current = value;
+      if (type === "linkStrength") prevLinkStrengthRef.current = value;
+      
+      // Apply a small alpha to update the simulation smoothly
+      simulation.alpha(0.08).restart();
+    }
+  }, [svgRef, simulationRef]);
 
   // Add a new useEffect hook for handling resize events without auto zoom
   useEffect(() => {
@@ -707,6 +720,11 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           centerForce.x(width / 2).y(height / 2);
         }
         
+        // Reinitialize zoom after resize
+        setTimeout(() => {
+          reinitializeZoom();
+        }, 200);
+        
         // IMPORTANT: Don't automatically zoom to fit on resize
         // Only restart the simulation with low alpha
         simulationRef.current.alpha(0.1).restart();
@@ -724,7 +742,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         window.clearTimeout(window.resizeTimeoutId);
       }
     };
-  }, [isLoading]);
+  }, [isLoading, reinitializeZoom]);
 
   // Handle node click
   const handleNodeClick = useCallback((d: Node) => {
@@ -943,27 +961,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   };
 
-  // Handle parameter change - ONLY update state values, don't apply directly to simulation
+  // Handle parameter change - Use the enhanced slider change handler
   const handleParameterChange = (type: string, value: number) => {
-    console.log(`Parameter changed: ${type} = ${value}`);
-    
-    // Just update the state values - don't touch the simulation directly
-    switch (type) {
-      case "nodeSize":
-        setLocalNodeSize(value);
-        break;
-      case "linkDistance":
-        setLinkDistance(value);
-        break;
-      case "linkStrength":
-        setLinkStrength(value);
-        break;
-      case "nodeCharge":
-        setNodeCharge(value);
-        break;
-      default:
-        break;
-    }
+    // Use the improved slider handler for immediate feedback
+    handleSliderChange(type, value);
   };
 
   // Handle node group change
@@ -1058,7 +1059,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setNodeStrokeColor("#000000");
   };
 
-  // Handle reset simulation - IMPROVED VERSION
+  // Handle reset simulation
   const handleResetSimulation = () => {
     console.log("Resetting simulation");
     
@@ -1229,7 +1230,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     reinitializeVisualization,
     downloadData,
     downloadGraph,
-    handleZoomToFit: zoomToFit // Pass zoomToFit to handlers
+    handleZoomToFit: zoomToFit, // Pass zoomToFit to handlers
+    handleZoomIn: zoomIn,       // Pass zoomIn to handlers
+    handleZoomOut: zoomOut,     // Pass zoomOut to handlers 
+    handleResetZoom: resetZoom  // Pass resetZoom to handlers
   };
 
   // Render appropriate visualization type with shared sidebar
@@ -1321,12 +1325,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
             className="w-full h-full relative" 
             id="network-visualization-container" 
             style={{
-              backgroundColor: `rgba(${hexToRgb(localBackgroundColor).r}, ${hexToRgb(localBackgroundColor).g}, ${hexToRgb(localBackgroundColor).b}, ${localBackgroundOpacity})`
+              backgroundColor: `rgba(${hexToRgb(localBackgroundColor).r}, ${hexToRgb(localBackgroundColor).g}, ${hexToRgb(localBackgroundColor).b}, ${localBackgroundOpacity})`,
+              touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
             }}
           >
             <svg 
               ref={svgRef} 
               className="w-full h-full"
+              style={{ pointerEvents: "all" }} // Explicit pointer events to fix zoom
             />
             
             {/* File Buttons */}
@@ -1336,6 +1342,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
               onResetSelection={handleResetSelection}
               nodeData={nodeData}
               linkData={linkData}
+            />
+            
+            {/* Zoom Controls */}
+            <ZoomControls
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onReset={zoomToFit}
+              isZoomInitialized={isZoomInitialized}
             />
             
             {/* Tooltip */}
