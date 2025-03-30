@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import * as d3 from 'd3';
 import { NodeData, LinkData } from "@/types/types";
 import { AlertCircle } from "lucide-react";
-import FileButtons from "./FileButtons";
+import VisualizationControls from "./VisualizationControls";
 import { VisualizationType } from "./NetworkSidebar";
 import useNetworkColors from "@/hooks/useNetworkColors";
 
@@ -20,7 +20,11 @@ interface RadialVisualizationProps {
   backgroundColor?: string;
   backgroundOpacity?: number;
   customNodeColors?: {[key: string]: string};
-  dynamicColorThemes?: {[key: string]: string};
+  dynamicColorThemes?: Record<string, Record<string, string>>;
+  // Additional props for UI controls
+  onDownloadData?: (format: string) => void;
+  onDownloadGraph?: (format: string) => void;
+  onResetSelection?: () => void;
 }
 
 interface Node extends d3.SimulationNodeDatum {
@@ -47,6 +51,25 @@ interface ProcessedRadialLink {
   target: Node;
 }
 
+// Default color palette for consistency
+const DEFAULT_COLOR_PALETTE = [
+  "#e74c3c", // Red
+  "#3498db", // Blue
+  "#2ecc71", // Green
+  "#f39c12", // Orange
+  "#9b59b6", // Purple
+  "#1abc9c", // Teal
+  "#34495e", // Dark Blue
+  "#e67e22", // Dark Orange
+  "#27ae60", // Dark Green
+  "#8e44ad", // Dark Purple
+  "#16a085", // Dark Teal
+  "#d35400", // Rust
+  "#2980b9", // Royal Blue
+  "#c0392b", // Dark Red
+  "#f1c40f"  // Yellow
+];
+
 const RadialVisualization: React.FC<RadialVisualizationProps> = ({
   onCreditsClick = () => {},
   nodeData = [],
@@ -59,7 +82,10 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
   backgroundColor = '#f5f5f5',
   backgroundOpacity = 1.0,
   customNodeColors = {},
-  dynamicColorThemes = {}
+  dynamicColorThemes = {},
+  onDownloadData,
+  onDownloadGraph,
+  onResetSelection
 }) => {
   const { toast } = useToast();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -69,8 +95,13 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
   const [visualizationError, setVisualizationError] = useState<string | null>(null);
   const [uniqueCategories, setUniqueCategories] = useState<string[]>([]);
   const [processedData, setProcessedData] = useState<{ nodes: Node[], links: Link[] }>({ nodes: [], links: [] });
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const visualizationInitialized = useRef(false);
+  const zoomRef = useRef<d3.ZoomBehavior<Element, unknown> | null>(null);
+  const renderAttemptRef = useRef(0);
+  const [renderKey, setRenderKey] = useState(0);
   
-  // Use the colors hook
+  // Use the network colors hook with improved initialization
   const colors = useNetworkColors({
     initialColorTheme: colorTheme,
     initialNodeSize: nodeSize,
@@ -80,20 +111,73 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
     initialNodeStrokeColor: "#ffffff",
     initialBackgroundOpacity: backgroundOpacity,
     initialCustomNodeColors: customNodeColors,
-    initialDynamicColorThemes: { [colorTheme]: dynamicColorThemes }
+    initialDynamicColorThemes: dynamicColorThemes
   });
 
-  // Process the imported data
+  // Simple hexToRgb utility
+  const hexToRgb = useCallback((hex: string): {r: number, g: number, b: number} => {
+    // Default fallback color
+    const fallback = {r: 245, g: 245, b: 245};
+    
+    // Regular expression to extract RGB components
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result) return fallback;
+    
+    return {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    };
+  }, []);
+
+  // Force a render after a small delay - this helps with container sizing
   useEffect(() => {
-    if (nodeData.length === 0 || linkData.length === 0) {
-      console.log("Data not yet available in processing effect");
+    const timer = setTimeout(() => {
+      setRenderKey(prev => prev + 1);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Schedule additional render attempts if visualization isn't initialized
+  useEffect(() => {
+    if (visualizationInitialized.current) return;
+    
+    const attemptRender = () => {
+      if (visualizationInitialized.current) return;
+      
+      renderAttemptRef.current += 1;
+      console.log(`Radial visualization render attempt ${renderAttemptRef.current}`);
+      
+      // Force a re-render
+      setRenderKey(prev => prev + 1);
+      
+      // Schedule another attempt if we haven't succeeded and haven't tried too many times
+      if (!visualizationInitialized.current && renderAttemptRef.current < 5) {
+        setTimeout(attemptRender, 300 * renderAttemptRef.current); // Increase delay with each attempt
+      }
+    };
+    
+    // Start the first scheduled attempt
+    const timer = setTimeout(attemptRender, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Process the imported data only once
+  useEffect(() => {
+    // Skip if we've already processed the data
+    if (dataLoaded && processedData.nodes.length > 0) {
+      console.log("Radial data already processed, skipping");
       return;
     }
 
-    console.log("Processing data in RadialVisualization:", 
-      { nodeCount: nodeData.length, linkCount: linkData.length });
+    if (nodeData.length === 0 || linkData.length === 0) {
+      console.log("Data not yet available for Radial visualization");
+      return;
+    }
 
     try {
+      console.log("Processing data for Radial visualization");
+      
       // Process nodes
       const processedNodes: Node[] = nodeData.map(node => ({
         id: node.id,
@@ -111,8 +195,11 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       const uniqueCats = Array.from(new Set(categories));
       setUniqueCategories(uniqueCats);
       
-      // Generate color themes - ONLY if not already generated
-      if (uniqueCats.length > 0 && Object.keys(colors.dynamicColorThemes).length <= 1) {
+      // Generate color themes if needed
+      if (uniqueCats.length > 0 && 
+          (!colors.dynamicColorThemes.default || 
+           Object.keys(colors.dynamicColorThemes.default).length === 0)) {
+        console.log("Generating color themes for radial visualization");
         colors.generateDynamicColorThemes(uniqueCats);
       }
 
@@ -134,74 +221,74 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
 
       setProcessedData({ nodes: processedNodes, links: processedLinks });
       
+      // Mark data as loaded to prevent reprocessing
+      setDataLoaded(true);
+      
       // Set loading to false after a short delay to show the visualization
       setTimeout(() => {
         setIsLoading(false);
-        toast({
-          title: "Radial Graph Data Loaded",
-          description: "Interactive visualization is now ready",
-        });
-      }, 500);
+      }, 100);
     } catch (error) {
-      console.error("Error processing data:", error);
+      console.error("Error processing radial data:", error);
+      setVisualizationError(`Data processing error: ${error instanceof Error ? error.message : String(error)}`);
+      setIsLoading(false);
+      
       toast({
         title: "Data Processing Error",
         description: "Failed to process the uploaded data files",
         variant: "destructive"
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeData, linkData, toast]);
+  }, [nodeData, linkData, toast, colors]);
 
   // Create D3 visualization
   useEffect(() => {
     if (isLoading || !svgRef.current || !containerRef.current || processedData.nodes.length === 0) {
-      console.log("Not ready to create Radial visualization yet");
       return;
     }
-  
+    
     console.log("Creating D3 Radial visualization");
   
     try {
       // Clear any existing elements
       d3.select(svgRef.current).selectAll("*").remove();
       
-      const margin = { top: 40, right: 40, bottom: 40, left: 40 };
-      const width = containerRef.current.clientWidth - margin.left - margin.right;
-      const height = containerRef.current.clientHeight - margin.top - margin.bottom;
-      const radius = Math.min(width, height) / 2.5; // Slightly smaller radius to accommodate legend
+      // Get container dimensions - using default values as fallback
+      const containerWidth = containerRef.current.clientWidth || 800;
+      const containerHeight = containerRef.current.clientHeight || 600;
       
-      console.log(`Container dimensions: ${width}x${height}, radius: ${radius}`);
+      console.log(`Radial visualization container size: ${containerWidth}x${containerHeight}`);
       
-      // Create SVG
+      // Set explicit SVG dimensions to match container
       const svg = d3.select(svgRef.current)
-        .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
-        .append("g")
-        .attr("transform", `translate(${margin.left + width/2}, ${margin.top + height/2})`);
+        .attr("width", containerWidth)
+        .attr("height", containerHeight)
+        .attr("viewBox", `0 0 ${containerWidth} ${containerHeight}`)
+        .attr("preserveAspectRatio", "xMidYMid meet");
       
-      // Set background
-      svg.append("rect")
-        .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
-        .attr("x", -(width/2 + margin.left))
-        .attr("y", -(height/2 + margin.top))
+      // Create a main container group for the visualization
+      const g = svg.append("g")
+        .attr("transform", `translate(${containerWidth/2}, ${containerHeight/2})`)
+        .attr("class", "main-container");
+      
+      // Add a background for the visualization area
+      g.append("rect")
+        .attr("width", containerWidth)
+        .attr("height", containerHeight)
+        .attr("x", -containerWidth/2)
+        .attr("y", -containerHeight/2)
         .attr("fill", colors.backgroundColor)
         .attr("opacity", colors.backgroundOpacity);
       
-      // Color scale for categories
-      const color = d3.scaleOrdinal(d3.schemeCategory10)
-        .domain(uniqueCategories);
-        
       // Add a legend
       const legendData = uniqueCategories.map(category => ({
         category,
-        color: colors.dynamicColorThemes[colors.colorTheme]?.[category] || color(category) as string
+        color: colors.getNodeColor({ id: "", category: category }) // Use the proper color getter
       }));
 
-      const legend = svg.append("g")
+      const legend = g.append("g")
         .attr("class", "legend")
-        .attr("transform", `translate(${width/2 - 100}, ${-height/2 + 30})`);
+        .attr("transform", `translate(${containerWidth/2 - 150}, ${-containerHeight/2 + 30})`);
       
       const legendTitle = legend.append("text")
         .attr("x", 0)
@@ -246,8 +333,6 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       const rootId = rootCandidates.length > 0 
         ? rootCandidates[0] 
         : processedData.nodes[0].id;
-      
-      console.log("Root node for radial layout:", rootId);
       
       // Create node map for fast lookups
       const nodeById = new Map(processedData.nodes.map(node => [node.id, node]));
@@ -306,11 +391,14 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       // Group nodes by depth
       const nodesByDepth = d3.group(processedData.nodes, d => d.depth);
       
+      // Calculate a good radius based on container size
+      const maxRadius = Math.min(containerWidth, containerHeight) * 0.4;
+      
       // Place nodes in concentric circles
       nodesByDepth.forEach((nodes, depth) => {
         // For each depth level, distribute nodes evenly in a circle
         const levelCount = nodes.length;
-        const levelRadius = radius * (Number(depth) + 1) / (maxDepth + 1.5); // Scaled radius
+        const levelRadius = maxRadius * (Number(depth) + 1) / (maxDepth + 1.5); // Scaled radius
         
         // First, sort nodes by category for more organized arrangement
         const sortedNodes = [...nodes].sort((a, b) => a.category.localeCompare(b.category));
@@ -339,7 +427,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       });
       
       // Create links
-      const link = svg.append("g")
+      const link = g.append("g")
         .attr("class", "links")
         .selectAll("path")
         .data(filteredLinks)
@@ -408,11 +496,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
           
           if (source) {
             // Get color for the link based on source node's category
-            const sourceCategory = source.category;
-            const themeColors = colors.dynamicColorThemes[colors.colorTheme] || {};
-            if (themeColors[sourceCategory]) {
-              return themeColors[sourceCategory];
-            }
+            return colors.getNodeColor(source);
           }
           
           // Fall back to the default link color
@@ -421,8 +505,8 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         .attr("stroke-width", 1.5 * colors.nodeSize)
         .attr("stroke-opacity", 0.6);
       
-      // Create nodes
-      const node = svg.append("g")
+      // Create nodes with proper color assignment
+      const node = g.append("g")
         .attr("class", "nodes")
         .selectAll("circle")
         .data(processedData.nodes)
@@ -432,12 +516,30 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         .attr("r", (d: Node) => (d.depth === 0 ? 8 : 5) * colors.nodeSize)
         .attr("cx", d => d.x || 0)
         .attr("cy", d => d.y || 0)
-        .attr("fill", d => colors.getNodeColor(d))
+        .attr("fill", d => {
+          // Try custom node color
+          if (customNodeColors && customNodeColors[(d as Node).id]) {
+            return customNodeColors[(d as Node).id];
+          }
+          
+          // Try theme color from the current theme
+          const currentTheme = colors.dynamicColorThemes[colors.colorTheme] || {};
+          if (currentTheme[d.category]) {
+            return currentTheme[d.category];
+          }
+          
+          // Direct category lookup as fallback
+          const categoryIndex = Math.abs(
+            d.category.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+          ) % DEFAULT_COLOR_PALETTE.length;
+          
+          return DEFAULT_COLOR_PALETTE[categoryIndex];
+        })
         .attr("stroke", "#fff")
         .attr("stroke-width", 1.5);
       
-      // Add labels (improved positioning)
-      const nodeLabel = svg.append("g")
+      // Add labels - with improved positioning logic
+      const nodeLabel = g.append("g")
         .attr("class", "labels")
         .selectAll("text")
         .data(processedData.nodes)
@@ -470,7 +572,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         .style("text-shadow", "0 1px 2px rgba(255,255,255,0.7)")
         .style("pointer-events", "none");
       
-      // Add tooltips and highlighting
+      // Add tooltips - improved positioning
       node.on("mouseover", function(event, d) {
         if (!tooltipRef.current) return;
         
@@ -558,7 +660,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
           });
         }
         
-        // Show tooltip
+        // Show tooltip - position relative to container
         const tooltip = d3.select(tooltipRef.current);
         tooltip
           .style("visibility", "visible")
@@ -568,6 +670,8 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         const containerRect = containerRef.current?.getBoundingClientRect();
         if (!containerRect) return;
         
+        // Position tooltip relative to the event, not the node
+        // This ensures proper positioning even with zoomed/transformed SVG
         const x = event.clientX - containerRect.left + 10;
         const y = event.clientY - containerRect.top + 10;
         
@@ -582,22 +686,20 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         const tooltipWidth = tooltipRef.current.offsetWidth || 200;
         const tooltipHeight = tooltipRef.current.offsetHeight || 100;
         
-        // Small offset from cursor
-        const offsetX = 15;
-        const offsetY = 10;
+        const containerRect = containerRef.current.getBoundingClientRect();
         
-        // Adjust position if tooltip would go off the right or bottom edge
-        let xPos = event.clientX - containerRef.current.getBoundingClientRect().left + offsetX;
-        let yPos = event.clientY - containerRef.current.getBoundingClientRect().top + offsetY;
+        // Calculate position relative to the container
+        let xPos = event.clientX - containerRect.left + 15;
+        let yPos = event.clientY - containerRect.top + 10;
         
         // Check if tooltip would go off right edge
-        if (xPos + tooltipWidth > containerRef.current.clientWidth) {
-          xPos = event.clientX - containerRef.current.getBoundingClientRect().left - tooltipWidth - offsetX;
+        if (xPos + tooltipWidth > containerRect.width) {
+          xPos = event.clientX - containerRect.left - tooltipWidth - 15;
         }
         
         // Check if tooltip would go off bottom edge
-        if (yPos + tooltipHeight > containerRef.current.clientHeight) {
-          yPos = event.clientY - containerRef.current.getBoundingClientRect().top - tooltipHeight - offsetY;
+        if (yPos + tooltipHeight > containerRect.height) {
+          yPos = event.clientY - containerRect.top - tooltipHeight - 10;
         }
         
         // Follow the mouse with intelligent positioning
@@ -630,10 +732,12 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       const zoom = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 3])
         .on("zoom", (event) => {
-          svg.attr("transform", `translate(${margin.left + width/2 + event.transform.x}, ${margin.top + height/2 + event.transform.y}) scale(${event.transform.k})`);
+          g.attr("transform", `translate(${containerWidth/2 + event.transform.x}, ${containerHeight/2 + event.transform.y}) scale(${event.transform.k})`);
         });
 
+      // Apply zoom to the SVG
       d3.select(svgRef.current).call(zoom);
+      zoomRef.current = zoom;
       
       // Reset zoom on double-click
       d3.select(svgRef.current).on("dblclick.zoom", null);
@@ -644,37 +748,91 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
           .call(zoom.transform, d3.zoomIdentity);
       });
 
-      // Adjust radial visualization to fit within the SVG properly
-      const svgWidth = svgRef.current.clientWidth;
-      const svgHeight = svgRef.current.clientHeight;
-      
-      // Set a fixed transform to center the visualization
-      const centerX = svgWidth / 2;
-      const centerY = svgHeight / 2;
-      
-      svg.attr("transform", `translate(${centerX}, ${centerY})`);
+      // Mark visualization as initialized
+      visualizationInitialized.current = true;
+      console.log("Radial visualization created successfully!");
       
     } catch (error) {
       console.error("Error creating D3 radial visualization:", error);
       setVisualizationError(error instanceof Error ? error.message : "Unknown error creating visualization");
+      setIsLoading(false);
+      
       toast({
         title: "Error",
         description: `Failed to create the radial visualization: ${error instanceof Error ? error.message : String(error)}`,
         variant: "destructive"
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isLoading, 
     processedData, 
     uniqueCategories, 
-    toast
-    // Accessing colors directly in the render function,
-    // not including in dependencies to prevent re-renders
+    toast, 
+    colors, 
+    customNodeColors,
+    colorTheme,
+    nodeSize,
+    backgroundColor,
+    backgroundOpacity,
+    renderKey // Include renderKey to trigger re-renders
   ]);
 
+  // Cleanup function when component unmounts
+  useEffect(() => {
+    return () => {
+      if (svgRef.current) {
+        d3.select(svgRef.current).selectAll("*").remove();
+      }
+      visualizationInitialized.current = false;
+    };
+  }, []);
 
-  
+  // Implement zoom control handlers
+  const handleZoomIn = () => {
+    if (!svgRef.current || !zoomRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    const zoom = zoomRef.current;
+    const currentZoom = d3.zoomTransform(svg.node() as Element);
+    
+    svg.transition()
+      .duration(300)
+      .call(
+        zoom.transform,
+        d3.zoomIdentity
+          .translate(currentZoom.x, currentZoom.y)
+          .scale(currentZoom.k * 1.3)
+      );
+  };
+
+  const handleZoomOut = () => {
+    if (!svgRef.current || !zoomRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    const zoom = zoomRef.current;
+    const currentZoom = d3.zoomTransform(svg.node() as Element);
+    
+    svg.transition()
+      .duration(300)
+      .call(
+        zoom.transform,
+        d3.zoomIdentity
+          .translate(currentZoom.x, currentZoom.y)
+          .scale(currentZoom.k / 1.3)
+      );
+  };
+
+  const handleResetZoom = () => {
+    if (!svgRef.current || !zoomRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    const zoom = zoomRef.current;
+    
+    svg.transition()
+      .duration(500)
+      .call(zoom.transform, d3.zoomIdentity);
+  };
+
   if (isLoading) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -686,11 +844,10 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
     );
   }
 
-  // Return just the visualization content (will be wrapped by BaseVisualization)
   return (
     <div 
       ref={containerRef} 
-      className="w-full h-full"
+      className="w-full h-full relative"
       style={{ 
         backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`
       }}
@@ -698,17 +855,20 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       <svg 
         ref={svgRef} 
         className="w-full h-full"
-        viewBox={`0 0 ${containerRef.current?.clientWidth || 800} ${containerRef.current?.clientHeight || 600}`}
-        preserveAspectRatio="xMidYMid meet"
       />
       
-      {/* File Buttons */}
-      <FileButtons 
-        onDownloadData={() => {}}
-        onDownloadGraph={() => {}}
-        onResetSelection={() => {}}
+      {/* Shared UI Controls */}
+      <VisualizationControls
+        containerRef={containerRef}
         nodeData={nodeData}
         linkData={linkData}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetZoom={handleResetZoom}
+        onDownloadData={onDownloadData}
+        onDownloadGraph={onDownloadGraph}
+        onResetSelection={onResetSelection}
+        isZoomInitialized={true}
       />
       
       {/* Tooltip */}
@@ -735,6 +895,16 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
               <h3 className="font-medium text-sm">Visualization Error</h3>
               <p className="text-xs mt-1">{visualizationError}</p>
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Only show loading indicator if visualizationInitialized is false */}
+      {!visualizationInitialized.current && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-10 w-10 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin" />
+            <p className="text-sm text-muted-foreground">Preparing visualization...</p>
           </div>
         </div>
       )}

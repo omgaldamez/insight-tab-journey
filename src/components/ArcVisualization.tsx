@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import * as d3 from 'd3';
 import { NodeData, LinkData } from "@/types/types";
 import { AlertCircle } from "lucide-react";
 import { VisualizationType } from "./NetworkSidebar";
-import FileButtons from "./FileButtons";
+import VisualizationControls from "./VisualizationControls";
 import useNetworkColors from "@/hooks/useNetworkColors";
 
 interface ArcVisualizationProps {
@@ -20,7 +20,11 @@ interface ArcVisualizationProps {
   backgroundColor?: string;
   backgroundOpacity?: number;
   customNodeColors?: {[key: string]: string};
-  dynamicColorThemes?: {[key: string]: string};
+  dynamicColorThemes?: Record<string, Record<string, string>>;
+  // Download/export functions
+  onDownloadData?: (format: string) => void;
+  onDownloadGraph?: (format: string) => void;
+  onResetSelection?: () => void;
 }
 
 interface Node {
@@ -37,6 +41,25 @@ interface Link {
   value?: number;
 }
 
+// Default color palette for direct category mapping when themes fail
+const DEFAULT_COLOR_PALETTE = [
+  "#e74c3c", // Red
+  "#3498db", // Blue
+  "#2ecc71", // Green
+  "#f39c12", // Orange
+  "#9b59b6", // Purple
+  "#1abc9c", // Teal
+  "#34495e", // Dark Blue
+  "#e67e22", // Dark Orange
+  "#27ae60", // Dark Green
+  "#8e44ad", // Dark Purple
+  "#16a085", // Dark Teal
+  "#d35400", // Rust
+  "#2980b9", // Royal Blue
+  "#c0392b", // Dark Red
+  "#f1c40f"  // Yellow
+];
+
 const ArcVisualization: React.FC<ArcVisualizationProps> = ({
   onCreditsClick = () => {},
   nodeData = [],
@@ -49,7 +72,10 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
   backgroundColor = '#f5f5f5',
   backgroundOpacity = 1.0,
   customNodeColors = {},
-  dynamicColorThemes = {}
+  dynamicColorThemes = {},
+  onDownloadData,
+  onDownloadGraph,
+  onResetSelection
 }) => {
   const { toast } = useToast();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -59,7 +85,12 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
   const [visualizationError, setVisualizationError] = useState<string | null>(null);
   const [uniqueCategories, setUniqueCategories] = useState<string[]>([]);
   const [processedData, setProcessedData] = useState<{ nodes: Node[], links: Link[] }>({ nodes: [], links: [] });
-
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const visualizationInitialized = useRef(false);
+  const zoomRef = useRef<d3.ZoomBehavior<Element, unknown> | null>(null);
+  const renderAttemptRef = useRef(0);
+  const [renderKey, setRenderKey] = useState(0);
+  
   // Use the network colors hook
   const colors = useNetworkColors({
     initialColorTheme: colorTheme,
@@ -70,20 +101,40 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
     initialNodeStrokeColor: "#ffffff",
     initialBackgroundOpacity: backgroundOpacity,
     initialCustomNodeColors: customNodeColors,
-    initialDynamicColorThemes: { [colorTheme]: dynamicColorThemes }
+    initialDynamicColorThemes: dynamicColorThemes
   });
 
-  // Process the imported data
+  // Simple hexToRgb utility
+  const hexToRgb = useCallback((hex: string): {r: number, g: number, b: number} => {
+    // Default fallback color
+    const fallback = {r: 245, g: 245, b: 245};
+    
+    // Regular expression to extract RGB components
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result) return fallback;
+    
+    return {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    };
+  }, []);
+
+  // Process the imported data once
   useEffect(() => {
-    if (nodeData.length === 0 || linkData.length === 0) {
-      console.log("Data not yet available in processing effect");
+    // Skip if we've already processed the data
+    if (dataLoaded && processedData.nodes.length > 0) {
+      console.log("Arc data already processed, skipping");
       return;
     }
 
-    console.log("Processing data in ArcVisualization:", 
-      { nodeCount: nodeData.length, linkCount: linkData.length });
+    if (nodeData.length === 0 || linkData.length === 0) {
+      return;
+    }
 
     try {
+      console.log("Processing data for Arc visualization");
+      
       // Process nodes
       const processedNodes: Node[] = nodeData.map(node => ({
         id: node.id,
@@ -101,23 +152,22 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       const uniqueCats = Array.from(new Set(categories));
       setUniqueCategories(uniqueCats);
       
-      // Generate color themes - ONLY when needed
-      if (uniqueCats.length > 0 && Object.keys(colors.dynamicColorThemes).length <= 1) {
+      // Generate color themes if needed
+      if (uniqueCats.length > 0 && 
+          (!colors.dynamicColorThemes.default || 
+           Object.keys(colors.dynamicColorThemes.default).length === 0)) {
         colors.generateDynamicColorThemes(uniqueCats);
       }
 
       setProcessedData({ nodes: processedNodes, links: processedLinks });
+      setDataLoaded(true);
+      setIsLoading(false);
       
-      // Set loading to false after a short delay to show the visualization
-      setTimeout(() => {
-        setIsLoading(false);
-        toast({
-          title: "Arc Graph Data Loaded",
-          description: "Interactive visualization is now ready",
-        });
-      }, 500);
     } catch (error) {
-      console.error("Error processing data:", error);
+      console.error("Error processing arc data:", error);
+      setVisualizationError(`Data processing error: ${error instanceof Error ? error.message : String(error)}`);
+      setIsLoading(false);
+      
       toast({
         title: "Data Processing Error",
         description: "Failed to process the uploaded data files",
@@ -125,33 +175,78 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeData, linkData, toast]);
+  }, [nodeData, linkData]);
+  
+  // Force a render after a small delay - this helps with container sizing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setRenderKey(prev => prev + 1);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Schedule additional render attempts if visualization isn't initialized
+  useEffect(() => {
+    if (visualizationInitialized.current) return;
+    
+    const attemptRender = () => {
+      if (visualizationInitialized.current) return;
+      
+      renderAttemptRef.current += 1;
+      console.log(`Arc visualization render attempt ${renderAttemptRef.current}`);
+      
+      // Force a re-render
+      setRenderKey(prev => prev + 1);
+      
+      // Schedule another attempt if we haven't succeeded and haven't tried too many times
+      if (!visualizationInitialized.current && renderAttemptRef.current < 5) {
+        setTimeout(attemptRender, 300 * renderAttemptRef.current); // Increase delay with each attempt
+      }
+    };
+    
+    // Start the first scheduled attempt
+    const timer = setTimeout(attemptRender, 300);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Create D3 visualization
   useEffect(() => {
     if (isLoading || !svgRef.current || !containerRef.current || processedData.nodes.length === 0) {
-      console.log("Not ready to create Arc visualization yet");
       return;
     }
-  
+    
     console.log("Creating D3 Arc visualization");
-  
+    
     try {
       // Clear any existing elements
       d3.select(svgRef.current).selectAll("*").remove();
       
-      const margin = { top: 40, right: 40, bottom: 40, left: 40 };
-      const width = containerRef.current.clientWidth - margin.left - margin.right;
-      const height = containerRef.current.clientHeight - margin.top - margin.bottom;
+      // Get container dimensions
+      const containerWidth = containerRef.current.clientWidth || 800;
+      const containerHeight = containerRef.current.clientHeight || 600;
       
-      console.log(`Container dimensions: ${width}x${height}`);
+      console.log(`Arc visualization container size: ${containerWidth}x${containerHeight}`);
       
-      // Create SVG
+      // Set explicit SVG dimensions to match container
       const svg = d3.select(svgRef.current)
-        .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
-        .append("g")
-        .attr("transform", `translate(${margin.left}, ${margin.top})`);
+        .attr("width", containerWidth)
+        .attr("height", containerHeight)
+        .attr("viewBox", `0 0 ${containerWidth} ${containerHeight}`)
+        .attr("preserveAspectRatio", "xMidYMid meet");
+      
+      // Create a main container group for the visualization that will be centered
+      const g = svg.append("g")
+        .attr("transform", `translate(${containerWidth/2}, ${containerHeight/2})`)
+        .attr("class", "main-container");
+      
+      // Add a background for the visualization area
+      g.append("rect")
+        .attr("width", containerWidth)
+        .attr("height", containerHeight)
+        .attr("x", -containerWidth/2)
+        .attr("y", -containerHeight/2)
+        .attr("fill", colors.backgroundColor)
+        .attr("opacity", colors.backgroundOpacity);
       
       // Add a legend
       const legendData = uniqueCategories.map(category => ({
@@ -160,9 +255,9 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
                d3.schemeCategory10[uniqueCategories.indexOf(category) % 10]
       }));
 
-      const legend = svg.append("g")
+      const legend = g.append("g")
         .attr("class", "legend")
-        .attr("transform", `translate(${width - 150}, 20)`);
+        .attr("transform", `translate(${containerWidth/2 - 150}, ${-containerHeight/2 + 30})`);
       
       const legendTitle = legend.append("text")
         .attr("x", 0)
@@ -208,6 +303,9 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       const totalNodes = processedData.nodes.length;
       const arcLength = Math.PI; // Half circle
       
+      // Calculate a good radius based on container size
+      const arcRadius = Math.min(containerWidth, containerHeight) * 0.4;
+      
       // Assign positions to nodes along the bottom arc
       let nodeIndex = 0;
       
@@ -235,22 +333,14 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
           const angle = (nodeIndex / (totalNodes - 1)) * arcLength + (Math.PI - arcLength) / 2;
           nodeIndex++;
           
-          const radius = height - 100;
-          node.x = width / 2 + radius * Math.cos(angle);
-          node.y = height - 50 - radius * Math.sin(angle);
+          node.x = arcRadius * Math.cos(angle);
+          node.y = arcRadius * Math.sin(angle);
           node.index = nodeIndex - 1;
         });
       });
       
-      // Set background
-      svg.append("rect")
-        .attr("width", width)
-        .attr("height", height)
-        .attr("fill", colors.backgroundColor)
-        .attr("opacity", colors.backgroundOpacity);
-      
       // Create arcs for links
-      const link = svg.append("g")
+      const link = g.append("g")
         .attr("class", "links")
         .selectAll("path")
         .data(processedData.links)
@@ -277,7 +367,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
           const distance = Math.sqrt(dx * dx + dy * dy);
           
           // Make arc height proportional to distance
-          const arcHeight = Math.min(distance * 0.5, height * 0.33);
+          const arcHeight = Math.min(distance * 0.5, containerHeight * 0.33);
           
           // Calculate midpoint
           const midX = (sourceX + targetX) / 2;
@@ -289,14 +379,21 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         .attr("stroke", d => {
           // Get source and target nodes for styling based on categories
           const source = typeof d.source === 'object' ? d.source : nodeMap.get(d.source as string);
-          const target = typeof d.target === 'object' ? d.target : nodeMap.get(d.target as string);
           
           if (source) {
             // Get color for the link based on source node's category
-            const sourceCategory = source.category;
-            const themeColors = colors.dynamicColorThemes[colors.colorTheme] || {};
-            if (themeColors[sourceCategory]) {
-              return themeColors[sourceCategory];
+            const currentTheme = colors.dynamicColorThemes[colors.colorTheme] || 
+                                colors.dynamicColorThemes.default || {};
+            if (currentTheme[source.category]) {
+              return currentTheme[source.category];
+            }
+            
+            // Direct category lookup using DEFAULT_COLOR_PALETTE as fallback
+            if (source.category) {
+              const categoryHash = source.category.split('')
+                .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+              const index = Math.abs(categoryHash) % DEFAULT_COLOR_PALETTE.length;
+              return DEFAULT_COLOR_PALETTE[index];
             }
           }
           
@@ -304,11 +401,11 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
           return colors.linkColor;
         })
         .attr("stroke-width", 2 * Math.max(0.7, colors.nodeSize * 0.75))
-        .attr("stroke-opacity", 0.85) // Increased opacity for better visibility
-        .attr("stroke-linecap", "round"); // Rounded ends for smoother appearance
+        .attr("stroke-opacity", 0.85)
+        .attr("stroke-linecap", "round");
       
-      // Create nodes
-      const node = svg.append("g")
+      // Create nodes with robust color assignment
+      const node = g.append("g")
         .attr("class", "nodes")
         .selectAll("circle")
         .data(processedData.nodes)
@@ -318,12 +415,35 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         .attr("r", 5 * colors.nodeSize)
         .attr("cx", d => d.x || 0)
         .attr("cy", d => d.y || 0)
-        .attr("fill", d => colors.getNodeColor(d))
+        .attr("fill", d => {
+          // Try custom node color
+          if (customNodeColors && customNodeColors[d.id]) {
+            return customNodeColors[d.id];
+          }
+          
+          // Try theme color
+          const currentTheme = colors.dynamicColorThemes[colors.colorTheme] || 
+                              colors.dynamicColorThemes.default || {};
+          if (currentTheme[d.category]) {
+            return currentTheme[d.category];
+          }
+          
+          // Direct category lookup
+          if (d.category) {
+            const categoryHash = d.category.split('')
+              .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            const index = Math.abs(categoryHash) % DEFAULT_COLOR_PALETTE.length;
+            return DEFAULT_COLOR_PALETTE[index];
+          }
+          
+          // Fallback
+          return "#95a5a6";
+        })
         .attr("stroke", colors.nodeStrokeColor)
         .attr("stroke-width", 1.5);
       
-      // Add labels
-      const label = svg.append("g")
+      // Add labels - positioned correctly relative to nodes
+      const label = g.append("g")
         .attr("class", "labels")
         .selectAll("text")
         .data(processedData.nodes)
@@ -340,7 +460,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         .style("text-shadow", "0 1px 2px rgba(255,255,255,0.7)")
         .style("pointer-events", "none");
       
-      // Add tooltips
+      // Add tooltips - improved positioning
       node.on("mouseover", function(event, d) {
         if (!tooltipRef.current) return;
         
@@ -425,7 +545,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
           });
         }
         
-        // Show tooltip
+        // Show tooltip - position relative to container
         const tooltip = d3.select(tooltipRef.current);
         tooltip
           .style("visibility", "visible")
@@ -435,6 +555,8 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         const containerRect = containerRef.current?.getBoundingClientRect();
         if (!containerRect) return;
         
+        // Position tooltip relative to the event, not the node
+        // This ensures proper positioning even with zoomed/transformed SVG
         const x = event.clientX - containerRect.left + 10;
         const y = event.clientY - containerRect.top + 10;
         
@@ -449,22 +571,20 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         const tooltipWidth = tooltipRef.current.offsetWidth || 200;
         const tooltipHeight = tooltipRef.current.offsetHeight || 100;
         
-        // Small offset from cursor
-        const offsetX = 15;
-        const offsetY = 10;
+        const containerRect = containerRef.current.getBoundingClientRect();
         
-        // Adjust position if tooltip would go off the right or bottom edge
-        let xPos = event.clientX - containerRef.current.getBoundingClientRect().left + offsetX;
-        let yPos = event.clientY - containerRef.current.getBoundingClientRect().top + offsetY;
+        // Calculate position relative to the container
+        let xPos = event.clientX - containerRect.left + 15;
+        let yPos = event.clientY - containerRect.top + 10;
         
         // Check if tooltip would go off right edge
-        if (xPos + tooltipWidth > containerRef.current.clientWidth) {
-          xPos = event.clientX - containerRef.current.getBoundingClientRect().left - tooltipWidth - offsetX;
+        if (xPos + tooltipWidth > containerRect.width) {
+          xPos = event.clientX - containerRect.left - tooltipWidth - 15;
         }
         
         // Check if tooltip would go off bottom edge
-        if (yPos + tooltipHeight > containerRef.current.clientHeight) {
-          yPos = event.clientY - containerRef.current.getBoundingClientRect().top - tooltipHeight - offsetY;
+        if (yPos + tooltipHeight > containerRect.height) {
+          yPos = event.clientY - containerRect.top - tooltipHeight - 10;
         }
         
         // Follow the mouse with intelligent positioning
@@ -497,10 +617,11 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       const zoom = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 3])
         .on("zoom", (event) => {
-          svg.attr("transform", `translate(${margin.left + event.transform.x}, ${margin.top + event.transform.y}) scale(${event.transform.k})`);
+          g.attr("transform", `translate(${containerWidth/2 + event.transform.x}, ${containerHeight/2 + event.transform.y}) scale(${event.transform.k})`);
         });
 
       d3.select(svgRef.current).call(zoom);
+      zoomRef.current = zoom;
       
       // Reset zoom on double-click
       d3.select(svgRef.current).on("dblclick.zoom", null);
@@ -511,35 +632,92 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
           .call(zoom.transform, d3.zoomIdentity);
       });
 
-      // Ensure the SVG visualization is properly centered
-      const svgWidth = svgRef.current.clientWidth;
-      const svgHeight = svgRef.current.clientHeight;
+      // Mark visualization as initialized
+      visualizationInitialized.current = true;
       
-      // Set the viewBox to ensure proper sizing and centering
-      d3.select(svgRef.current)
-        .attr("viewBox", `0 0 ${svgWidth} ${svgHeight}`)
-        .attr("preserveAspectRatio", "xMidYMid meet");
+      console.log("Arc visualization created successfully!");
       
     } catch (error) {
       console.error("Error creating D3 arc visualization:", error);
       setVisualizationError(error instanceof Error ? error.message : "Unknown error creating visualization");
+      setIsLoading(false);
+      
       toast({
         title: "Error",
         description: `Failed to create the arc visualization: ${error instanceof Error ? error.message : String(error)}`,
         variant: "destructive"
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isLoading, 
     processedData, 
     uniqueCategories, 
-    toast
-    // Not including colors properties as dependencies to prevent
-    // unnecessary re-renders while still having access to current values
+    toast, 
+    colors, 
+    customNodeColors,
+    colorTheme,
+    nodeSize,
+    backgroundColor,
+    backgroundOpacity,
+    renderKey // Include renderKey to trigger re-renders
   ]);
 
+  // Cleanup function when component unmounts
+  useEffect(() => {
+    return () => {
+      if (svgRef.current) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        d3.select(svgRef.current).selectAll("*").remove();
+      }
+      visualizationInitialized.current = false;
+    };
+  }, []);
 
+  // Implement zoom control handlers
+  const handleZoomIn = () => {
+    if (!svgRef.current || !zoomRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    const zoom = zoomRef.current;
+    const currentZoom = d3.zoomTransform(svg.node() as Element);
+    
+    svg.transition()
+      .duration(300)
+      .call(
+        zoom.transform,
+        d3.zoomIdentity
+          .translate(currentZoom.x, currentZoom.y)
+          .scale(currentZoom.k * 1.3)
+      );
+  };
+
+  const handleZoomOut = () => {
+    if (!svgRef.current || !zoomRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    const zoom = zoomRef.current;
+    const currentZoom = d3.zoomTransform(svg.node() as Element);
+    
+    svg.transition()
+      .duration(300)
+      .call(
+        zoom.transform,
+        d3.zoomIdentity
+          .translate(currentZoom.x, currentZoom.y)
+          .scale(currentZoom.k / 1.3)
+      );
+  };
+
+  const handleResetZoom = () => {
+    if (!svgRef.current || !zoomRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    const zoom = zoomRef.current;
+    
+    svg.transition()
+      .duration(500)
+      .call(zoom.transform, d3.zoomIdentity);
+  };
 
   if (isLoading) {
     return (
@@ -552,11 +730,10 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
     );
   }
 
-  // Return just the visualization content (will be wrapped by BaseVisualization)
   return (
     <div 
       ref={containerRef} 
-      className="w-full h-full"
+      className="w-full h-full relative"
       style={{ 
         backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`
       }}
@@ -564,17 +741,20 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       <svg 
         ref={svgRef} 
         className="w-full h-full"
-        viewBox={`0 0 ${containerRef.current?.clientWidth || 800} ${containerRef.current?.clientHeight || 600}`}
-        preserveAspectRatio="xMidYMid meet"
       />
       
-      {/* File Buttons */}
-      <FileButtons 
-        onDownloadData={() => {}}
-        onDownloadGraph={() => {}}
-        onResetSelection={() => {}}
+      {/* Shared UI Controls */}
+      <VisualizationControls
+        containerRef={containerRef}
         nodeData={nodeData}
         linkData={linkData}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetZoom={handleResetZoom}
+        onDownloadData={onDownloadData}
+        onDownloadGraph={onDownloadGraph}
+        onResetSelection={onResetSelection}
+        isZoomInitialized={true}
       />
       
       {/* Tooltip */}
@@ -601,6 +781,16 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
               <h3 className="font-medium text-sm">Visualization Error</h3>
               <p className="text-xs mt-1">{visualizationError}</p>
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Only show loading indicator if visualizationInitialized is false */}
+      {!visualizationInitialized.current && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-10 w-10 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin" />
+            <p className="text-sm text-muted-foreground">Preparing visualization...</p>
           </div>
         </div>
       )}

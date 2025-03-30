@@ -1,6 +1,10 @@
+// Updated networkTypes.ts to fix incompatibilities
+
 import { NodeData, LinkData } from '@/types/types';
-import { VisualizationType } from '@/components/NetworkSidebar';
 import * as d3 from 'd3';
+
+// Define VisualizationType to include '3d'
+export type VisualizationType = 'network' | 'radial' | 'arc' | '3d';
 
 // Define node data structure for D3
 export interface Node extends d3.SimulationNodeDatum {
@@ -43,8 +47,8 @@ export interface ColorTheme {
 // Network visualization props
 export interface NetworkVisualizationProps {
   onCreditsClick: () => void;
-  nodeData: NodeData[]; 
-  linkData: LinkData[];
+  nodeData: NodeData[] | Node[]; 
+  linkData: LinkData[] | Link[];
   visualizationType?: VisualizationType;
   onVisualizationTypeChange?: (type: VisualizationType) => void;
   fixNodesOnDrag?: boolean;
@@ -55,7 +59,7 @@ export interface NetworkVisualizationProps {
   backgroundOpacity?: number;
   customNodeColors?: Record<string, string>;
   dynamicColorThemes?: Record<string, ColorTheme>;
-  onSvgRef?: (svg: SVGSVGElement) => void; // Added onSvgRef property
+  onSvgRef?: (svg: SVGSVGElement) => void;
 }
 
 // Network state interface
@@ -94,4 +98,5 @@ export interface SectionsState {
   colorControls: boolean;
   networkInfo: boolean;
   visualizationType: boolean;
+  threeDControls?: boolean;
 }

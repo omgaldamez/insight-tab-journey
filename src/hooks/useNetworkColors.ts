@@ -73,7 +73,31 @@ const useNetworkColors = ({
   const [nodeStrokeColor, setNodeStrokeColor] = useState<string>(initialNodeStrokeColor);
   const [backgroundOpacity, setBackgroundOpacity] = useState<number>(initialBackgroundOpacity);
   const [customNodeColors, setCustomNodeColors] = useState<Record<string, string>>(initialCustomNodeColors);
-  const [dynamicColorThemes, setDynamicColorThemes] = useState<Record<string, Record<string, string>>>(initialDynamicColorThemes);
+  
+  // Initialize dynamicColorThemes with proper structure
+  const [dynamicColorThemes, setDynamicColorThemes] = useState<Record<string, Record<string, string>>>(() => {
+    // Check if initialDynamicColorThemes has the expected structure
+    const hasProperStructure = 
+      typeof initialDynamicColorThemes === 'object' &&
+      initialDynamicColorThemes !== null &&
+      Object.keys(initialDynamicColorThemes).length > 0;
+    
+    if (hasProperStructure) {
+      return initialDynamicColorThemes;
+    } else {
+      // Create empty theme structure as fallback
+      return { 
+        default: {}, 
+        bright: {}, 
+        pastel: {}, 
+        ocean: {}, 
+        autumn: {}, 
+        monochrome: {}, 
+        custom: {} 
+      };
+    }
+  });
+  
   const [activeColorTab, setActiveColorTab] = useState<string>('presets');
   const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
   
@@ -147,23 +171,7 @@ const useNetworkColors = ({
   const generateDynamicColorThemes = useCallback((categories: string[]) => {
     console.log("Generating dynamic color themes for categories:", categories);
     
-    // If we already have themes generated, don't regenerate
-    if (Object.keys(dynamicColorThemes).length > 1 && 
-        categories.every(cat => dynamicColorThemes.default && cat in dynamicColorThemes.default)) {
-      console.log("Color themes already generated, using existing themes");
-      
-      // Just update categoryColors if needed
-      if (Object.keys(categoryColors).length === 0) {
-        const newCategoryColors: Record<string, string> = {};
-        categories.forEach(category => {
-          newCategoryColors[category] = dynamicColorThemes.default[category] || "#3498db";
-        });
-        setCategoryColors(newCategoryColors);
-      }
-      
-      return dynamicColorThemes;
-    }
-    
+    // Always regenerate themes to ensure categories have colors
     console.log("Creating new color themes");
     
     // Save current state before making changes
@@ -183,6 +191,7 @@ const useNetworkColors = ({
     categories.forEach((category, index) => {
       const colorIndex = index % DEFAULT_COLOR_PALETTE.length;
       baseThemes.default[category] = DEFAULT_COLOR_PALETTE[colorIndex];
+      console.log(`Assigned ${category} to color ${DEFAULT_COLOR_PALETTE[colorIndex]}`);
     });
 
     // Bright theme with vibrant colors
@@ -236,7 +245,14 @@ const useNetworkColors = ({
       baseThemes[theme as keyof typeof baseThemes]["Otro"] = "#95a5a6";
     });
 
-    // Update state only if necessary
+    // Log themes to verify they were created properly
+    console.log("Themes generated:", {
+      themesAvailable: Object.keys(baseThemes),
+      categoriesInDefaultTheme: Object.keys(baseThemes.default),
+      defaultTheme: baseThemes.default
+    });
+
+    // Update state
     setDynamicColorThemes(baseThemes);
     
     // Initialize category colors for UI
@@ -247,20 +263,42 @@ const useNetworkColors = ({
     setCategoryColors(newCategoryColors);
     
     return baseThemes;
-  }, [dynamicColorThemes, categoryColors, saveCurrentState]);
+  }, [saveCurrentState]);
 
   /**
    * Get node color based on customization settings
    */
   const getNodeColor = useCallback((node: Node): string => {
-    // First check for custom node color
-    if (customNodeColors[node.id]) {
-      return customNodeColors[node.id];
+    try {
+      // First check for custom node color
+      if (customNodeColors && customNodeColors[node.id]) {
+        return customNodeColors[node.id];
+      }
+      
+      // Use the category color from current theme
+      const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default || {};
+      
+      // Direct category lookup
+      if (currentTheme[node.category]) {
+        return currentTheme[node.category];
+      }
+      
+      // Use DEFAULT_COLOR_PALETTE as a direct fallback if themes are empty
+      // This ensures categories always get colors even if theme generation failed
+      const categoryIndex = Math.abs(
+        node.category.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+      ) % DEFAULT_COLOR_PALETTE.length;
+      
+      return DEFAULT_COLOR_PALETTE[categoryIndex];
+    } catch (err) {
+      console.error("Error in getNodeColor:", err, {
+        nodeId: node.id,
+        category: node.category,
+        colorTheme,
+        dynamicColorThemesKeys: Object.keys(dynamicColorThemes)
+      });
+      return "#95a5a6"; // Return fallback gray color on error
     }
-    
-    // Use the category color from current theme
-    const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default || {};
-    return currentTheme[node.category] || currentTheme["Otro"] || "#95a5a6";
   }, [customNodeColors, colorTheme, dynamicColorThemes]);
 
   /**

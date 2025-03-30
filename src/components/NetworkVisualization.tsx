@@ -4,12 +4,12 @@ import * as d3 from 'd3';
 import { useToast } from "@/components/ui/use-toast";
 import FileButtons from "./FileButtons";
 import { 
-  NetworkVisualizationProps, 
   Node, 
   Link, 
   SimulatedNode, 
   SimulatedLink,
-  CategoryCounts 
+  CategoryCounts,
+  VisualizationType
 } from '@/types/networkTypes';
 import RadialVisualization from './RadialVisualization';
 import ArcVisualization from './ArcVisualization';
@@ -26,17 +26,69 @@ import ZoomControls from './ZoomControls';
 import NetworkTooltip from './NetworkTooltip';
 import useNetworkColors from '@/hooks/useNetworkColors';
 import { showTooltip, moveTooltip, hideTooltip } from './TooltipUtils';
+import VisualizationControls from './VisualizationControls';
 
-// Import VisualizationType explicitly 
-import { VisualizationType } from './NetworkSidebar';
+// Define interfaces for handling both raw data and processed nodes/links
+interface NodeData {
+  id?: string;
+  name?: string;
+  category?: string;
+  type?: string;
+  [key: string]: string | number | boolean | undefined;
+}
 
-// Declare global type for timeout IDs
+interface LinkData {
+  source?: string | Node | { id: string };
+  target?: string | Node | { id: string };
+  from?: string;
+  to?: string;
+  [key: string]: string | number | boolean | undefined | { id: string } | Node;
+}
+
+interface NetworkVisualizationProps {
+  onCreditsClick: () => void;
+  nodeData: NodeData[] | Node[]; 
+  linkData: LinkData[] | Link[];
+  visualizationType?: VisualizationType;
+  onVisualizationTypeChange?: (type: VisualizationType) => void;
+  fixNodesOnDrag?: boolean;
+  colorTheme?: string;
+  nodeSize?: number;
+  linkColor?: string;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+  customNodeColors?: Record<string, string>;
+  dynamicColorThemes?: Record<string, Record<string, string>>;
+  onSvgRef?: (svg: SVGSVGElement) => void;
+}
+
+// Global type for timeout IDs
 declare global {
   interface Window {
     resizeTimeoutId?: number;
     paramUpdateTimeout?: number;
   }
 }
+
+// Direct fallback color map for nodes
+const getCategoryColor = (category: string): string => {
+  const categoryColors: Record<string, string> = {
+    'person': '#e74c3c',
+    'organization': '#2ecc71',
+    'location': '#f39c12',
+    'event': '#9b59b6',
+    'concept': '#1abc9c',
+    'item': '#34495e',
+    'resource': '#e67e22',
+    'work': '#e67e22',
+    'publication': '#9b59b6',
+    'project': '#1abc9c',
+    'group': '#2980b9',
+    'default': '#95a5a6'
+  };
+  
+  return categoryColors[category] || categoryColors.default;
+};
 
 const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({ 
   onCreditsClick, 
@@ -78,7 +130,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     nodeControls: true,
     colorControls: false,
     networkInfo: false,
-    visualizationType: true
+    visualizationType: true,
+    threeDControls: false
   });
   const [nodeGroup, setNodeGroup] = useState('all');
   const [activeColorTab, setActiveColorTab] = useState('presets');
@@ -90,6 +143,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const [visualizationError, setVisualizationError] = useState<string | null>(null);
   const [localFixNodesOnDrag, setLocalFixNodesOnDrag] = useState(fixNodesOnDrag);
   const [localVisualizationType, setLocalVisualizationType] = useState<VisualizationType>(visualizationType);
+  const [forceUpdate, setForceUpdate] = useState(false);  // For forcing re-renders when needed
+  const [dataLoaded, setDataLoaded] = useState(false);  // Track if data has been loaded
+  const visualizationInitialized = useRef(false);  // Track if visualization has been initialized
   
   // Use the color management hook
   const colors = useNetworkColors({
@@ -164,10 +220,23 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     getTransform
   });
 
-  // Process imported data
+  // Update local visualization type when prop changes
   useEffect(() => {
+    if (visualizationType !== localVisualizationType) {
+      setLocalVisualizationType(visualizationType);
+    }
+  }, [visualizationType]);
+
+  // Process imported data - only do this once
+  useEffect(() => {
+    // Skip if we've already processed the data
+    if (dataLoaded && processedData.nodes.length > 0) {
+      console.log("Network data already processed, skipping");
+      return;
+    }
+
     if (nodeData.length === 0 || linkData.length === 0) {
-      console.log("Data not yet available in processing effect");
+      console.log("Data not yet available for processing");
       return;
     }
 
@@ -177,6 +246,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     try {
       // Process nodes
       const processedNodes: Node[] = nodeData.map(node => {
+        // If node is already a Node type, use it directly
+        if (typeof node === 'object' && 'id' in node && 'category' in node) {
+          return {
+            id: String(node.id),
+            category: String(node.category)
+          };
+        }
+
         const idKey = Object.keys(node).find(key => 
           key.toLowerCase() === 'id' || 
           key.toLowerCase() === 'name' || 
@@ -199,6 +276,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
 
       // Process links
       const processedLinks: Link[] = linkData.map(link => {
+        // If link is already a Link type, use it directly
+        if (typeof link === 'object' && 'source' in link && 'target' in link) {
+          return {
+            source: typeof link.source === 'object' ? String(link.source.id) : String(link.source),
+            target: typeof link.target === 'object' ? String(link.target.id) : String(link.target)
+          };
+        }
+
         const sourceKey = Object.keys(link).find(key => 
           key.toLowerCase() === 'source' || 
           key.toLowerCase() === 'from'
@@ -225,20 +310,22 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       const uniqueCats = Array.from(new Set(categories)).filter(Boolean);
       setUniqueCategories(uniqueCats);
 
-      // Generate dynamic color themes - IMPORTANT: Do this only once during initial data processing
+      // Generate dynamic color themes if needed
       if (uniqueCats.length > 0 && Object.keys(colors.dynamicColorThemes).length <= 1) {
+        console.log("Generating color themes for categories:", uniqueCats);
         colors.generateDynamicColorThemes(uniqueCats);
       }
 
       // Calculate node counts by category
       const counts: CategoryCounts = { total: processedNodes.length };
-      
       uniqueCats.forEach(category => {
         counts[category] = processedNodes.filter(node => node.category === category).length;
       });
-
       setNodeCounts(counts);
       setProcessedData({ nodes: processedNodes, links: processedLinks });
+      
+      // Mark data as loaded to prevent reprocessing
+      setDataLoaded(true);
       
       // Set loading to false after a short delay to show the visualization
       setTimeout(() => {
@@ -256,7 +343,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         variant: "destructive"
       });
     }
-  }, [nodeData, linkData, toast]);
+  }, [nodeData, linkData, toast, colors]);
 
   // Create drag behavior with enhanced handling to prevent zoom/pan conflicts
   const createDragBehavior = useCallback((simulation: d3.Simulation<Node, Link>) => {
@@ -330,10 +417,50 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       });
   }, [localFixNodesOnDrag]);
 
-  // Create D3 visualization
+  // Create D3 visualization - only for network visualization type
   useEffect(() => {
+    // Skip if visualization type is not network
+    if (localVisualizationType !== 'network') {
+      return;
+    }
+
+    // Skip if already initialized and just updating colors
+    if (visualizationInitialized.current && svgRef.current) {
+      try {
+        console.log("Updating existing Network visualization");
+        const svg = d3.select(svgRef.current);
+        
+        // Update node colors
+        svg.selectAll<SVGCircleElement, Node>(".node")
+  .attr("fill", (d: Node) => colors.getNodeColor(d))
+  .attr("r", (_d: Node) => 7 * colors.nodeSize);
+          
+        // Update node labels
+        svg.selectAll(".node-label")
+          .style("font-size", d => `${8 * Math.min(1.2, colors.nodeSize)}px`)
+          .style("fill", colors.textColor);
+          
+        // Update link colors
+        svg.selectAll(".link")
+          .attr("stroke", colors.linkColor)
+          .attr("stroke-width", 1.5);
+          
+        // Update background if container exists
+        if (containerRef.current) {
+          const { r, g, b } = colors.rgbBackgroundColor;
+          containerRef.current.style.backgroundColor = 
+            `rgba(${r}, ${g}, ${b}, ${colors.backgroundOpacity})`;
+        }
+        
+        return; // Skip full rebuild
+      } catch (error) {
+        console.error("Error updating Network visualization:", error);
+        // Continue to rebuild if update fails
+      }
+    }
+
     // Make sure all refs are ready
-    if (isLoading || !svgRef.current || processedData.nodes.length === 0 || localVisualizationType !== 'network') {
+    if (isLoading || !svgRef.current || processedData.nodes.length === 0) {
       console.log("Not ready to create visualization yet:", {
         isLoading,
         hasSvgRef: !!svgRef.current,
@@ -461,7 +588,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .attr("stroke", colors.linkColor)
         .attr("stroke-width", 1.5);
       
-      // Create nodes
+      // Create nodes with proper color handling
       const node = g.append("g")
         .attr("class", "nodes")
         .selectAll("circle")
@@ -470,9 +597,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .append("circle")
         .attr("class", "node")
         .attr("r", d => 7 * colors.nodeSize)
-        .attr("fill", d => colors.getNodeColor(d))
-        .attr("stroke", colors.nodeStrokeColor)
-        .attr("stroke-width", 1);
+        .attr("fill", d => colors.getNodeColor(d)) // Use the proper color getter function
+        .attr("stroke", colors.nodeStrokeColor || "#ffffff")
+        .attr("stroke-width", 1.5);
       
       // Create node labels
       const nodeLabel = g.append("g")
@@ -551,6 +678,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       
       console.log("D3 visualization created successfully");
       
+      // Mark visualization as initialized
+      visualizationInitialized.current = true;
+      
       // Force reinitialize zoom after a short delay
       setTimeout(() => {
         reinitializeZoom();
@@ -571,7 +701,6 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         variant: "destructive"
       });
     }
-  
   }, [
     isLoading, 
     nodeGroup, 
@@ -582,13 +711,23 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     linkStrength, 
     nodeCharge, 
     toast,
-    reinitializeZoom
-    // Explicitly NOT including individual color properties to prevent re-renders
-    // The colors object will be accessed with latest values when needed
+    reinitializeZoom,
+    forceUpdate  // Include forceUpdate to trigger re-renders when needed
   ]);
 
+  // Cleanup function when component unmounts
+  useEffect(() => {
+    return () => {
+      if (simulationRef.current) {
+        simulationRef.current.stop();
+      }
+      if (svgRef.current) {
+        d3.select(svgRef.current).selectAll("*").remove();
+      }
+      visualizationInitialized.current = false;
+    };
+  }, []);
 
-  
   // IMPROVED: Update simulation parameters immediately for smoother slider interactions
   const handleSliderChange = useCallback((type: string, value: number) => {
     console.log(`Slider changed: ${type} = ${value}`);
@@ -667,7 +806,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       // Apply a small alpha to update the simulation smoothly
       simulation.alpha(0.08).restart();
     }
-  }, [svgRef, simulationRef, colors]);
+  }, [colors]);
 
   // Add a new useEffect hook for handling resize events without auto zoom
   useEffect(() => {
@@ -811,11 +950,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
 
   // Function to toggle section expansion
   const toggleSection = (section: string) => {
-    console.log("Toggling section:", section);
-    setExpandedSections({
-      ...expandedSections,
-      [section]: !expandedSections[section as keyof typeof expandedSections]
-    });
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section as keyof typeof prev]
+    }));
   };
   
   // Function to toggle sidebar collapse
@@ -885,12 +1023,17 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   };
 
-  // Handle visualization type change
+  // Handle visualization type change - simplified to minimize state changes
   const handleVisualizationTypeChange = (type: VisualizationType) => {
+    // Skip if type hasn't changed to prevent unnecessary rerenders
+    if (type === localVisualizationType) return;
+    
     console.log(`Changing visualization type to: ${type}`);
+    
+    // Directly update local visualization type
     setLocalVisualizationType(type);
     
-    // Call the parent handler if provided
+    // Call the parent handler if provided, but only after a brief delay
     if (onVisualizationTypeChange) {
       onVisualizationTypeChange(type);
     }
@@ -899,11 +1042,6 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       title: `Switched to ${type} visualization`,
       description: `Now viewing the network as a ${type} graph.`
     });
-    
-    // For now, if switching back to network, reinitialize to make sure everything is fresh
-    if (type === 'network') {
-      reinitializeVisualization();
-    }
   };
 
   // Function to properly clean up and reinitialize the visualization
@@ -921,6 +1059,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       if (svgRef.current) {
         d3.select(svgRef.current).selectAll("*").remove();
       }
+      
+      // Reset visualization initialized flag
+      visualizationInitialized.current = false;
       
       // Set a flag to trigger the useEffect that creates the visualization
       setIsLoading(true);
@@ -955,22 +1096,35 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   // Handle color theme change
   const handleColorThemeChange = (theme: string) => {
     console.log(`Color theme changed to: ${theme}`);
+    
+    // Use the hook's method to update the theme
     colors.setColorTheme(theme);
+    
+    // Force a re-render to update visuals
+    setForceUpdate(prev => !prev);
+    
+    // Add a toast notification for feedback
+    toast({
+      title: `Color Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`,
+      description: "Color theme has been updated"
+    });
   };
 
   // Handle color tab change
   const handleColorTabChange = (tab: string) => {
     console.log(`Color tab changed to: ${tab}`);
-    colors.setActiveColorTab(tab);
+    setActiveColorTab(tab);
   };
 
   // Handle apply group colors
   const handleApplyGroupColors = (categoryColorMap: Record<string, string>) => {
     console.log("Applying group colors", categoryColorMap);
     
-    // Apply each category color individually since the applyGroupColors method was refactored
+    // Apply each category color individually
     Object.entries(categoryColorMap).forEach(([category, color]) => {
-      colors.updateCategoryColor(category, color);
+      if (colors.updateCategoryColor) {
+        colors.updateCategoryColor(category, color);
+      }
     });
     
     toast({
@@ -982,13 +1136,17 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   // Handle apply individual color
   const handleApplyIndividualColor = (nodeId: string, color: string) => {
     console.log(`Applying individual color for node ${nodeId}: ${color}`);
-    colors.applyIndividualColor(nodeId, color);
+    if (colors.applyIndividualColor) {
+      colors.applyIndividualColor(nodeId, color);
+    }
   };
 
   // Handle reset individual color
   const handleResetIndividualColor = (nodeId: string) => {
     console.log(`Resetting individual color for node ${nodeId}`);
-    colors.resetIndividualColor(nodeId);
+    if (colors.resetIndividualColor) {
+      colors.resetIndividualColor(nodeId);
+    }
   };
 
   // Handle apply background colors
@@ -1000,7 +1158,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     nodeStrokeClr: string
   ) => {
     console.log(`Applying background colors: bg=${bgColor}, text=${txtColor}, link=${lnkColor}, opacity=${opacity}, nodeStroke=${nodeStrokeClr}`);
-    // Individual setters replace the applyBackgroundColors method from previous version
+    
     colors.setBackgroundColor(bgColor);
     colors.setTextColor(txtColor);
     colors.setLinkColor(lnkColor);
@@ -1011,7 +1169,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   // Handle reset background colors
   const handleResetBackgroundColors = () => {
     console.log("Resetting background colors");
-    colors.resetBackgroundColors();
+    if (colors.resetBackgroundColors) {
+      colors.resetBackgroundColors();
+    }
   };
 
   // Handle reset simulation
@@ -1099,7 +1259,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     
     // Reset all visual properties
     setNodeGroup('all');
-    colors.resetAllColors();
+    if (colors.resetAllColors) {
+      colors.resetAllColors();
+    }
     
     // Reset nodes positions and unfix all nodes
     if (svgRef.current && processedData.nodes.length > 0) {
@@ -1164,10 +1326,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     handleNodeGroupChange,
     handleColorThemeChange,
     handleApplyGroupColors,
-    handleApplyIndividualColor: colors.applyIndividualColor,
-    handleResetIndividualColor: colors.resetIndividualColor,
+    handleApplyIndividualColor,
+    handleResetIndividualColor,
     handleApplyBackgroundColors,
-    handleResetBackgroundColors: colors.resetBackgroundColors,
+    handleResetBackgroundColors,
     handleResetSimulation,
     handleResetGraph,
     toggleSection,
@@ -1179,153 +1341,168 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     reinitializeVisualization,
     downloadData,
     downloadGraph,
-    handleZoomToFit: zoomToFit, // Pass zoomToFit to handlers
-    handleZoomIn: zoomIn,       // Pass zoomIn to handlers
-    handleZoomOut: zoomOut,     // Pass zoomOut to handlers 
-    handleResetZoom: resetZoom  // Pass resetZoom to handlers
+    handleZoomToFit: zoomToFit, 
+    handleZoomIn: zoomIn,       
+    handleZoomOut: zoomOut,     
+    handleResetZoom: resetZoom  
   };
 
-  // Render appropriate visualization type with shared sidebar
-  if (localVisualizationType === 'radial') {
-    return (
-      <BaseVisualization
-        children={
-          <div className="w-full h-full">
-            <RadialVisualization
-              onCreditsClick={onCreditsClick}
-              nodeData={nodeData}
-              linkData={linkData}
-              visualizationType={localVisualizationType}
-              onVisualizationTypeChange={handleVisualizationTypeChange}
-              colorTheme={colors.colorTheme}
-              nodeSize={colors.nodeSize}
-              linkColor={colors.linkColor}
-              backgroundColor={colors.backgroundColor}
-              backgroundOpacity={colors.backgroundOpacity}
-              customNodeColors={colors.customNodeColors}
-              dynamicColorThemes={colors.dynamicColorThemes[colors.colorTheme] || {}}
-            />
-          </div>
-        }
-        nodeData={nodeData}
-        linkData={linkData}
-        onCreditsClick={onCreditsClick}
-        isLoading={isLoading}
-        visualizationError={visualizationError}
-        selectedNode={selectedNode}
-        selectedNodeConnections={selectedNodeConnections}
-        expandedSections={expandedSections}
-        uniqueCategories={uniqueCategories}
-        nodeCounts={nodeCounts}
-        processedData={processedData}
-        sidebar={sidebarState}
-        handlers={handlers}
-        customNodeColorsState={colors.customNodeColors}
-        dynamicColorThemesState={colors.dynamicColorThemes}
-      />
-    );
-  } else if (localVisualizationType === 'arc') {
-    return (
-      <BaseVisualization
-        children={
-          <div className="w-full h-full">
-            <ArcVisualization
-              onCreditsClick={onCreditsClick}
-              nodeData={nodeData}
-              linkData={linkData}
-              visualizationType={localVisualizationType}
-              onVisualizationTypeChange={handleVisualizationTypeChange}
-              colorTheme={colors.colorTheme}
-              nodeSize={colors.nodeSize}
-              linkColor={colors.linkColor}
-              backgroundColor={colors.backgroundColor}
-              backgroundOpacity={colors.backgroundOpacity}
-              customNodeColors={colors.customNodeColors}
-              dynamicColorThemes={colors.dynamicColorThemes[colors.colorTheme] || {}}
-            />
-          </div>
-        }
-        nodeData={nodeData}
-        linkData={linkData}
-        onCreditsClick={onCreditsClick}
-        isLoading={isLoading}
-        visualizationError={visualizationError}
-        selectedNode={selectedNode}
-        selectedNodeConnections={selectedNodeConnections}
-        expandedSections={expandedSections}
-        uniqueCategories={uniqueCategories}
-        nodeCounts={nodeCounts}
-        processedData={processedData}
-        sidebar={sidebarState}
-        handlers={handlers}
-        customNodeColorsState={colors.customNodeColors}
-        dynamicColorThemesState={colors.dynamicColorThemes}
-      />
-    );
-  } 
+  // Direct visualization type checking
+  const isRadial = localVisualizationType === 'radial';
+  const isArc = localVisualizationType === 'arc';
+  const isNetwork = localVisualizationType === 'network';
 
-  // For network visualization type
+  // Using visibility-based conditional rendering instead of mounting/unmounting
   return (
     <BaseVisualization
       children={
-        <>
+        <div className="w-full h-full">
+          {/* Network Graph Container - always present but conditionally visible */}
           <div 
-            ref={containerRef} 
-            className="w-full h-full relative" 
-            id="network-visualization-container" 
-            style={{
-              backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
-              touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
+            style={{ 
+              display: isNetwork ? 'block' : 'none',
+              width: '100%',
+              height: '100%'
             }}
           >
-            <svg 
-              ref={svgRef} 
-              className="w-full h-full"
-              style={{ pointerEvents: "all" }} // Explicit pointer events to fix zoom
-            />
-            
-            {/* File Buttons */}
-            <FileButtons 
+            <div 
+              ref={containerRef} 
+              className="w-full h-full relative" 
+              id="network-visualization-container" 
+              style={{
+                backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
+                touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
+              }}
+            >
+              <svg 
+                ref={svgRef} 
+                className="w-full h-full"
+                style={{ pointerEvents: "all" }} // Explicit pointer events to fix zoom
+              />
+              
+              {/* File Buttons */}
+              <FileButtons 
+                onDownloadData={downloadData}
+                onDownloadGraph={downloadGraph}
+                onResetSelection={handleResetSelection}
+                nodeData={nodeData.map(node => ({
+                  id: node.id || '',
+                  name: node.name || '',
+                  category: node.category || '',
+                  type: node.type || ''
+                }))}
+                linkData={linkData.map(link => ({
+                  ...link,
+                  source: typeof link.source === 'object' ? String(link.source.id) : String(link.source),
+                  target: typeof link.target === 'object' ? String(link.target.id) : String(link.target),
+                }))}
+              />
+              
+              {/* Zoom Controls */}
+              <ZoomControls
+                onZoomIn={zoomIn}
+                onZoomOut={zoomOut}
+                onReset={zoomToFit}
+                isZoomInitialized={isZoomInitialized}
+              />
+              
+              {/* Tooltip */}
+              <div 
+                ref={tooltipRef} 
+                className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
+                style={{ 
+                  opacity: 0,
+                  visibility: "hidden",
+                  transition: 'opacity 0.15s ease-in-out',
+                  boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+                  transform: 'translate(0, 0)',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                }}
+              />
+              
+              {/* Network components */}
+              <NetworkTooltip tooltipRef={tooltipRef} nodes={processedData.nodes} links={processedData.links} />
+              <NetworkLegend 
+                categories={uniqueCategories} 
+                colorTheme={colors.colorTheme} 
+                dynamicColorThemes={colors.dynamicColorThemes} 
+                colorPalette={Object.values(colors.dynamicColorThemes.default || {})}
+              />
+              <NetworkHelper />
+            </div>
+          </div>
+          
+          {/* Radial Visualization Container - always present but conditionally visible */}
+          <div 
+            style={{ 
+              display: isRadial ? 'block' : 'none',
+              width: '100%', 
+              height: '100%' 
+            }}
+          >
+            <RadialVisualization
+              onCreditsClick={onCreditsClick}
+              nodeData={nodeData.map(node => ({
+                id: String(node.id),
+                name: node.name || '',
+                category: node.category || '',
+                type: node.type || ''
+              }))}
+              linkData={linkData.map(link => ({
+                source: typeof link.source === 'object' ? link.source.id : link.source,
+                target: typeof link.target === 'object' ? link.target.id : link.target,
+              }))}
+              visualizationType={localVisualizationType}
+              onVisualizationTypeChange={handleVisualizationTypeChange}
+              colorTheme={colors.colorTheme}
+              nodeSize={colors.nodeSize}
+              linkColor={colors.linkColor}
+              backgroundColor={colors.backgroundColor}
+              backgroundOpacity={colors.backgroundOpacity}
+              customNodeColors={colors.customNodeColors}
+              dynamicColorThemes={colors.dynamicColorThemes}
               onDownloadData={downloadData}
               onDownloadGraph={downloadGraph}
               onResetSelection={handleResetSelection}
-              nodeData={nodeData}
-              linkData={linkData}
             />
-            
-            {/* Zoom Controls */}
-            <ZoomControls
-              onZoomIn={zoomIn}
-              onZoomOut={zoomOut}
-              onReset={zoomToFit}
-              isZoomInitialized={isZoomInitialized}
-            />
-            
-            {/* Tooltip */}
-            <div 
-              ref={tooltipRef} 
-              className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
-              style={{ 
-                opacity: 0,
-                transition: 'opacity 0.15s ease-in-out',
-                boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
-                transform: 'translate(0, 0)',
-                maxHeight: '300px',
-                overflowY: 'auto',
-              }}
-            />
-            
-            {/* Network components */}
-            <NetworkTooltip tooltipRef={tooltipRef} nodes={processedData.nodes} links={processedData.links} />
-            <NetworkLegend 
-              categories={uniqueCategories} 
-              colorTheme={colors.colorTheme} 
-              dynamicColorThemes={colors.dynamicColorThemes} 
-              colorPalette={Object.values(colors.dynamicColorThemes.default || {})}
-            />
-            <NetworkHelper />
           </div>
-        </>
+          
+          {/* Arc Visualization Container - always present but conditionally visible */}
+          <div 
+            style={{ 
+              display: isArc ? 'block' : 'none',
+              width: '100%', 
+              height: '100%' 
+            }}
+          >
+            <ArcVisualization
+              onCreditsClick={onCreditsClick}
+              nodeData={nodeData.map(node => ({
+                id: String(node.id),
+                name: node.name || '',
+                category: node.category || '',
+                type: node.type || ''
+              }))}
+              linkData={linkData.map(link => ({
+                source: typeof link.source === 'object' ? link.source.id : link.source,
+                target: typeof link.target === 'object' ? link.target.id : link.target,
+              }))}
+              visualizationType={localVisualizationType}
+              onVisualizationTypeChange={handleVisualizationTypeChange}
+              colorTheme={colors.colorTheme}
+              nodeSize={colors.nodeSize}
+              linkColor={colors.linkColor}
+              backgroundColor={colors.backgroundColor}
+              backgroundOpacity={colors.backgroundOpacity}
+              customNodeColors={colors.customNodeColors}
+              dynamicColorThemes={colors.dynamicColorThemes}
+              onDownloadData={downloadData}
+              onDownloadGraph={downloadGraph}
+              onResetSelection={handleResetSelection}
+            />
+          </div>
+        </div>
       }
       nodeData={nodeData}
       linkData={linkData}
@@ -1342,7 +1519,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       handlers={handlers}
       customNodeColorsState={colors.customNodeColors}
       dynamicColorThemesState={colors.dynamicColorThemes}
-      onZoomToFit={zoomToFit} // Pass zoomToFit directly for use in the sidebar
+      onZoomToFit={zoomToFit}
+      renderSidebar={true}
     />
   );
 };
