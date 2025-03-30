@@ -25,6 +25,11 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
   const [fixNodesOnDrag, setFixNodesOnDrag] = useState(true);
   const [visualizationType, setVisualizationType] = useState<VisualizationType>('network');
   
+  // 3D specific settings
+  const [threeDLayout, setThreeDLayout] = useState<'3d-sphere' | '3d-network'>('3d-sphere');
+  const [threeDSortMode, setThreeDSortMode] = useState<'alphabetical' | 'category' | 'connections' | 'none'>('none');
+  const [threeDCenterNode, setThreeDCenterNode] = useState<string | null>(null);
+  
   // Basic theming props that all visualization types can use
   const [colorTheme, setColorTheme] = useState('default');
   const [nodeSize, setNodeSize] = useState(1.0);
@@ -251,6 +256,44 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     });
   };
   
+  // Handler for 3D layout type change
+  const handleThreeDLayoutChange = (layoutType: '3d-sphere' | '3d-network') => {
+    setThreeDLayout(layoutType);
+    toast({
+      title: "3D Layout Changed",
+      description: layoutType === '3d-sphere'
+        ? "Using spherical layout - nodes arranged in a spherical pattern"
+        : "Using network layout - force-directed graph in 3D space with right-click node positioning"
+    });
+  };
+
+  // Handler for 3D sort mode change
+  const handleThreeDSortModeChange = (mode: 'alphabetical' | 'category' | 'connections' | 'none') => {
+    setThreeDSortMode(mode);
+    
+    let description = "Nodes arranged in default order";
+    if (mode === 'alphabetical') description = "Nodes arranged alphabetically by ID";
+    if (mode === 'category') description = "Nodes arranged by category groups";
+    if (mode === 'connections') description = "Nodes arranged by connection count (most connected first)";
+    
+    toast({
+      title: "Sphere Ordering Changed",
+      description
+    });
+  };
+
+  // Handler for center node change
+  const handleThreeDCenterNodeChange = (nodeId: string | null) => {
+    setThreeDCenterNode(nodeId);
+    
+    toast({
+      title: nodeId ? "Center Node Set" : "Center Node Removed",
+      description: nodeId 
+        ? `Node "${nodeId}" placed at center of sphere for centrality analysis` 
+        : "Reverting to balanced sphere layout with no central node"
+    });
+  };
+  
   // Handler for toggling labels
   const handleToggleLabels = () => {
     setShowLabels(prev => !prev);
@@ -266,7 +309,9 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
   const handleResetView = () => {
     toast({
       title: "View Reset",
-      description: "Camera position has been reset to default view"
+      description: threeDLayout === '3d-network' 
+        ? "Camera position has been reset to default view and all nodes unfixed" 
+        : "Camera position has been reset to default view"
     });
   };
   
@@ -406,6 +451,9 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             tooltipTrigger={tooltipTrigger}
             rotationSpeed={rotationSpeed}
             showLabels={showLabels}
+            threeDLayout={threeDLayout}
+            threeDSortMode={threeDSortMode}
+            threeDCenterNode={threeDCenterNode}
             onParameterChange={onParameterChange}
             onNodeGroupChange={() => {}}
             onColorThemeChange={setColorTheme}
@@ -431,6 +479,9 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             onResetView={handleResetView}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
+            onThreeDLayoutChange={handleThreeDLayoutChange}
+            onThreeDSortModeChange={handleThreeDSortModeChange}
+            onThreeDCenterNodeChange={handleThreeDCenterNodeChange}
           />
 
           {/* The actual 3D visualization */}
@@ -446,6 +497,9 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
               customNodeColors={customNodeColors}
               dynamicColorThemes={dynamicColorThemes}
               onCreditsClick={onCreditsClick}
+              layoutType={threeDLayout}
+              sortMode={threeDSortMode}
+              centerNodeId={threeDCenterNode}
             />
           </div>
         </div>

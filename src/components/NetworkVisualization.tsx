@@ -1039,81 +1039,45 @@ const resetNodeSelection = () => {
       
       // Event handlers - using direct function instead of reference
       node
-      .on("mouseover", function(event, d) {
-        // Get the current tooltipDetail and tooltipTrigger from DOM attributes if available
-        // This ensures we always use the latest values, not closure values
-        let currentDetail = tooltipDetail;
-        let currentTrigger = tooltipTrigger;
-        
-        // If available, get current values from DOM attributes
-        if (containerRef.current) {
-          const detailAttr = containerRef.current.getAttribute('data-tooltip-detail');
-          const triggerAttr = containerRef.current.getAttribute('data-tooltip-trigger');
-          
-          if (detailAttr) {
-            currentDetail = detailAttr as TooltipDetail;
-          }
-          
-          if (triggerAttr) {
-            currentTrigger = triggerAttr as TooltipTrigger;
-          }
-        }
-        
-        // Use the current values from DOM or state
-        showTooltip(
-          event, 
-          d, 
-          tooltipRef, 
-          processedData.links, 
-          currentDetail,
-          currentTrigger,
-          svgRef, // Pass the svgRef for proper positioning
-          (selectedNode) => { processNodeSelection(selectedNode); }
-        );
-      })
-      .on("mousemove", function(event) {
-        // Get current trigger from DOM if available
-        let currentTrigger = tooltipTrigger;
-        if (containerRef.current) {
-          const triggerAttr = containerRef.current.getAttribute('data-tooltip-trigger');
-          if (triggerAttr) {
-            currentTrigger = triggerAttr as TooltipTrigger;
-          }
-        }
-        
-        moveTooltip(event, tooltipRef, svgRef, currentTrigger);
-      })
-      .on("mouseout", function() {
-        // Get current trigger from DOM if available
-        let currentTrigger = tooltipTrigger;
-        if (containerRef.current) {
-          const triggerAttr = containerRef.current.getAttribute('data-tooltip-trigger');
-          if (triggerAttr) {
-            currentTrigger = triggerAttr as TooltipTrigger;
-          }
-        }
-        
-        hideTooltip(tooltipRef, currentTrigger, selectedNode?.id);
-      })
-      .on("click", function(event, d) {
-        event.stopPropagation();
-        processNodeSelection(d);
-        
-        // If we're in hover mode with a detailed tooltip, show the tooltip as persistent
-        if (tooltipTrigger === 'hover' && tooltipDetail === 'detailed') {
-          // Create a persistent tooltip on click
-          showTooltip(
-            event, 
-            d, 
-            tooltipRef, 
-            processedData.links, 
-            'detailed',  // Force detailed view
-            'persistent', // Force persistent mode for this interaction
-            svgRef,
-            null // Don't re-trigger node selection
-          );
-        }
-      });
+  .on("mouseover", function(event, d) {
+    // Show the simple tooltip on hover with "Click for more details"
+    showTooltip(
+      event, 
+      d, 
+      tooltipRef, 
+      processedData.links, 
+      'simple',  // Always use simple view for hover
+      'hover',   // Use hover mode for initial tooltip
+      svgRef,
+      null       // Don't process node selection on hover
+    );
+  })
+  .on("mousemove", function(event) {
+    // Only move the tooltip if it's not in persistent mode
+    moveTooltip(event, tooltipRef, svgRef, 'hover');
+  })
+  .on("mouseout", function() {
+    // Only hide the tooltip if it's not in persistent mode
+    hideTooltip(tooltipRef, 'hover', selectedNode?.id);
+  })
+  .on("click", function(event, d) {
+    event.stopPropagation();
+    
+    // Process node selection to update the sidebar
+    processNodeSelection(d);
+    
+    // Always show detailed tooltip on click that stays visible
+    showTooltip(
+      event, 
+      d, 
+      tooltipRef, 
+      processedData.links, 
+      'detailed',   // Always use detailed view for clicks
+      'persistent', // Always use persistent mode for click tooltips
+      svgRef,
+      null          // Don't re-trigger node selection
+    );
+  });
       
       // Click anywhere else to reset highlighting
       d3.select(svgRef.current).on("click", resetNodeSelection);
@@ -2130,18 +2094,19 @@ const handleExportNodeData = (format: 'text' | 'json') => {
                 
                 {/* Tooltip */}
                 <div 
-                  ref={tooltipRef} 
-                  className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
-                  style={{ 
-                    opacity: 0,
-                    visibility: "hidden",
-                    transition: 'opacity 0.15s ease-in-out',
-                    boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
-                    transform: 'translate(0, 0)',
-                    maxHeight: '300px',
-                    overflowY: 'auto',
-                  }}
-                />
+  ref={tooltipRef} 
+  className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm z-50"
+  style={{ 
+    opacity: 0,
+    visibility: "hidden",
+    transition: 'opacity 0.15s ease-in-out',
+    boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+    maxWidth: '320px',
+    maxHeight: '400px',
+    overflowY: 'auto',
+    pointerEvents: 'auto' // Important - allow interacting with tooltip content
+  }}
+/>
                 
                 {/* Network components */}
                 <NetworkTooltip 

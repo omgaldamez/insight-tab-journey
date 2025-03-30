@@ -17,6 +17,9 @@ interface ThreeDVisualizationProps {
   customNodeColors?: Record<string, string>;
   dynamicColorThemes?: Record<string, Record<string, string>>;
   onCreditsClick?: () => void;
+  layoutType?: '3d-sphere' | '3d-network'; // Layout type option
+  centerNodeId?: string; // Added centrality node option
+  sortMode?: 'alphabetical' | 'category' | 'connections' | 'none'; // Added sort option for sphere layout
 }
 
 const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
@@ -29,12 +32,18 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
   backgroundOpacity = 1,
   customNodeColors = {},
   dynamicColorThemes = {},
-  onCreditsClick
+  onCreditsClick,
+  layoutType: initialLayoutType = '3d-sphere', // Default to sphere layout
+  centerNodeId, // Node to place at center (for centrality)
+  sortMode = 'none' // Default to no sorting
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Add state for layout type
+  const [layoutType, setLayoutType] = useState<'3d-sphere' | '3d-network'>(initialLayoutType);
   
   // 3D Controls state
   const [rotationSpeed, setRotationSpeed] = useState(0.001);
@@ -49,6 +58,11 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
   const nodeObjectsRef = useRef<THREE.Mesh[]>([]);
   const linkObjectsRef = useRef<THREE.Line[]>([]);
   const nodeLabelsRef = useRef<THREE.Sprite[]>([]);
+  
+  // Track dragged node and right-click state
+  const draggedNodeRef = useRef<THREE.Mesh | null>(null);
+  const isRightDraggingRef = useRef<boolean>(false);
+  const rightDragStartPositionRef = useRef<{x: number, y: number}>({x: 0, y: 0});
   
   // Convert hex color to THREE.Color
   const hexToThreeColor = (hex: string): THREE.Color => {
@@ -66,6 +80,76 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     const currentTheme = dynamicColorThemes?.[colorTheme] || dynamicColorThemes?.default || {};
     const color = currentTheme[node.category] || '#95a5a6';
     return hexToThreeColor(color);
+  };
+  
+  // Handle layout type change
+  const handleLayoutTypeChange = (type: '3d-sphere' | '3d-network') => {
+    if (type === layoutType) return; // No change needed
+    
+    setLayoutType(type);
+    toast({
+      title: `3D Layout Changed`,
+      description: `Switched to ${type === '3d-sphere' ? 'Sphere' : 'Network'} layout`
+    });
+    
+    // Reset visualization to apply new layout
+    // This is necessary since node positions are set at initialization
+    if (rendererRef.current && containerRef.current) {
+      containerRef.current.removeChild(rendererRef.current.domElement);
+      rendererRef.current = null;
+    }
+    
+    // Reset all references
+    sceneRef.current = null;
+    cameraRef.current = null;
+    nodeObjectsRef.current = [];
+    linkObjectsRef.current = [];
+    nodeLabelsRef.current = [];
+    
+    // Trigger recreation
+    setIsLoading(true);
+    setTimeout(() => setIsLoading(false), 100);
+  };
+  
+  // Sort nodes based on the sort mode
+  const getSortedNodes = (nodes: Node[]) => {
+    if (sortMode === 'none') return nodes;
+    
+    const nodesCopy = [...nodes];
+    
+    switch (sortMode) {
+      case 'alphabetical':
+        return nodesCopy.sort((a, b) => a.id.localeCompare(b.id));
+      
+      case 'category':
+        return nodesCopy.sort((a, b) => {
+          // First sort by category
+          const catComp = a.category.localeCompare(b.category);
+          // If same category, sort by id
+          return catComp !== 0 ? catComp : a.id.localeCompare(b.id);
+        });
+        
+      case 'connections':
+        // Count connections for each node
+        { const connectionCounts: Record<string, number> = {};
+        linkData.forEach(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          
+          connectionCounts[sourceId] = (connectionCounts[sourceId] || 0) + 1;
+          connectionCounts[targetId] = (connectionCounts[targetId] || 0) + 1;
+        });
+        
+        // Sort by connection count (descending)
+        return nodesCopy.sort((a, b) => {
+          const aCount = connectionCounts[a.id] || 0;
+          const bCount = connectionCounts[b.id] || 0;
+          return bCount - aCount;
+        }); }
+        
+      default:
+        return nodesCopy;
+    }
   };
   
   // Show tooltip for a node
@@ -89,6 +173,11 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       connections.from.forEach(source => {
         tooltipContent += `${source}<br>`;
       });
+    }
+    
+    // Add information about interaction
+    if (layoutType === '3d-network') {
+      tooltipContent += `<br><em>Right-click + drag to reposition this node</em>`;
     }
     
     // Set content and position
@@ -195,12 +284,12 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       
       // Create scene
       const scene = new THREE.Scene();
-      scene.background = hexToThreeColor(backgroundColor);
+      scene.background = new THREE.Color(backgroundColor);
       sceneRef.current = scene;
       
       // Create camera
       const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-      camera.position.z = 100;
+      camera.position.z = 150;
       cameraRef.current = camera;
       
       // Create renderer
@@ -222,7 +311,26 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       // Create node positions
       const nodePositions: { [id: string]: THREE.Vector3 } = {};
       
-      nodeData.forEach((node, index) => {
+      // Sort nodes if needed for sphere layout
+      let nodesToProcess = nodeData;
+      if (layoutType === '3d-sphere') {
+        nodesToProcess = getSortedNodes(nodeData);
+      }
+      
+      // Find center node if specified
+      let centerNodeIndex = -1;
+      if (centerNodeId && layoutType === '3d-sphere') {
+        centerNodeIndex = nodesToProcess.findIndex(node => node.id === centerNodeId);
+      }
+      
+      // Process center node first if it exists
+      if (centerNodeIndex !== -1 && layoutType === '3d-sphere') {
+        // Move center node to beginning of array
+        const centerNode = nodesToProcess.splice(centerNodeIndex, 1)[0];
+        nodesToProcess = [centerNode, ...nodesToProcess];
+      }
+      
+      nodesToProcess.forEach((node, index) => {
         // Create node material with appropriate color
         const nodeMaterial = new THREE.MeshStandardMaterial({ 
           color: getNodeColor(node),
@@ -231,15 +339,37 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
         });
         const mesh = new THREE.Mesh(sphereGeometry, nodeMaterial);
         
-        // Position node randomly in 3D space (sphere layout)
-        const phi = Math.acos(-1 + (2 * index) / nodeData.length);
-        const theta = Math.sqrt(nodeData.length * Math.PI) * phi;
-        
-        const position = new THREE.Vector3(
-          50 * Math.cos(theta) * Math.sin(phi),
-          50 * Math.sin(theta) * Math.sin(phi),
-          50 * Math.cos(phi)
-        );
+        // Position node based on selected layout
+        let position;
+        if (layoutType === '3d-network') {
+          // Network layout: random positions in a cube volume
+          position = new THREE.Vector3(
+            (Math.random() - 0.5) * 200,
+            (Math.random() - 0.5) * 200,
+            (Math.random() - 0.5) * 200
+          );
+        } else {
+          // Sphere layout: distribute nodes evenly on a sphere surface
+          if (index === 0 && centerNodeId) {
+            // Center node at the origin
+            position = new THREE.Vector3(0, 0, 0);
+          } else {
+            // Distribute other nodes on the sphere
+            // Use golden spiral algorithm for even distribution
+            const offset = centerNodeId ? 1 : 0;
+            const actualIndex = index - offset;
+            const totalNodes = nodesToProcess.length - offset;
+            
+            const phi = Math.acos(-1 + (2 * actualIndex) / totalNodes);
+            const theta = Math.sqrt(totalNodes * Math.PI) * phi;
+            
+            position = new THREE.Vector3(
+              50 * Math.cos(theta) * Math.sin(phi),
+              50 * Math.sin(theta) * Math.sin(phi),
+              50 * Math.cos(phi)
+            );
+          }
+        }
         
         mesh.position.copy(position);
         nodePositions[node.id] = position;
@@ -247,7 +377,10 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
         // Store the node data for interaction
         mesh.userData = { 
           nodeId: node.id,
-          category: node.category
+          category: node.category,
+          // Add flag for node dragging with right-click
+          isDraggable: layoutType === '3d-network',
+          isFixed: false
         };
         
         nodesGroup.add(mesh);
@@ -314,6 +447,11 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       
       // Mouse events for interaction
       const handleMouseMove = (event: MouseEvent) => {
+        // Skip raycasting when right-dragging a node
+        if (isRightDraggingRef.current && draggedNodeRef.current) {
+          return;
+        }
+        
         // Calculate mouse position in normalized device coordinates
         mouse.x = (event.clientX / width) * 2 - 1;
         mouse.y = - (event.clientY / height) * 2 + 1;
@@ -385,20 +523,146 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
         }
       };
       
-      // Set up controls
+      // Handle right-click down to start node dragging
+      const handleRightMouseDown = (event: MouseEvent) => {
+        // Only process right button
+        if (event.button !== 2) return;
+        
+        // Prevent the context menu
+        event.preventDefault();
+        
+        // Only allow dragging in network layout
+        if (layoutType !== '3d-network') return;
+        
+        // Calculate mouse position in normalized device coordinates
+        mouse.x = (event.clientX / width) * 2 - 1;
+        mouse.y = - (event.clientY / height) * 2 + 1;
+        
+        // Update the raycaster
+        raycaster.setFromCamera(mouse, camera);
+        
+        // Find intersections with nodes
+        const intersects = raycaster.intersectObjects(nodeObjects);
+        
+        if (intersects.length > 0) {
+          const nodeMesh = intersects[0].object as THREE.Mesh;
+          
+          // Only drag if node is draggable
+          if (nodeMesh.userData.isDraggable) {
+            isRightDraggingRef.current = true;
+            draggedNodeRef.current = nodeMesh;
+            rightDragStartPositionRef.current = { x: event.clientX, y: event.clientY };
+            
+            // Set the node as fixed
+            nodeMesh.userData.isFixed = true;
+            
+            // Highlight the dragged node
+            (nodeMesh.material as THREE.MeshStandardMaterial).emissive.set(0x666666);
+            
+            // Show feedback toast
+            toast({
+              title: "Node Positioning",
+              description: `Repositioning node: ${nodeMesh.userData.nodeId}`,
+            });
+          }
+        }
+      };
+      
+      // Handle mouse move during right-drag
+      const handleRightMouseMove = (event: MouseEvent) => {
+        if (!isRightDraggingRef.current || !draggedNodeRef.current || !cameraRef.current) return;
+        
+        // Get camera direction vectors
+        const camera = cameraRef.current;
+        
+        // Create movement vectors in camera space
+        const dragX = (event.clientX - rightDragStartPositionRef.current.x) * 0.1;
+        const dragY = (event.clientY - rightDragStartPositionRef.current.y) * 0.1;
+        
+        // Get camera right and up vectors
+        const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        
+        // Apply movement in camera space
+        draggedNodeRef.current.position.add(cameraRight.multiplyScalar(dragX));
+        draggedNodeRef.current.position.add(cameraUp.multiplyScalar(-dragY)); // Invert Y for natural feel
+        
+        // Update corresponding label
+        const nodeId = draggedNodeRef.current.userData.nodeId;
+        const labelIndex = nodeData.findIndex(n => n.id === nodeId);
+        if (labelIndex >= 0 && labelIndex < nodeLabelsRef.current.length) {
+          nodeLabelsRef.current[labelIndex].position.copy(draggedNodeRef.current.position);
+        }
+        
+        // Update links connected to this node
+        linkObjectsRef.current.forEach(link => {
+          const sourceId = link.userData.sourceId;
+          const targetId = link.userData.targetId;
+          
+          if (sourceId === nodeId || targetId === nodeId) {
+            // Get the positions of both endpoints
+            const sourceNode = nodeObjectsRef.current.find(n => n.userData.nodeId === sourceId);
+            const targetNode = nodeObjectsRef.current.find(n => n.userData.nodeId === targetId);
+            
+            if (sourceNode && targetNode) {
+              // Update line geometry
+              const positions = [
+                sourceNode.position.clone(),
+                targetNode.position.clone()
+              ];
+              
+              const geometry = new THREE.BufferGeometry().setFromPoints(positions);
+              link.geometry.dispose();
+              link.geometry = geometry;
+            }
+          }
+        });
+        
+        // Update start position for next move
+        rightDragStartPositionRef.current = { x: event.clientX, y: event.clientY };
+      };
+      
+      // Handle right mouse up to end dragging
+      const handleRightMouseUp = (event: MouseEvent) => {
+        if (!isRightDraggingRef.current || !draggedNodeRef.current) return;
+        
+        // Reset highlighting
+        (draggedNodeRef.current.material as THREE.MeshStandardMaterial).emissive.set(0x000000);
+        
+        // End the drag operation
+        isRightDraggingRef.current = false;
+        draggedNodeRef.current = null;
+        
+        // Prevent default context menu
+        event.preventDefault();
+      };
+      
+      // Set up rotation controls
       let isDragging = false;
       let previousMousePosition = { x: 0, y: 0 };
       
       const handleMouseDown = (event: MouseEvent) => {
+        // Only handle left button for rotation
+        if (event.button !== 0) return;
+        
         isDragging = true;
         previousMousePosition = { x: event.clientX, y: event.clientY };
       };
       
-      const handleMouseUp = () => {
+      const handleMouseUp = (event: MouseEvent) => {
+        // Only handle left button for rotation
+        if (event.button !== 0) return;
+        
         isDragging = false;
       };
       
       const handleMouseDrag = (event: MouseEvent) => {
+        // Skip if right-dragging nodes
+        if (isRightDraggingRef.current) return;
+        
+        // Only handle left button for rotation
+        if (event.button !== 0 && event.buttons !== 1) return;
+        
         if (!isDragging) return;
         
         const deltaX = event.clientX - previousMousePosition.x;
@@ -426,6 +690,11 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
         event.preventDefault();
       };
       
+      // Disable context menu in the container
+      const handleContextMenu = (event: MouseEvent) => {
+        event.preventDefault();
+      };
+      
       // Add event listeners
       containerRef.current.addEventListener('mousemove', handleMouseMove);
       containerRef.current.addEventListener('click', handleClick);
@@ -433,27 +702,155 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       containerRef.current.addEventListener('mouseup', handleMouseUp);
       containerRef.current.addEventListener('mousemove', handleMouseDrag);
       containerRef.current.addEventListener('wheel', handleWheel, { passive: false });
+      containerRef.current.addEventListener('contextmenu', handleContextMenu);
       
-      // Animation loop
+      // Add right-click drag handlers
+      containerRef.current.addEventListener('mousedown', handleRightMouseDown);
+      containerRef.current.addEventListener('mousemove', handleRightMouseMove);
+      containerRef.current.addEventListener('mouseup', handleRightMouseUp);
+      
+      // Animation loop with force-directed layout logic for network layout
       let animationFrameId: number;
+      
+      // Set up force simulation parameters based on layout
+      const forceParams = {
+        // Network layout should have different force parameters
+        repulsion: layoutType === '3d-network' ? 100 : 50, // Stronger repulsion for network
+        gravity: layoutType === '3d-network' ? 0.05 : 0.1, // Weaker gravity for network
+        linkDistance: layoutType === '3d-network' ? 40 : 30, // Longer links for network
+        friction: layoutType === '3d-network' ? 0.85 : 0.9, // Less friction for network
+      };
+      
+      // Function to calculate forces between nodes
+      const calculateForces = () => {
+        if (layoutType !== '3d-network' || !nodeObjects.length) return;
+        
+        // Apply forces only in network layout
+        // This is a simple force-directed algorithm in 3D
+        for (let i = 0; i < nodeObjects.length; i++) {
+          const node = nodeObjects[i];
+          
+          // Skip fixed nodes (ones that were manually positioned)
+          if (node.userData.isFixed) continue;
+          
+          const nodeId = node.userData.nodeId;
+          let fx = 0, fy = 0, fz = 0;
+          
+          // Apply repulsive forces between nodes
+          for (let j = 0; j < nodeObjects.length; j++) {
+            if (i === j) continue;
+            
+            const otherNode = nodeObjects[j];
+            const dx = node.position.x - otherNode.position.x;
+            const dy = node.position.y - otherNode.position.y;
+            const dz = node.position.z - otherNode.position.z;
+            
+            // Calculate distance (avoid division by zero)
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.001;
+            
+            // Repulsive force is inversely proportional to distance
+            const force = forceParams.repulsion / (distance * distance);
+            
+            // Calculate force components
+            if (distance > 0) {
+              fx += (dx / distance) * force;
+              fy += (dy / distance) * force;
+              fz += (dz / distance) * force;
+            }
+          }
+          
+          // Apply attractive forces along links
+          linkObjects.forEach(link => {
+            const sourceId = link.userData.sourceId;
+            const targetId = link.userData.targetId;
+            
+            if (sourceId === nodeId || targetId === nodeId) {
+              const otherId = sourceId === nodeId ? targetId : sourceId;
+              const otherNode = nodeObjects.find(n => n.userData.nodeId === otherId);
+              
+              if (otherNode) {
+                const dx = otherNode.position.x - node.position.x;
+                const dy = otherNode.position.y - node.position.y;
+                const dz = otherNode.position.z - node.position.z;
+                
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.001;
+                
+                // Calculate spring force (proportional to distance)
+                const displacement = distance - forceParams.linkDistance;
+                const springForce = displacement * 0.05;
+                
+                // Add attractive force
+                if (distance > 0) {
+                  fx += (dx / distance) * springForce;
+                  fy += (dy / distance) * springForce;
+                  fz += (dz / distance) * springForce;
+                }
+              }
+            }
+          });
+          
+          // Apply gravity towards center
+          fx -= node.position.x * forceParams.gravity;
+          fy -= node.position.y * forceParams.gravity;
+          fz -= node.position.z * forceParams.gravity;
+          
+          // Apply forces to node position (with damping)
+          node.position.x += fx * forceParams.friction;
+          node.position.y += fy * forceParams.friction;
+          node.position.z += fz * forceParams.friction;
+        }
+        
+        // Update link positions
+        linkObjects.forEach(link => {
+          const sourceId = link.userData.sourceId;
+          const targetId = link.userData.targetId;
+          
+          const sourceNode = nodeObjects.find(n => n.userData.nodeId === sourceId);
+          const targetNode = nodeObjects.find(n => n.userData.nodeId === targetId);
+          
+          if (sourceNode && targetNode) {
+            const positions = [
+              new THREE.Vector3().copy(sourceNode.position),
+              new THREE.Vector3().copy(targetNode.position)
+            ];
+            
+            const geometry = new THREE.BufferGeometry().setFromPoints(positions);
+            link.geometry.dispose();
+            link.geometry = geometry;
+          }
+        });
+        
+        // Update label positions
+        nodeObjects.forEach((node, i) => {
+          if (i < nodeLabelsRef.current.length) {
+            const label = nodeLabelsRef.current[i];
+            label.position.copy(node.position);
+          }
+        });
+      };
       
       const animate = () => {
         animationFrameId = requestAnimationFrame(animate);
         
         if (rendererRef.current && cameraRef.current && sceneRef.current) {
           // Auto-rotate when not being dragged
-          if (!isDragging) {
+          if (!isDragging && !isRightDraggingRef.current) {
             nodesGroup.rotation.y += rotationSpeed;
             linksGroup.rotation.y += rotationSpeed;
             
-            // Update label positions to follow nodes
-            nodeLabelsRef.current.forEach((sprite, i) => {
-              if (i < nodeObjects.length) {
-                const nodeMesh = nodeObjects[i];
-                sprite.position.copy(nodeMesh.position);
-                sprite.visible = showLabels;
-              }
-            });
+            // Apply force-directed layout for network mode
+            if (layoutType === '3d-network') {
+              calculateForces();
+            } else {
+              // Just update label positions for sphere layout
+              nodeLabelsRef.current.forEach((sprite, i) => {
+                if (i < nodeObjects.length) {
+                  const nodeMesh = nodeObjects[i];
+                  sprite.position.copy(nodeMesh.position);
+                  sprite.visible = showLabels;
+                }
+              });
+            }
           }
           
           rendererRef.current.render(sceneRef.current, cameraRef.current);
@@ -465,7 +862,7 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       setIsLoading(false);
       toast({
         title: "3D Visualization Ready",
-        description: "Click and drag to rotate, scroll to zoom in/out.",
+        description: `Using ${layoutType === '3d-sphere' ? 'Sphere' : 'Network'} layout. Click and drag to rotate, scroll to zoom in/out.${layoutType === '3d-network' ? ' Right-click and drag to reposition nodes.' : ''}`,
       });
       
       // Clean up
@@ -479,6 +876,10 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
           containerRef.current.removeEventListener('mouseup', handleMouseUp);
           containerRef.current.removeEventListener('mousemove', handleMouseDrag);
           containerRef.current.removeEventListener('wheel', handleWheel);
+          containerRef.current.removeEventListener('contextmenu', handleContextMenu);
+          containerRef.current.removeEventListener('mousedown', handleRightMouseDown);
+          containerRef.current.removeEventListener('mousemove', handleRightMouseMove);
+          containerRef.current.removeEventListener('mouseup', handleRightMouseUp);
         }
         
         if (rendererRef.current && containerRef.current) {
@@ -514,7 +915,7 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
         variant: "destructive"
       });
     }
-  }, [nodeData, linkData, nodeSize, linkColor, backgroundColor, backgroundOpacity, customNodeColors, dynamicColorThemes, rotationSpeed, showLabels, toast, colorTheme]);
+  }, [nodeData, linkData, nodeSize, linkColor, backgroundColor, backgroundOpacity, customNodeColors, dynamicColorThemes, rotationSpeed, showLabels, toast, colorTheme, layoutType, centerNodeId, sortMode]);
   
   // Handle window resize
   useEffect(() => {
@@ -579,6 +980,7 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
             rotationSpeed={rotationSpeed}
             showLabels={showLabels}
             colorTheme={colorTheme}
+            layoutType={layoutType}
             onNodeSizeChange={(size) => {
               // Apply node size changes
               nodeObjectsRef.current.forEach(mesh => {
@@ -592,6 +994,7 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
             }}
             onRotationSpeedChange={setRotationSpeed}
             onToggleLabels={() => setShowLabels(!showLabels)}
+            onLayoutTypeChange={handleLayoutTypeChange}
             onResetView={() => {
               if (cameraRef.current) {
                 // Reset camera position
@@ -605,6 +1008,18 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
                   
                   if (nodesGroup) nodesGroup.rotation.set(0, 0, 0);
                   if (linksGroup) linksGroup.rotation.set(0, 0, 0);
+                }
+                
+                // Reset node fixed positions in 3D network layout
+                if (layoutType === '3d-network') {
+                  nodeObjectsRef.current.forEach(node => {
+                    node.userData.isFixed = false;
+                  });
+                  
+                  toast({
+                    title: "Node Positions Reset",
+                    description: "All nodes have been unfixed and will follow physics simulation"
+                  });
                 }
               }
             }}

@@ -1,10 +1,13 @@
-// Updated networkTypes.ts to fix incompatibilities
+// Updated networkTypes.ts to include 3D layout types
 
 import { NodeData, LinkData } from '@/types/types';
 import * as d3 from 'd3';
 
 // Define VisualizationType to include '3d'
 export type VisualizationType = 'network'| 'arc' | '3d' | 'rad360' | 'arcLineal';
+
+// Define 3D layout types
+export type ThreeDLayoutType = '3d-sphere' | '3d-network';
 
 // Define node data structure for D3
 export interface Node extends d3.SimulationNodeDatum {
@@ -60,6 +63,8 @@ export interface NetworkVisualizationProps {
   customNodeColors?: Record<string, string>;
   dynamicColorThemes?: Record<string, ColorTheme>;
   onSvgRef?: (svg: SVGSVGElement) => void;
+  threeDLayout?: ThreeDLayoutType; // Added 3D layout type property
+  nodePositioningEnabled?: boolean;
 }
 
 // Network state interface
@@ -80,6 +85,7 @@ export interface NetworkState {
   networkTitle: string;
   localFixNodesOnDrag: boolean;
   localVisualizationType: VisualizationType;
+  threeDLayout?: ThreeDLayoutType; // Added 3D layout type
 }
 
 // Network selection state
@@ -99,4 +105,19 @@ export interface SectionsState {
   networkInfo: boolean;
   visualizationType: boolean;
   threeDControls?: boolean;
+}
+
+// 3D visualization props
+export interface ThreeDVisualizationProps {
+  nodeData: Node[];
+  linkData: Link[];
+  colorTheme?: string;
+  nodeSize?: number;
+  linkColor?: string;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+  customNodeColors?: Record<string, string>;
+  dynamicColorThemes?: Record<string, Record<string, string>>;
+  nodePositioningEnabled?: boolean; // Add this property
+  onCreditsClick?: () => void;
 }
