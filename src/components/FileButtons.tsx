@@ -2,7 +2,9 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, Maximize2, Minimize2 } from "lucide-react";
 import { NodeData, LinkData } from "@/types/types";
+import { Node, Link } from "@/types/networkTypes";
 import { useToast } from "@/components/ui/use-toast";
+import { downloadNodeAsText, downloadNodeAsJson } from './TooltipUtils';
 
 // Define browser-specific fullscreen methods
 // Instead of extending Document, we'll create a type that has all the browser-specific methods
@@ -31,6 +33,8 @@ interface FileButtonsProps {
   onResetSelection: () => void;
   nodeData: NodeData[];
   linkData: LinkData[];
+  selectedNode?: Node | null;
+  links?: Link[];
 }
 
 const FileButtons: React.FC<FileButtonsProps> = ({
@@ -38,7 +42,9 @@ const FileButtons: React.FC<FileButtonsProps> = ({
   onDownloadGraph,
   onResetSelection,
   nodeData,
-  linkData
+  linkData,
+  selectedNode = null,
+  links = []
 }) => {
   const { toast } = useToast();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -176,7 +182,7 @@ const FileButtons: React.FC<FileButtonsProps> = ({
         )}
       </Button>
 
-      {/* Download Data dropdown */}
+      {/* Download Data dropdown - UPDATED with node data options */}
       <div className="relative group">
         <Button 
           variant="outline" 
@@ -199,6 +205,44 @@ const FileButtons: React.FC<FileButtonsProps> = ({
           >
             XLSX
           </button>
+          
+          {/* Add node data download options for all users */}
+          {selectedNode && links.length > 0 ? (
+            <>
+              {/* Show node-specific text when a node is selected */}
+              <div className="py-1 px-4 text-xs text-gray-500 border-t border-gray-200">
+                Selected Node: {selectedNode.id}
+              </div>
+              <button 
+                className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+                onClick={() => downloadNodeAsText(selectedNode, links)}
+              >
+                Node Data as Text
+              </button>
+              <button 
+                className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+                onClick={() => downloadNodeAsJson(selectedNode, links)}
+              >
+                Node Data as JSON
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Show disabled state when no node is selected */}
+              <button 
+                className="block w-full text-left px-4 py-2 text-gray-400 cursor-not-allowed text-sm"
+                disabled
+              >
+                Node Data as Text
+              </button>
+              <button 
+                className="block w-full text-left px-4 py-2 text-gray-400 cursor-not-allowed text-sm"
+                disabled
+              >
+                Node Data as JSON
+              </button>
+            </>
+          )}
         </div>
       </div>
       

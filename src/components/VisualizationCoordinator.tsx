@@ -5,6 +5,7 @@ import NetworkVisualization from './NetworkVisualization';
 import ThreeDVisualization from './ThreeDVisualization';
 import { useToast } from "@/components/ui/use-toast";
 import NetworkSidebar from './NetworkSidebar';
+import { TooltipDetail, TooltipTrigger } from './TooltipSettings';
 
 interface VisualizationCoordinatorProps {
   nodeData: Node[];
@@ -41,6 +42,10 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     custom: {}
   });
   
+  // Add tooltip settings
+  const [tooltipDetail, setTooltipDetail] = useState<TooltipDetail>('simple');
+  const [tooltipTrigger, setTooltipTrigger] = useState<TooltipTrigger>('hover');
+  
   // 3D specific settings
   const [rotationSpeed, setRotationSpeed] = useState(0.001);
   const [showLabels, setShowLabels] = useState(false);
@@ -50,7 +55,8 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     colorControls: false,
     networkInfo: false,
     visualizationType: true,
-    threeDControls: true
+    threeDControls: true,
+    tooltipSettings: true
   });
 
   // Initialize dynamic color themes with categories from nodes
@@ -323,6 +329,28 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     setColorTheme('default');
   };
 
+  // Add handler for tooltip detail change
+  const handleTooltipDetailChange = (detail: TooltipDetail) => {
+    setTooltipDetail(detail);
+    toast({
+      title: `Tooltip Detail: ${detail === 'simple' ? 'Simple' : 'Detailed'}`,
+      description: `Showing ${detail === 'simple' ? 'basic' : 'comprehensive'} node information`
+    });
+  };
+
+  // Add handler for tooltip trigger change
+  const handleTooltipTriggerChange = (trigger: TooltipTrigger) => {
+    setTooltipTrigger(trigger);
+    toast({
+      title: `Tooltip Mode: ${trigger.charAt(0).toUpperCase() + trigger.slice(1)}`,
+      description: trigger === 'hover' 
+        ? 'Tooltips will show on hover' 
+        : trigger === 'click' 
+          ? 'Tooltips will show on click and dismiss on click outside' 
+          : 'Tooltips will stay visible until new selection'
+    });
+  };
+
   // Create common props for visualizations
   const commonVisualizationProps = {
     nodeData,
@@ -337,7 +365,11 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     backgroundColor,
     backgroundOpacity,
     customNodeColors,
-    dynamicColorThemes
+    dynamicColorThemes,
+    tooltipDetail,
+    tooltipTrigger,
+    onTooltipDetailChange: handleTooltipDetailChange,
+    onTooltipTriggerChange: handleTooltipTriggerChange
   };
 
   return (
@@ -370,6 +402,8 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             uniqueCategories={Array.from(new Set(nodeData.map(node => node.category)))}
             fixNodesOnDrag={fixNodesOnDrag}
             visualizationType={visualizationType}
+            tooltipDetail={tooltipDetail}
+            tooltipTrigger={tooltipTrigger}
             rotationSpeed={rotationSpeed}
             showLabels={showLabels}
             onParameterChange={onParameterChange}
@@ -390,6 +424,8 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             onToggleSidebar={() => {}}
             onToggleFixNodes={handleToggleFixNodes}
             onVisualizationTypeChange={handleVisualizationTypeChange}
+            onTooltipDetailChange={handleTooltipDetailChange}
+            onTooltipTriggerChange={handleTooltipTriggerChange}
             onRotationSpeedChange={handleRotationSpeedChange}
             onToggleLabels={handleToggleLabels}
             onResetView={handleResetView}

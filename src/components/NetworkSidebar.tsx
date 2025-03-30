@@ -14,11 +14,13 @@ import {
   GitBranch, 
   ZoomIn,
   Box, // Replaced Cube with Box icon for 3D visualization
-  RotateCcw
+  RotateCcw,
+  Info
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import NetworkColorControls from './NetworkColorControls';
 import { getNodeColor } from '@/utils/colorThemes';
+import TooltipSettings, { TooltipDetail, TooltipTrigger } from './TooltipSettings';
 
 // Update visualization type to include 3D
 export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal';
@@ -53,6 +55,7 @@ interface NetworkSidebarProps {
     networkInfo: boolean;
     visualizationType: boolean; // Added for visualization type section
     threeDControls?: boolean;   // Added for 3D-specific controls
+    tooltipSettings: boolean;   // Added for tooltip settings
   };
   selectedNode: Node | null;
   selectedNodeConnections: {
@@ -73,6 +76,10 @@ interface NetworkSidebarProps {
   uniqueCategories: string[];
   fixNodesOnDrag: boolean;
   visualizationType: VisualizationType;
+  
+  // Tooltip settings
+  tooltipDetail: TooltipDetail;
+  tooltipTrigger: TooltipTrigger;
   
   // 3D specific props
   rotationSpeed?: number;
@@ -96,6 +103,9 @@ interface NetworkSidebarProps {
   onToggleSidebar: () => void;
   onToggleFixNodes: () => void;
   onVisualizationTypeChange: (type: VisualizationType) => void;
+  onTooltipDetailChange: (detail: TooltipDetail) => void;
+  onTooltipTriggerChange: (trigger: TooltipTrigger) => void;
+  onExportNodeData?: (format: 'text' | 'json') => void;
   onZoomToFit?: () => void;
   
   // 3D specific handlers
@@ -131,6 +141,8 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   uniqueCategories,
   fixNodesOnDrag,
   visualizationType,
+  tooltipDetail,
+  tooltipTrigger,
   rotationSpeed = 0.001,
   showLabels = false,
   onParameterChange,
@@ -151,6 +163,9 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   onToggleSidebar,
   onToggleFixNodes,
   onVisualizationTypeChange,
+  onTooltipDetailChange,
+  onTooltipTriggerChange,
+  onExportNodeData,
   onZoomToFit,
   onRotationSpeedChange,
   onToggleLabels,
@@ -182,6 +197,13 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
     } else if (e.key === 'Escape') {
       setIsEditingTitle(false);
       setTitleInput(title || "Untitled Network");
+    }
+  };
+
+  // Handler for exporting node data
+  const handleExportNodeData = (format: 'text' | 'json') => {
+    if (onExportNodeData) {
+      onExportNodeData(format);
     }
   };
 
@@ -328,8 +350,6 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         )}
       </div>
 
-    
-
       {/* Network Controls Section - Only shown for network visualization type */}
       {visualizationType === 'network' && (
         <div className="px-5 mb-3">
@@ -438,60 +458,84 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         </div>
       )}
       
+      {/* Tooltip Settings Section - New section for tooltip configuration */}
+      <div className="px-5 mb-3">
+        <button 
+          className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
+          onClick={() => onToggleSection('tooltipSettings')}
+        >
+          <h2 className="text-base font-medium text-blue-400 m-0">Tooltip Settings</h2>
+          {expandedSections.tooltipSettings ? 
+            <ChevronDown className="w-4 h-4 text-white" /> : 
+            <ChevronRight className="w-4 h-4 text-white" />
+          }
+        </button>
+        
+        {expandedSections.tooltipSettings && (
+          <div className="mb-4 bg-gray-700 p-3 rounded-md">
+            <TooltipSettings
+              tooltipDetail={tooltipDetail}
+              tooltipTrigger={tooltipTrigger}
+              onTooltipDetailChange={onTooltipDetailChange}
+              onTooltipTriggerChange={onTooltipTriggerChange}
+              onExportNodeData={selectedNode ? handleExportNodeData : undefined}
+            />
+          </div>
+        )}
+      </div>
       
-{/* Color Controls Section */}
-<div className="px-5 mb-3">
-  <button 
-    className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
-    onClick={() => onToggleSection('colorControls')}
-  >
-    <h2 className="text-base font-medium text-blue-400 m-0">Color Controls</h2>
-    {expandedSections.colorControls ? 
-      <ChevronDown className="w-4 h-4 text-white" /> : 
-      <ChevronRight className="w-4 h-4 text-white" />
-    }
-  </button>
-  
-  {expandedSections.colorControls && (
-    <div className="mb-4 bg-gray-700 p-3 rounded-md">
-      {/* Use updated NetworkColorControls component */}
-      <NetworkColorControls
-        uniqueCategories={uniqueCategories}
-        nodes={nodes}
-        colorTheme={colorTheme}
-        nodeSize={nodeSize}
-        linkColor={linkColor}
-        backgroundColor={backgroundColor}
-        textColor={textColor}
-        nodeStrokeColor={nodeStrokeColor}
-        backgroundOpacity={backgroundOpacity}
-        customNodeColors={customNodeColors}
-        // Pass the complete dynamicColorThemes object, not just current theme
-        dynamicColorThemes={{}}
-        onColorThemeChange={onColorThemeChange}
-        onNodeSizeChange={(value) => onParameterChange("nodeSize", value)}
-        onApplyGroupColors={onApplyGroupColors}
-        onApplyIndividualColor={onApplyIndividualColor}
-        onResetIndividualColor={onResetIndividualColor}
-        onApplyBackgroundColors={onApplyBackgroundColors}
-        onResetBackgroundColors={onResetBackgroundColors}
-        onColorTabChange={onColorTabChange}
-        activeColorTab={activeColorTab}
-      />
-      
-      <Button 
-        variant="outline" 
-        size="sm" 
-        className="w-full mt-3 bg-red-600 text-white hover:bg-red-500 border-none"
-        onClick={onResetGraph}
-      >
-        Reset Graph & Colors
-      </Button>
-    </div>
-  )}
-</div>
-      
-
+      {/* Color Controls Section */}
+      <div className="px-5 mb-3">
+        <button 
+          className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
+          onClick={() => onToggleSection('colorControls')}
+        >
+          <h2 className="text-base font-medium text-blue-400 m-0">Color Controls</h2>
+          {expandedSections.colorControls ? 
+            <ChevronDown className="w-4 h-4 text-white" /> : 
+            <ChevronRight className="w-4 h-4 text-white" />
+          }
+        </button>
+        
+        {expandedSections.colorControls && (
+          <div className="mb-4 bg-gray-700 p-3 rounded-md">
+            {/* Use updated NetworkColorControls component */}
+            <NetworkColorControls
+              uniqueCategories={uniqueCategories}
+              nodes={nodes}
+              colorTheme={colorTheme}
+              nodeSize={nodeSize}
+              linkColor={linkColor}
+              backgroundColor={backgroundColor}
+              textColor={textColor}
+              nodeStrokeColor={nodeStrokeColor}
+              backgroundOpacity={backgroundOpacity}
+              customNodeColors={customNodeColors}
+              // Pass the complete dynamicColorThemes object, not just current theme
+              dynamicColorThemes={{}}
+              onColorThemeChange={onColorThemeChange}
+              onNodeSizeChange={(value) => onParameterChange("nodeSize", value)}
+              onApplyGroupColors={onApplyGroupColors}
+              onApplyIndividualColor={onApplyIndividualColor}
+              onResetIndividualColor={onResetIndividualColor}
+              onApplyBackgroundColors={onApplyBackgroundColors}
+              onResetBackgroundColors={onResetBackgroundColors}
+              onColorTabChange={onColorTabChange}
+              activeColorTab={activeColorTab}
+            />
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="w-full mt-3 bg-red-600 text-white hover:bg-red-500 border-none"
+              onClick={onResetGraph}
+            >
+              Reset Graph & Colors
+            </Button>
+          </div>
+        )}
+      </div>
+          
       {/* Node Controls Section */}
       <div className="px-5 mb-3">
         <button 
@@ -521,7 +565,6 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         )}
       </div>
       
-    
       {/* Network Info Section */}
       <div className="px-5 mb-3">
         <button 

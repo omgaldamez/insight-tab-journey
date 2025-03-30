@@ -13,7 +13,7 @@ import {
 } from '@/types/networkTypes';
 import ArcVisualization from './ArcVisualization';
 import BaseVisualization from './BaseVisualization';
-import { findNodeConnections } from './TooltipUtils';
+import { downloadNodeAsJson, downloadNodeAsText, findNodeConnections } from './TooltipUtils';
 import {
   NetworkLegend,
   NetworkHelper,
@@ -24,11 +24,19 @@ import useFileExport from '@/hooks/useFileExport';
 import ZoomControls from './ZoomControls';
 import NetworkTooltip from './NetworkTooltip';
 import useNetworkColors from '@/hooks/useNetworkColors';
-import { showTooltip, moveTooltip, hideTooltip } from './TooltipUtils';
 import VisualizationControls from './VisualizationControls';
 import Rad360Visualization from './Rad360Visualization';
 import ArcLinealVisualization from './ArcLinealVisualization';
-
+import { TooltipDetail, TooltipTrigger } from './TooltipSettings';
+import NodeDetailModal from './NodeDetailModal';
+import { 
+  showTooltip, 
+  moveTooltip, 
+  hideTooltip, 
+  setupClickAwayListener,
+  getNodeTextRepresentation,
+  getNodeJsonRepresentation
+} from './TooltipUtils';
 
 // Define interfaces for handling both raw data and processed nodes/links
 interface NodeData {
@@ -62,6 +70,11 @@ interface NetworkVisualizationProps {
   customNodeColors?: Record<string, string>;
   dynamicColorThemes?: Record<string, Record<string, string>>;
   onSvgRef?: (svg: SVGSVGElement) => void;
+  // Add tooltip props
+  tooltipDetail?: TooltipDetail;
+  tooltipTrigger?: TooltipTrigger;
+  onTooltipDetailChange?: (detail: TooltipDetail) => void;
+  onTooltipTriggerChange?: (trigger: TooltipTrigger) => void;
 }
 
 // Global type for timeout IDs
@@ -86,7 +99,12 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   backgroundOpacity = 1.0,
   customNodeColors = {},
   dynamicColorThemes = {},
-  onSvgRef
+  onSvgRef,
+  // Add tooltip props with defaults
+  tooltipDetail: propTooltipDetail,
+  tooltipTrigger: propTooltipTrigger,
+  onTooltipDetailChange,
+  onTooltipTriggerChange
 }) => {
   // References
   const svgRef = useRef<SVGSVGElement>(null);
@@ -116,7 +134,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     colorControls: false,
     networkInfo: false,
     visualizationType: true,
-    threeDControls: false
+    threeDControls: false,
+    tooltipSettings: true
   });
   const [nodeGroup, setNodeGroup] = useState('all');
   const [activeColorTab, setActiveColorTab] = useState('presets');
@@ -130,8 +149,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const [localVisualizationType, setLocalVisualizationType] = useState<VisualizationType>(visualizationType);
   const [forceUpdate, setForceUpdate] = useState(false);  // For forcing re-renders when needed
   const [dataLoaded, setDataLoaded] = useState(false);  // Track if data has been loaded
-  const visualizationInitialized = useRef(false);  // Track if visualization has been initialized
+  // Initialize tooltip state from props if provided, otherwise use defaults
+  const [tooltipDetail, setTooltipDetail] = useState<TooltipDetail>(propTooltipDetail || 'simple');
+  const [tooltipTrigger, setTooltipTrigger] = useState<TooltipTrigger>(propTooltipTrigger || 'hover');
+  const [showNodeModal, setShowNodeModal] = useState<boolean>(false);
   
+  const visualizationInitialized = useRef(false);  // Track if visualization has been initialized
+  const { toast } = useToast();
+
   // Use the network colors hook
   const colors = useNetworkColors({
     initialColorTheme: colorTheme,
@@ -144,15 +169,6 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     initialCustomNodeColors: customNodeColors,
     initialDynamicColorThemes: dynamicColorThemes
   });
-  
-  const { toast } = useToast();
-
-  // Pass SVG ref to parent if needed (for fullscreen mode)
-  useEffect(() => {
-    if (onSvgRef && svgRef.current) {
-      onSvgRef(svgRef.current);
-    }
-  }, [onSvgRef]);
 
   // Enhanced zoom and pan functionality
   const { 
@@ -170,19 +186,6 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     isReady: !isLoading && processedData.nodes.length > 0,
     nodesDraggable: true  // Allow dragging nodes
   });
-
-  // Force reinitialize zoom after visualization is ready
-  useEffect(() => {
-    if (!isLoading && svgRef.current && contentRef.current) {
-      // Short delay to ensure D3 visualization is fully rendered
-      const timer = setTimeout(() => {
-        console.log("Force reinitializing zoom after visualization is ready");
-        reinitializeZoom();
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [isLoading, reinitializeZoom]);
 
   // Setup the file export hook
   const { downloadData, downloadGraph } = useFileExport({
@@ -204,6 +207,190 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     nodeStrokeColor: colors.nodeStrokeColor,
     getTransform
   });
+
+  // Sync tooltipDetail with props if they change
+  useEffect(() => {
+    if (propTooltipDetail && propTooltipDetail !== tooltipDetail) {
+      setTooltipDetail(propTooltipDetail);
+    }
+  }, [propTooltipDetail]);
+
+  // Sync tooltipTrigger with props if they change
+  useEffect(() => {
+    if (propTooltipTrigger && propTooltipTrigger !== tooltipTrigger) {
+      setTooltipTrigger(propTooltipTrigger);
+    }
+  }, [propTooltipTrigger]);
+
+  // Add event listener for close button in tooltips
+  useEffect(() => {
+    if (!tooltipRef.current) return;
+    
+    const handleTooltipInteraction = (e: MouseEvent) => {
+      // Check if clicked element is the close button
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('tooltip-close-btn')) {
+        // Hide the tooltip
+        d3.select(tooltipRef.current)
+          .style("opacity", "0")
+          .style("visibility", "hidden");
+        
+        e.stopPropagation(); // Prevent event from bubbling
+      }
+    };
+    
+    // Add the event listener to the tooltip
+    tooltipRef.current.addEventListener('click', handleTooltipInteraction);
+    
+    // Clean up
+    return () => {
+      if (tooltipRef.current) {
+        tooltipRef.current.removeEventListener('click', handleTooltipInteraction);
+      }
+    };
+  }, [tooltipRef]);
+
+  // Helper function to highlight node connections - Defined at the top level, outside of any closures
+  const highlightNodeConnections = (node: Node, sourceLinks: Link[], targetLinks: Link[]) => {
+    if (!svgRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    
+    svg.selectAll(".node")
+      .attr('opacity', (n: Node) => {
+        if (n.id === node.id) return 1;
+        
+        const isConnected = sourceLinks.some(link => {
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return targetId === n.id;
+        }) || targetLinks.some(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          return sourceId === n.id;
+        });
+        
+        return isConnected ? 1 : 0.2;
+      });
+    
+    svg.selectAll(".link")
+      .attr('opacity', (l: Link) => {
+        const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+        const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+        const isConnected = (sourceId === node.id || targetId === node.id);
+        return isConnected ? 1 : 0.1;
+      });
+    
+    svg.selectAll(".node-label")
+      .attr('opacity', (n: Node) => {
+        if (n.id === node.id) return 1;
+        
+        const isConnected = sourceLinks.some(link => {
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return targetId === n.id;
+        }) || targetLinks.some(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          return sourceId === n.id;
+        });
+        
+        return isConnected ? 1 : 0.2;
+      });
+  };
+
+// Process node selection function (updated for tooltip detail handling)
+const processNodeSelection = (d: Node) => {
+  console.log("Node selected:", d);
+  setSelectedNode(d);
+  
+  // Find connections for this node
+  const { sourceLinks, targetLinks } = findNodeConnections(d, processedData.links);
+  
+  // Prepare connected nodes lists for the UI
+  const toConnections = sourceLinks.map(link => {
+    const targetName = typeof link.target === 'object' ? link.target.id : link.target;
+    return targetName;
+  });
+  
+  const fromConnections = targetLinks.map(link => {
+    const sourceName = typeof link.source === 'object' ? link.source.id : link.source;
+    return sourceName;
+  });
+  
+  setSelectedNodeConnections({
+    to: toConnections,
+    from: fromConnections
+  });
+  
+  // Make network info section visible if it's not already
+  if (!expandedSections.networkInfo) {
+    setExpandedSections(prev => ({
+      ...prev,
+      networkInfo: true
+    }));
+  }
+  
+  // For click and persistent modes, show the tooltip differently
+  if (tooltipTrigger === 'click' || tooltipTrigger === 'persistent') {
+    // Don't show modal for persistent mode
+    if (tooltipTrigger !== 'persistent') {
+      // Show the modal for click mode after a short delay
+      setTimeout(() => {
+        setShowNodeModal(true);
+      }, 300);
+    }
+  }
+  
+  // Highlight connections in the visualization
+  highlightNodeConnections(d, sourceLinks, targetLinks);
+};
+  
+// Reset node selection function (ensure it clears tooltip as well)
+const resetNodeSelection = () => {
+  setSelectedNode(null);
+  
+  if (svgRef.current) {
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('.node').attr('opacity', 1);
+    svg.selectAll('.link').attr('opacity', 1);
+    svg.selectAll('.node-label').attr('opacity', 1);
+  }
+  
+  // Also hide any visible tooltips
+  if (tooltipRef.current) {
+    d3.select(tooltipRef.current)
+      .style("opacity", "0")
+      .style("visibility", "hidden");
+  }
+};
+
+  // Add the useEffect for click away listener (outside tooltips in click mode)
+  useEffect(() => {
+    const cleanup = setupClickAwayListener(tooltipRef, tooltipTrigger);
+    return cleanup;
+  }, [tooltipTrigger, tooltipRef]);
+
+  useEffect(() => {
+    const cleanup = setupClickAwayListener(tooltipRef, tooltipTrigger);
+    return cleanup;
+  }, [tooltipTrigger]);
+
+  // Pass SVG ref to parent if needed (for fullscreen mode)
+  useEffect(() => {
+    if (onSvgRef && svgRef.current) {
+      onSvgRef(svgRef.current);
+    }
+  }, [onSvgRef]);
+
+  // Force reinitialize zoom after visualization is ready
+  useEffect(() => {
+    if (!isLoading && svgRef.current && contentRef.current) {
+      // Short delay to ensure D3 visualization is fully rendered
+      const timer = setTimeout(() => {
+        console.log("Force reinitializing zoom after visualization is ready");
+        reinitializeZoom();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, reinitializeZoom]);
 
   // Update local visualization type when prop changes
   useEffect(() => {
@@ -850,21 +1037,83 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         console.error("Error initializing drag behavior:", error);
       }
       
-      // Event handlers
+      // Event handlers - using direct function instead of reference
       node
-        .on("mouseover", function(event, d) {
-          showTooltip(event, d, tooltipRef, processedData.links);
-        })
-        .on("mousemove", function(event) {
-          moveTooltip(event, tooltipRef, svgRef);
-        })
-        .on("mouseout", function() {
-          hideTooltip(tooltipRef);
-        })
-        .on("click", function(event, d) {
-          event.stopPropagation();
-          handleNodeClick(d);
-        });
+      .on("mouseover", function(event, d) {
+        // Get the current tooltipDetail and tooltipTrigger from DOM attributes if available
+        // This ensures we always use the latest values, not closure values
+        let currentDetail = tooltipDetail;
+        let currentTrigger = tooltipTrigger;
+        
+        // If available, get current values from DOM attributes
+        if (containerRef.current) {
+          const detailAttr = containerRef.current.getAttribute('data-tooltip-detail');
+          const triggerAttr = containerRef.current.getAttribute('data-tooltip-trigger');
+          
+          if (detailAttr) {
+            currentDetail = detailAttr as TooltipDetail;
+          }
+          
+          if (triggerAttr) {
+            currentTrigger = triggerAttr as TooltipTrigger;
+          }
+        }
+        
+        // Use the current values from DOM or state
+        showTooltip(
+          event, 
+          d, 
+          tooltipRef, 
+          processedData.links, 
+          currentDetail,
+          currentTrigger,
+          svgRef, // Pass the svgRef for proper positioning
+          (selectedNode) => { processNodeSelection(selectedNode); }
+        );
+      })
+      .on("mousemove", function(event) {
+        // Get current trigger from DOM if available
+        let currentTrigger = tooltipTrigger;
+        if (containerRef.current) {
+          const triggerAttr = containerRef.current.getAttribute('data-tooltip-trigger');
+          if (triggerAttr) {
+            currentTrigger = triggerAttr as TooltipTrigger;
+          }
+        }
+        
+        moveTooltip(event, tooltipRef, svgRef, currentTrigger);
+      })
+      .on("mouseout", function() {
+        // Get current trigger from DOM if available
+        let currentTrigger = tooltipTrigger;
+        if (containerRef.current) {
+          const triggerAttr = containerRef.current.getAttribute('data-tooltip-trigger');
+          if (triggerAttr) {
+            currentTrigger = triggerAttr as TooltipTrigger;
+          }
+        }
+        
+        hideTooltip(tooltipRef, currentTrigger, selectedNode?.id);
+      })
+      .on("click", function(event, d) {
+        event.stopPropagation();
+        processNodeSelection(d);
+        
+        // If we're in hover mode with a detailed tooltip, show the tooltip as persistent
+        if (tooltipTrigger === 'hover' && tooltipDetail === 'detailed') {
+          // Create a persistent tooltip on click
+          showTooltip(
+            event, 
+            d, 
+            tooltipRef, 
+            processedData.links, 
+            'detailed',  // Force detailed view
+            'persistent', // Force persistent mode for this interaction
+            svgRef,
+            null // Don't re-trigger node selection
+          );
+        }
+      });
       
       // Click anywhere else to reset highlighting
       d3.select(svgRef.current).on("click", resetNodeSelection);
@@ -917,6 +1166,13 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         reinitializeZoom();
       }, 200);
 
+      // Set initial tooltip settings as DOM attributes
+      if (containerRef.current) {
+        containerRef.current.setAttribute('data-tooltip-detail', tooltipDetail);
+        containerRef.current.setAttribute('data-tooltip-trigger', tooltipTrigger);
+        console.log(`Initialized tooltip DOM attributes: detail=${tooltipDetail}, trigger=${tooltipTrigger}`);
+      }
+
       // Return cleanup function
       return () => {
         if (simulation) simulation.stop();
@@ -943,7 +1199,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     nodeCharge, 
     toast,
     reinitializeZoom,
-    forceUpdate  // Include forceUpdate to trigger re-renders when needed
+    forceUpdate,  // Include forceUpdate to trigger re-renders when needed
+    tooltipDetail,
+    tooltipTrigger,
+    colors
   ]);
 
   // Update colors when they change
@@ -1000,6 +1259,15 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     colors.customNodeColors,
     localVisualizationType
   ]);
+
+// Also add an effect to update DOM attributes when tooltipDetail or tooltipTrigger changes
+useEffect(() => {
+  if (containerRef.current) {
+    containerRef.current.setAttribute('data-tooltip-detail', tooltipDetail);
+    containerRef.current.setAttribute('data-tooltip-trigger', tooltipTrigger);
+    console.log(`Updated tooltip DOM attributes: detail=${tooltipDetail}, trigger=${tooltipTrigger}`);
+  }
+}, [tooltipDetail, tooltipTrigger]);
 
   // Cleanup function when component unmounts
   useEffect(() => {
@@ -1066,93 +1334,95 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     };
   }, [isLoading, reinitializeZoom]);
 
-  // Handle node click
-  const handleNodeClick = useCallback((d: Node) => {
-    console.log("Node selected:", d);
-    setSelectedNode(d);
-    
-    // Find connections for this node
-    const { sourceLinks, targetLinks } = findNodeConnections(d, processedData.links);
-    
-    // Prepare connected nodes lists for the UI
-    const toConnections = sourceLinks.map(link => {
-      const targetName = typeof link.target === 'object' ? link.target.id : link.target;
-      return targetName;
-    });
-    
-    const fromConnections = targetLinks.map(link => {
-      const sourceName = typeof link.source === 'object' ? link.source.id : link.source;
-      return sourceName;
-    });
-    
-    setSelectedNodeConnections({
-      to: toConnections,
-      from: fromConnections
-    });
-    
-    // Make network info section visible if it's not already
-    if (!expandedSections.networkInfo) {
-      setExpandedSections(prev => ({
-        ...prev,
-        networkInfo: true
-      }));
+// Modified tooltip handlers to ensure they work correctly
+const handleTooltipDetailChange = (detail: TooltipDetail) => {
+  console.log(`Changing tooltip detail to: ${detail}`);
+  setTooltipDetail(detail);
+  
+  // Force redraw tooltips if one is currently visible
+  if (tooltipRef.current && d3.select(tooltipRef.current).style("visibility") === "visible") {
+    // If a tooltip is visible and a node is selected, redraw it with new detail level
+    if (selectedNode) {
+      const event = new MouseEvent('mouseover'); // Create a synthetic event
+      showTooltip(
+        event, 
+        selectedNode, 
+        tooltipRef, 
+        processedData.links, 
+        detail, // Use the new detail level
+        tooltipTrigger,
+        svgRef, // Pass the svgRef
+        (node) => { processNodeSelection(node); }
+      );
     }
-    
-    // Highlight connections in the visualization
-    if (svgRef.current) {
-      const svg = d3.select(svgRef.current);
-      
-      svg.selectAll(".node")
-        .attr('opacity', (n: Node) => {
-          if (n.id === d.id) return 1;
-          
-          const isConnected = sourceLinks.some(link => {
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            return targetId === n.id;
-          }) || targetLinks.some(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            return sourceId === n.id;
-          });
-          
-          return isConnected ? 1 : 0.2;
-        });
-      
-      svg.selectAll(".link")
-        .attr('opacity', (l: Link) => {
-          const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-          const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-          const isConnected = (sourceId === d.id || targetId === d.id);
-          return isConnected ? 1 : 0.1;
-        });
-      
-      svg.selectAll(".node-label")
-        .attr('opacity', (n: Node) => {
-          if (n.id === d.id) return 1;
-          
-          const isConnected = sourceLinks.some(link => {
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            return targetId === n.id;
-          }) || targetLinks.some(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            return sourceId === n.id;
-          });
-          
-          return isConnected ? 1 : 0.2;
-        });
-    }
-  }, [expandedSections, processedData.links]);
+  }
+  
+  if (onTooltipDetailChange) {
+    onTooltipDetailChange(detail);
+  } 
+  
+  toast({
+    title: `Tooltip Detail: ${detail === 'simple' ? 'Simple' : 'Detailed'}`,
+    description: `Showing ${detail === 'simple' ? 'basic' : 'comprehensive'} node information`
+  });
+};
 
-  // Reset node selection
-  const resetNodeSelection = useCallback(() => {
-    setSelectedNode(null);
-    
-    if (svgRef.current) {
-      const svg = d3.select(svgRef.current);
-      svg.selectAll('.node').attr('opacity', 1);
-      svg.selectAll('.link').attr('opacity', 1);
-      svg.selectAll('.node-label').attr('opacity', 1);
+const handleTooltipTriggerChange = (trigger: TooltipTrigger) => {
+  console.log(`Changing tooltip trigger to: ${trigger}`);
+  setTooltipTrigger(trigger);
+  
+  // Store the trigger mode in a DOM attribute
+  if (containerRef.current) {
+    containerRef.current.setAttribute('data-tooltip-trigger', trigger);
+  }
+  
+  // Hide any visible tooltip when changing modes
+  if (tooltipRef.current) {
+    d3.select(tooltipRef.current)
+      .style("opacity", "0")
+      .style("visibility", "hidden");
+  }
+  
+  if (onTooltipTriggerChange) {
+    onTooltipTriggerChange(trigger);
+  }
+  
+  toast({
+    title: `Tooltip Mode: ${trigger.charAt(0).toUpperCase() + trigger.slice(1)}`,
+    description: trigger === 'hover' 
+      ? 'Tooltips will show on hover' 
+      : trigger === 'click' 
+        ? 'Tooltips will show on click and dismiss on click outside' 
+        : 'Tooltips will stay visible until new selection'
+  });
+};
+
+// Updated handler for exporting node data to actually download files
+const handleExportNodeData = (format: 'text' | 'json') => {
+  if (!selectedNode) return;
+  
+  try {
+    if (format === 'text') {
+      // Use the existing downloadNodeAsText function to download file
+      downloadNodeAsText(selectedNode, processedData.links);
+    } else {
+      // Use the existing downloadNodeAsJson function to download file
+      downloadNodeAsJson(selectedNode, processedData.links);
     }
-  }, []);
+    
+    toast({
+      title: 'Download Started',
+      description: `Node data downloaded as ${format.toUpperCase()} file`,
+    });
+  } catch (error) {
+    console.error('Failed to download: ', error);
+    toast({
+      title: 'Download Failed',
+      description: 'Could not download the file',
+      variant: 'destructive'
+    });
+  }
+};
 
   // Update the handleSliderChange function to apply forces more directly and with higher alpha
   const handleSliderChange = useCallback((type: string, value: number) => {
@@ -1767,7 +2037,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     isSidebarCollapsed,
     networkTitle,
     localFixNodesOnDrag,
-    localVisualizationType
+    localVisualizationType,
+    tooltipDetail,
+    tooltipTrigger
   };
 
   const handlers = {
@@ -1793,7 +2065,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     handleZoomToFit: zoomToFit, 
     handleZoomIn: zoomIn,       
     handleZoomOut: zoomOut,     
-    handleResetZoom: resetZoom  
+    handleResetZoom: resetZoom,
+    handleTooltipDetailChange: (detail: string) => handleTooltipDetailChange(detail as TooltipDetail),
+    handleTooltipTriggerChange: (trigger: string) => handleTooltipTriggerChange(trigger as TooltipTrigger), 
+    handleExportNodeData
   };
 
   // Direct visualization type checking
@@ -1869,7 +2144,13 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
                 />
                 
                 {/* Network components */}
-                <NetworkTooltip tooltipRef={tooltipRef} nodes={processedData.nodes} links={processedData.links} />
+                <NetworkTooltip 
+                  tooltipRef={tooltipRef} 
+                  nodes={processedData.nodes} 
+                  links={processedData.links} 
+                  tooltipDetail={tooltipDetail}
+                  tooltipTrigger={tooltipTrigger}
+                />
                 <NetworkLegend 
                   categories={uniqueCategories} 
                   colorTheme={colors.colorTheme} 
@@ -1877,6 +2158,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
                   colorPalette={Object.values(colors.dynamicColorThemes.default || {})}
                 />
                 <NetworkHelper />
+                
+                {/* Node detail modal */}
+                <NodeDetailModal
+                  node={selectedNode}
+                  links={processedData.links}
+                  isOpen={showNodeModal}
+                  onClose={() => setShowNodeModal(false)}
+                />
               </div>
             </div>
           )}

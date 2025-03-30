@@ -2,6 +2,7 @@ import React from 'react';
 import NetworkSidebar, { VisualizationType } from './NetworkSidebar';
 import { LoadingIndicator, NetworkError } from './NetworkComponents';
 import { Node, Link, NetworkState } from '@/types/networkTypes';
+import { TooltipDetail, TooltipTrigger } from './TooltipSettings';
 
 // Define handlers interface for better type safety
 interface NetworkHandlers {
@@ -28,6 +29,9 @@ interface NetworkHandlers {
   handleZoomIn?: () => void;
   handleZoomOut?: () => void;
   handleResetZoom?: () => void;
+  handleTooltipDetailChange?: (detail: TooltipDetail) => void;
+  handleTooltipTriggerChange?: (trigger: TooltipTrigger) => void;
+  handleExportNodeData?: (format: 'text' | 'json') => void;
 }
 
 interface BaseVisualizationProps {
@@ -48,11 +52,15 @@ interface BaseVisualizationProps {
     networkInfo: boolean;
     visualizationType: boolean;
     threeDControls?: boolean;
+    tooltipSettings: boolean;
   };
   uniqueCategories: string[];
   nodeCounts: Record<string, number> & { total: number };
   processedData: { nodes: Node[], links: Link[] };
-  sidebar: NetworkState;
+  sidebar: NetworkState & {
+    tooltipDetail?: TooltipDetail;
+    tooltipTrigger?: TooltipTrigger;
+  };
   handlers: NetworkHandlers;
   customNodeColorsState: Record<string, string>;
   dynamicColorThemesState: Record<string, Record<string, string>>;
@@ -95,6 +103,15 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
     );
   }
 
+  // Empty handler functions to use as fallbacks
+  const emptyTooltipDetailChange = (detail: TooltipDetail) => {
+    console.log('Tooltip detail change not implemented', detail);
+  };
+
+  const emptyTooltipTriggerChange = (trigger: TooltipTrigger) => {
+    console.log('Tooltip trigger change not implemented', trigger);
+  };
+
   // Otherwise, show visualization with or without sidebar based on renderSidebar prop
   return (
     <div className="flex w-full h-full">
@@ -125,6 +142,8 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
           uniqueCategories={uniqueCategories}
           fixNodesOnDrag={sidebar.localFixNodesOnDrag}
           visualizationType={sidebar.localVisualizationType as VisualizationType}
+          tooltipDetail={sidebar.tooltipDetail || 'simple'} 
+          tooltipTrigger={sidebar.tooltipTrigger || 'hover'}
           onParameterChange={handlers.handleParameterChange}
           onNodeGroupChange={handlers.handleNodeGroupChange}
           onColorThemeChange={handlers.handleColorThemeChange}
@@ -147,6 +166,9 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
           onZoomIn={handlers.handleZoomIn}
           onZoomOut={handlers.handleZoomOut}
           onResetView={handlers.handleResetZoom}
+          onTooltipDetailChange={handlers.handleTooltipDetailChange || emptyTooltipDetailChange}
+          onTooltipTriggerChange={handlers.handleTooltipTriggerChange || emptyTooltipTriggerChange}
+          onExportNodeData={handlers.handleExportNodeData}
         />
       )}
       <div className="flex-1">
@@ -157,3 +179,4 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
 };
 
 export default BaseVisualization;
+
