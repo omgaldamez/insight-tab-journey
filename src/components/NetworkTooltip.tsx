@@ -14,9 +14,10 @@ const NetworkTooltip: React.FC<NetworkTooltipProps> = ({
   nodes,
   links
 }) => {
+  // Only set up the tooltip styling once on mount
   useEffect(() => {
     if (!tooltipRef.current) return;
-
+    
     // Style the tooltip
     const tooltip = d3.select(tooltipRef.current)
       .style("position", "absolute")
@@ -33,11 +34,14 @@ const NetworkTooltip: React.FC<NetworkTooltipProps> = ({
       .style("z-index", "9999")
       .style("transition", "opacity 0.15s ease-in-out");
     
-    // Cleanup
+    // Cleanup - this will only run when component unmounts
     return () => {
-      tooltip.style("visibility", "hidden").style("opacity", "0");
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (tooltipRef.current) {
+        tooltip.style("visibility", "hidden").style("opacity", "0");
+      }
     };
-  }, [tooltipRef]);
+  }, [tooltipRef]); // Only depends on tooltipRef
 
   // This component doesn't render anything directly
   return null;

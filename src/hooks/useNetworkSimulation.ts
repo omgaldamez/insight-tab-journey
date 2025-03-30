@@ -198,7 +198,7 @@ const useNetworkSimulation = ({
     if (!simulationRef.current) return;
     
     try {
-      console.log("Updating forces without reinitializing simulation");
+      console.log("Updating forces with values:", { linkDistance, linkStrength, nodeCharge });
       
       // Update link force
       const linkForce = simulationRef.current.force("link") as d3.ForceLink<Node, Link>;
@@ -212,8 +212,15 @@ const useNetworkSimulation = ({
         chargeForce.strength(nodeCharge);
       }
       
-      // Apply a gentler restart to avoid disruption - critical for keeping physics active
-      simulationRef.current.alpha(0.2).restart();
+      // Update collision force based on node size
+      const collisionForce = simulationRef.current.force("collision") as d3.ForceCollide<Node>;
+      if (collisionForce) {
+        collisionForce.radius(d => 10);
+      }
+      
+      // Apply a stronger restart with higher alpha value to ensure changes are visible
+      simulationRef.current.alpha(0.5).restart();
+      console.log("Forces updated and simulation restarted with alpha 0.5");
     } catch (error) {
       console.error("Error updating forces:", error);
     }
@@ -283,11 +290,10 @@ const useNetworkSimulation = ({
         }
       }
       
-      // Only restart if changes were made
+      // Only restart if changes were made, but use higher alpha for more visible changes
       if (needsRestart) {
-        // Use a higher alpha value for more visible changes
-        simulationRef.current.alpha(0.3).restart();
-        console.log("Simulation restarted with alpha 0.3 after parameter updates");
+        simulationRef.current.alpha(0.5).restart();
+        console.log("Simulation restarted with alpha 0.5 after parameter updates");
       }
     } catch (error) {
       console.error("Error updating simulation parameters:", error);

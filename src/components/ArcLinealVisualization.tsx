@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import * as d3 from 'd3';
@@ -197,6 +198,7 @@ const ArcLinealVisualization: React.FC<ArcLinealVisualizationProps> = ({
         variant: "destructive"
       });
     }
+   
   }, [nodeData, linkData, toast, colors]);
 
   // Create D3 visualization

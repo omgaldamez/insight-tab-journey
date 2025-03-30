@@ -17,9 +17,11 @@ import {
   RotateCcw
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import NetworkColorControls from './NetworkColorControls';
+import { getNodeColor } from '@/utils/colorThemes';
 
 // Update visualization type to include 3D
-export type VisualizationType = 'network' | 'radial' | 'arc' | '3d';
+export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal';
 
 interface ColorTheme {
   [key: string]: string;
@@ -163,63 +165,6 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(title || "Untitled Network");
   
-  // Dynamic color inputs for categories
-  const [categoryColors, setCategoryColors] = useState<{[key: string]: string}>({});
-  
-  // Background color inputs
-  const [bgColor, setBgColor] = useState(backgroundColor);
-  const [txtColor, setTxtColor] = useState(textColor);
-  const [lnkColor, setLnkColor] = useState(linkColor);
-  const [nodeStrokeClr, setNodeStrokeClr] = useState(nodeStrokeColor);
-  const [bgOpacity, setBgOpacity] = useState(backgroundOpacity);
-  
-  // Update category colors when theme changes
-  useEffect(() => {
-    const newCategoryColors: {[key: string]: string} = {};
-    
-    // Set default colors from the current theme for all categories
-    uniqueCategories.forEach(category => {
-      newCategoryColors[category] = colorThemes[category] || "#3498db";
-    });
-    
-    setCategoryColors(newCategoryColors);
-  }, [colorTheme, colorThemes, uniqueCategories]);
-  
-  // Update background colors when props change
-  useEffect(() => {
-    setBgColor(backgroundColor);
-    setTxtColor(textColor);
-    setLnkColor(linkColor);
-    setNodeStrokeClr(nodeStrokeColor);
-    setBgOpacity(backgroundOpacity);
-  }, [backgroundColor, textColor, linkColor, nodeStrokeColor, backgroundOpacity]);
-  
-  // Handle individual node color selection
-  const handleNodeSelect = (node: Node) => {
-    setSelectedColorNode(node);
-    // Use custom color if available, otherwise use theme color
-    const currentColor = customNodeColors[node.id] || 
-                         colorThemes[node.category] || 
-                         "#3498db";
-    setSelectedColorValue(currentColor);
-  };
-  
-  // Filter nodes based on search
-  const filteredNodes = nodes.filter(node => 
-    node.id.toLowerCase().includes(nodeSearch.toLowerCase())
-  ).sort((a, b) => a.id.localeCompare(b.id));
-  
-  // Handle group colors apply
-  const handleApplyGroupColors = () => {
-    // Pass the category colors to the parent component
-    onApplyGroupColors(categoryColors);
-  };
-  
-  // Handle background colors apply
-  const handleApplyBackgroundColors = () => {
-    onApplyBackgroundColors(bgColor, txtColor, lnkColor, bgOpacity, nodeStrokeClr);
-  };
-  
   // Handle title editing
   const handleStartEditTitle = () => {
     setIsEditingTitle(true);
@@ -240,20 +185,12 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
     }
   };
 
-  // Handle category color change
-  const handleCategoryColorChange = (category: string, color: string) => {
-    setCategoryColors(prev => ({
-      ...prev,
-      [category]: color
-    }));
-  };
-
   // If sidebar is collapsed, show minimal version
   if (isCollapsed) {
     return (
       <div className="w-12 bg-gray-800 text-white h-full shadow-lg flex flex-col items-center py-4">
         <button
-          className="p-2 rounded-md hover:bg-gray-700 mb-4"
+          className="p-2 rounded-md bg-blue-600 hover:bg-blue-700 mb-4"
           onClick={onToggleSidebar}
           title="Expand sidebar"
         >
@@ -336,17 +273,6 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
                 <span>Network Graph</span>
               </button>
               
-              <button
-                className={`flex items-center px-3 py-2 rounded-md ${
-                  visualizationType === 'radial' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
-                }`}
-                onClick={() => onVisualizationTypeChange('radial')}
-              >
-                <Circle className="w-4 h-4 mr-2" />
-                <span>Radial Graph</span>
-              </button>
               
               <button
                 className={`flex items-center px-3 py-2 rounded-md ${
@@ -402,106 +328,7 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         )}
       </div>
 
-      {/* 3D Controls Section - Only shown for 3D visualization type */}
-      {visualizationType === '3d' && (
-        <div className="px-5 mb-3">
-          <button 
-            className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
-            onClick={() => onToggleSection('threeDControls')}
-          >
-            <h2 className="text-base font-medium text-blue-400 m-0">3D Controls</h2>
-            {expandedSections.threeDControls ? 
-              <ChevronDown className="w-4 h-4 text-white" /> : 
-              <ChevronRight className="w-4 h-4 text-white" />
-            }
-          </button>
-          
-          {expandedSections.threeDControls && (
-            <div className="mb-4 bg-gray-700 p-3 rounded-md">
-              <div className="mb-4">
-                <div className="flex items-center mb-2">
-                  <label className="w-32 inline-block text-sm">Node Size:</label>
-                  <Slider
-                    value={[nodeSize]}
-                    min={0.5}
-                    max={2.0}
-                    step={0.1}
-                    onValueChange={(vals) => onParameterChange("nodeSize", vals[0])}
-                    className="flex-grow"
-                  />
-                  <span className="w-8 text-right ml-2 text-xs">{nodeSize.toFixed(1)}</span>
-                </div>
-                
-                <div className="flex items-center mb-2">
-                  <label className="w-32 inline-block text-sm">Rotation Speed:</label>
-                  <Slider
-                    value={[rotationSpeed]}
-                    min={0}
-                    max={0.05}
-                    step={0.001}
-                    onValueChange={(vals) => onRotationSpeedChange && onRotationSpeedChange(vals[0])}
-                    className="flex-grow"
-                  />
-                  <span className="w-8 text-right ml-2 text-xs">{(rotationSpeed * 1000).toFixed(1)}</span>
-                </div>
-                
-                {/* Toggle button for showing labels */}
-                <div className="flex items-center justify-between mt-3 mb-2">
-                  <label className="text-sm">Show Labels:</label>
-                  <button
-                    onClick={onToggleLabels}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      showLabels ? 'bg-blue-600' : 'bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        showLabels ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <p className="text-xs text-gray-400 mb-3">
-                  {showLabels 
-                    ? "Node labels will be displayed" 
-                    : "Node labels are hidden"}
-                </p>
-                
-                {/* Control buttons */}
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="flex-1 text-xs bg-gray-600 text-white hover:bg-gray-500"
-                    onClick={onResetView}
-                  >
-                    <RotateCcw className="w-3 h-3 mr-1" />
-                    Reset View
-                  </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="flex-1 text-xs bg-gray-600 text-white hover:bg-gray-500"
-                    onClick={onZoomIn}
-                  >
-                    <ZoomIn className="w-3 h-3 mr-1" />
-                    Zoom In
-                  </Button>
-                </div>
-              </div>
-              
-              <div className="text-xs text-gray-400 mt-2">
-                <p className="font-medium mb-1">Mouse Controls:</p>
-                <ul className="list-disc pl-4">
-                  <li>Click and drag to rotate the graph</li>
-                  <li>Scroll wheel to zoom in/out</li>
-                </ul>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+    
 
       {/* Network Controls Section - Only shown for network visualization type */}
       {visualizationType === 'network' && (
@@ -611,255 +438,58 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         </div>
       )}
       
-  {/* Color Controls Section */}
-  <div className="px-5 mb-3">
-        <button 
-          className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
-          onClick={() => onToggleSection('colorControls')}
-        >
-          <h2 className="text-base font-medium text-blue-400 m-0">Color Controls</h2>
-          {expandedSections.colorControls ? 
-            <ChevronDown className="w-4 h-4 text-white" /> : 
-            <ChevronRight className="w-4 h-4 text-white" />
-          }
-        </button>
-        
-        {expandedSections.colorControls && (
-          <div className="mb-4 bg-gray-700 p-3 rounded-md">
-            <div className="border-b border-gray-600 mb-2 flex flex-wrap gap-1">
-              <button 
-                className={`px-3 py-2 text-xs ${activeColorTab === 'presets' ? 'bg-teal-600 text-white' : 'bg-gray-700 text-white'} rounded-t-md`}
-                onClick={() => onColorTabChange('presets')}
-              >
-                Presets
-              </button>
-              <button 
-                className={`px-3 py-2 text-xs ${activeColorTab === 'byGroup' ? 'bg-teal-600 text-white' : 'bg-gray-700 text-white'} rounded-t-md`}
-                onClick={() => onColorTabChange('byGroup')}
-              >
-                By Group
-              </button>
-              <button 
-                className={`px-3 py-2 text-xs ${activeColorTab === 'individual' ? 'bg-teal-600 text-white' : 'bg-gray-700 text-white'} rounded-t-md`}
-                onClick={() => onColorTabChange('individual')}
-              >
-                Individual
-              </button>
-              <button 
-                className={`px-3 py-2 text-xs ${activeColorTab === 'background' ? 'bg-teal-600 text-white' : 'bg-gray-700 text-white'} rounded-t-md`}
-                onClick={() => onColorTabChange('background')}
-              >
-                Background
-              </button>
-            </div>
-            
-            {/* Preset colors tab */}
-            {activeColorTab === 'presets' && (
-              <div>
-                <select 
-                  className="w-full p-2 mb-2 rounded-md border border-gray-600 bg-gray-700 text-white text-sm"
-                  value={colorTheme}
-                  onChange={(e) => onColorThemeChange(e.target.value)}
-                >
-                  <option value="default">Default</option>
-                  <option value="bright">Bright Colors</option>
-                  <option value="pastel">Pastel</option>
-                  <option value="ocean">Ocean</option>
-                  <option value="autumn">Autumn</option>
-                  <option value="monochrome">Monochrome</option>
-                  {colorTheme === 'custom' && <option value="custom">Custom</option>}
-                </select>
-              </div>
-            )}
-            
-            {/* Group color customization tab */}
-            {activeColorTab === 'byGroup' && (
-              <div>
-                {uniqueCategories.map(category => (
-                  <div key={category} className="flex items-center mb-2">
-                    <label className="w-24 inline-block text-sm truncate">{category}:</label>
-                    <input 
-                      type="color" 
-                      value={categoryColors[category] || colorThemes[category] || "#cccccc"}
-                      onChange={(e) => handleCategoryColorChange(category, e.target.value)}
-                      className="w-12 h-8 mr-2 bg-transparent border-none" 
-                    />
-                  </div>
-                ))}
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="w-full mt-2 bg-blue-600 text-white hover:bg-blue-500 border-none"
-                  onClick={handleApplyGroupColors}
-                >
-                  Apply Colors
-                </Button>
-              </div>
-            )}
-            
-            {/* Individual node color customization tab */}
-            {activeColorTab === 'individual' && (
-              <div>
-                <div className="mb-3">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search nodes..."
-                      value={nodeSearch}
-                      onChange={(e) => setNodeSearch(e.target.value)}
-                      className="pl-8 w-full p-2 rounded-md border border-gray-600 bg-gray-700 text-white text-sm"
-                    />
-                  </div>
-                  
-                  <div className="mt-2 max-h-48 overflow-y-auto bg-gray-700 rounded-md">
-                    {filteredNodes.length > 0 ? (
-                      filteredNodes.map((node) => (
-                        <div
-                          key={node.id}
-                          className={`px-2 py-1.5 cursor-pointer border-l-4 hover:bg-gray-600 ${
-                            selectedColorNode?.id === node.id ? 'bg-gray-600' : ''
-                          }`}
-                          style={{ 
-                            borderLeftColor: customNodeColors[node.id] || 
-                                           colorThemes[node.category] || 
-                                           '#95a5a6'
-                          }}
-                          onClick={() => handleNodeSelect(node)}
-                        >
-                          <span className="text-sm">{node.id}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-2 text-sm text-gray-400">No nodes match your search</div>
-                    )}
-                  </div>
-                </div>
-                
-                {selectedColorNode && (
-                  <div className="p-2 bg-gray-600 rounded-md">
-                    <div className="mb-2 text-sm font-medium">
-                      <p>Color for: <span className="text-blue-300">{selectedColorNode.id}</span></p>
-                      <p className="text-xs text-gray-400">Category: {selectedColorNode.category}</p>
-                    </div>
-                    <div className="flex items-center mb-2">
-                      <input 
-                        type="color" 
-                        value={selectedColorValue}
-                        onChange={(e) => setSelectedColorValue(e.target.value)}
-                        className="w-12 h-8 mr-2 bg-transparent border-none" 
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex-1 bg-blue-600 text-white hover:bg-blue-500 border-none text-xs"
-                        onClick={() => onApplyIndividualColor(selectedColorNode.id, selectedColorValue)}
-                      >
-                        Apply Color
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex-1 bg-gray-600 text-white hover:bg-gray-500 border-none text-xs"
-                        onClick={() => onResetIndividualColor(selectedColorNode.id)}
-                      >
-                        Reset Color
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Background & Text Colors Tab */}
-            {activeColorTab === 'background' && (
-              <div>
-                <div className="flex items-center mb-2">
-                  <label className="w-24 inline-block text-sm">Background:</label>
-                  <input 
-                    type="color" 
-                    value={bgColor}
-                    onChange={(e) => setBgColor(e.target.value)}
-                    className="w-12 h-8 mr-2 bg-transparent border-none" 
-                  />
-                </div>
-                <div className="flex items-center mb-2">
-                  <label className="w-24 inline-block text-sm">Node Labels:</label>
-                  <input 
-                    type="color" 
-                    value={txtColor}
-                    onChange={(e) => setTxtColor(e.target.value)}
-                    className="w-12 h-8 mr-2 bg-transparent border-none" 
-                  />
-                </div>
-                <div className="flex items-center mb-2">
-                  <label className="w-24 inline-block text-sm">Links:</label>
-                  <input 
-                    type="color" 
-                    value={lnkColor}
-                    onChange={(e) => setLnkColor(e.target.value)}
-                    className="w-12 h-8 mr-2 bg-transparent border-none" 
-                  />
-                </div>
-                <div className="flex items-center mb-2">
-                  <label className="w-24 inline-block text-sm">Node Stroke:</label>
-                  <input 
-                    type="color" 
-                    value={nodeStrokeClr}
-                    onChange={(e) => setNodeStrokeClr(e.target.value)}
-                    className="w-12 h-8 mr-2 bg-transparent border-none" 
-                  />
-                </div>
-                
-                <div className="mt-3 mb-2">
-                  <label className="block mb-1 text-sm">Background Opacity:</label>
-                  <div className="flex items-center">
-                    <Slider
-                      value={[bgOpacity]}
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      onValueChange={(vals) => setBgOpacity(vals[0])}
-                      className="flex-grow"
-                    />
-                    <span className="w-8 text-right ml-2 text-xs">{bgOpacity.toFixed(1)}</span>
-                  </div>
-                </div>
-                
-                <div className="flex gap-2 mt-3">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="flex-1 bg-blue-600 text-white hover:bg-blue-500 border-none"
-                    onClick={handleApplyBackgroundColors}
-                  >
-                    Apply Colors
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="flex-1 bg-gray-600 text-white hover:bg-gray-500 border-none"
-                    onClick={onResetBackgroundColors}
-                  >
-                    Reset
-                  </Button>
-                </div>
-              </div>
-            )}
-            
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="w-full mt-3 bg-red-600 text-white hover:bg-red-500 border-none"
-              onClick={onResetGraph}
-            >
-              Reset Graph & Colors
-            </Button>
-          </div>
-        )}
-      </div>
+      
+{/* Color Controls Section */}
+<div className="px-5 mb-3">
+  <button 
+    className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
+    onClick={() => onToggleSection('colorControls')}
+  >
+    <h2 className="text-base font-medium text-blue-400 m-0">Color Controls</h2>
+    {expandedSections.colorControls ? 
+      <ChevronDown className="w-4 h-4 text-white" /> : 
+      <ChevronRight className="w-4 h-4 text-white" />
+    }
+  </button>
+  
+  {expandedSections.colorControls && (
+    <div className="mb-4 bg-gray-700 p-3 rounded-md">
+      {/* Use updated NetworkColorControls component */}
+      <NetworkColorControls
+        uniqueCategories={uniqueCategories}
+        nodes={nodes}
+        colorTheme={colorTheme}
+        nodeSize={nodeSize}
+        linkColor={linkColor}
+        backgroundColor={backgroundColor}
+        textColor={textColor}
+        nodeStrokeColor={nodeStrokeColor}
+        backgroundOpacity={backgroundOpacity}
+        customNodeColors={customNodeColors}
+        // Pass the complete dynamicColorThemes object, not just current theme
+        dynamicColorThemes={{}}
+        onColorThemeChange={onColorThemeChange}
+        onNodeSizeChange={(value) => onParameterChange("nodeSize", value)}
+        onApplyGroupColors={onApplyGroupColors}
+        onApplyIndividualColor={onApplyIndividualColor}
+        onResetIndividualColor={onResetIndividualColor}
+        onApplyBackgroundColors={onApplyBackgroundColors}
+        onResetBackgroundColors={onResetBackgroundColors}
+        onColorTabChange={onColorTabChange}
+        activeColorTab={activeColorTab}
+      />
+      
+      <Button 
+        variant="outline" 
+        size="sm" 
+        className="w-full mt-3 bg-red-600 text-white hover:bg-red-500 border-none"
+        onClick={onResetGraph}
+      >
+        Reset Graph & Colors
+      </Button>
+    </div>
+  )}
+</div>
       
 
       {/* Node Controls Section */}

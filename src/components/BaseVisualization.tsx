@@ -1,5 +1,5 @@
 import React from 'react';
-import NetworkSidebar from './NetworkSidebar';
+import NetworkSidebar, { VisualizationType } from './NetworkSidebar';
 import { LoadingIndicator, NetworkError } from './NetworkComponents';
 import { Node, Link, NetworkState } from '@/types/networkTypes';
 
@@ -98,7 +98,8 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
   // Otherwise, show visualization with or without sidebar based on renderSidebar prop
   return (
     <div className="flex w-full h-full">
-      {renderSidebar && !sidebar.isSidebarCollapsed && (
+      {/* FIXED CONDITION: Always render sidebar if renderSidebar is true */}
+      {renderSidebar && (
         <NetworkSidebar
           linkDistance={sidebar.linkDistance}
           linkStrength={sidebar.linkStrength}
@@ -123,7 +124,7 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
           isCollapsed={sidebar.isSidebarCollapsed}
           uniqueCategories={uniqueCategories}
           fixNodesOnDrag={sidebar.localFixNodesOnDrag}
-          visualizationType={sidebar.localVisualizationType}
+          visualizationType={sidebar.localVisualizationType as VisualizationType}
           onParameterChange={handlers.handleParameterChange}
           onNodeGroupChange={handlers.handleNodeGroupChange}
           onColorThemeChange={handlers.handleColorThemeChange}

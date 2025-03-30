@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import * as d3 from 'd3';

@@ -3,62 +3,73 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Node } from '@/types/networkTypes';
-import { RotateCcw, CheckCircle2 } from 'lucide-react';
+import { RotateCcw, CheckCircle2, Search } from 'lucide-react';
 
 interface NetworkColorControlsProps {
   uniqueCategories: string[];
   nodes: Node[];
-  initialColorTheme: string;
-  initialNodeSize: number;
-  initialLinkColor: string;
-  initialBackgroundColor: string;
-  initialTextColor: string;
-  initialNodeStrokeColor: string;
-  initialBackgroundOpacity: number;
-  initialCustomNodeColors: {[key: string]: string};
-  initialDynamicColorThemes: {[key: string]: {[key: string]: string}};
-  onColorsChanged?: (colorState: {
-    colorTheme?: string;
-    activeColorTab?: string;
-    nodeSize?: number;
-    backgroundColor?: string;
-    textColor?: string;
-    linkColor?: string;
-    backgroundOpacity?: number;
-    nodeStrokeColor?: string;
-    customNodeColors?: { [key: string]: string };
-  }) => void;
+  colorTheme: string;
+  nodeSize: number;
+  linkColor: string;
+  backgroundColor: string;
+  textColor: string;
+  nodeStrokeColor: string;
+  backgroundOpacity: number;
+  customNodeColors: {[key: string]: string};
+  dynamicColorThemes: Record<string, Record<string, string>>;
+  onColorThemeChange: (theme: string) => void;
+  onNodeSizeChange: (size: number) => void;
+  onApplyGroupColors: (categoryColorMap: {[key: string]: string}) => void;
+  onApplyIndividualColor: (nodeId: string, color: string) => void;
+  onResetIndividualColor: (nodeId: string) => void;
+  onApplyBackgroundColors: (
+    bgColor: string, 
+    textColor: string, 
+    linkColor: string, 
+    opacity: number,
+    nodeStrokeColor: string
+  ) => void;
+  onResetBackgroundColors: () => void;
+  onColorTabChange: (tab: string) => void;
+  activeColorTab: string;
 }
 
 const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
   uniqueCategories,
   nodes,
-  initialColorTheme = 'default',
-  initialNodeSize = 1.0,
-  initialLinkColor = '#999999',
-  initialBackgroundColor = '#f5f5f5',
-  initialTextColor = '#ffffff',
-  initialNodeStrokeColor = '#000000',
-  initialBackgroundOpacity = 1.0,
-  initialCustomNodeColors = {},
-  initialDynamicColorThemes = {},
-  onColorsChanged
+  colorTheme,
+  nodeSize,
+  linkColor,
+  backgroundColor,
+  textColor,
+  nodeStrokeColor,
+  backgroundOpacity,
+  customNodeColors,
+  dynamicColorThemes,
+  onColorThemeChange,
+  onNodeSizeChange,
+  onApplyGroupColors,
+  onApplyIndividualColor,
+  onResetIndividualColor,
+  onApplyBackgroundColors,
+  onResetBackgroundColors,
+  onColorTabChange,
+  activeColorTab
 }) => {
-  // Set up internal state
-  const [colorTheme, setColorTheme] = useState(initialColorTheme);
-  const [activeTab, setActiveTab] = useState('presets');
-  const [nodeSize, setNodeSize] = useState(initialNodeSize);
-  const [linkColor, setLinkColor] = useState(initialLinkColor);
-  const [backgroundColor, setBackgroundColor] = useState(initialBackgroundColor);
-  const [textColor, setTextColor] = useState(initialTextColor);
-  const [nodeStrokeColor, setNodeStrokeColor] = useState(initialNodeStrokeColor);
-  const [backgroundOpacity, setBackgroundOpacity] = useState(initialBackgroundOpacity);
+  // Internal state
   const [nodeFilter, setNodeFilter] = useState('');
   const [filteredNodes, setFilteredNodes] = useState<Node[]>([]);
-  const [customNodeColors, setCustomNodeColors] = useState(initialCustomNodeColors);
   const [categoryColors, setCategoryColors] = useState<{[key: string]: string}>({});
-  const [dynamicColorThemes, setDynamicColorThemes] = useState(initialDynamicColorThemes);
+  const [selectedColorNode, setSelectedColorNode] = useState<Node | null>(null);
+  const [selectedColorValue, setSelectedColorValue] = useState('#3498db');
   const [hasCustomChanges, setHasCustomChanges] = useState(false);
+  
+  // Background colors state
+  const [localBgColor, setLocalBgColor] = useState(backgroundColor);
+  const [localTxtColor, setLocalTxtColor] = useState(textColor);
+  const [localLinkColor, setLocalLinkColor] = useState(linkColor);
+  const [localNodeStrokeColor, setLocalNodeStrokeColor] = useState(nodeStrokeColor);
+  const [localBgOpacity, setLocalBgOpacity] = useState(backgroundOpacity);
   
   // Initialize category colors from the current theme
   useEffect(() => {
@@ -78,6 +89,15 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
     }
   }, [uniqueCategories, dynamicColorThemes, colorTheme]);
   
+  // Initialize background colors when props change
+  useEffect(() => {
+    setLocalBgColor(backgroundColor);
+    setLocalTxtColor(textColor);
+    setLocalLinkColor(linkColor);
+    setLocalNodeStrokeColor(nodeStrokeColor);
+    setLocalBgOpacity(backgroundOpacity);
+  }, [backgroundColor, textColor, linkColor, nodeStrokeColor, backgroundOpacity]);
+  
   // Filter nodes for individual color selection
   useEffect(() => {
     if (nodes.length === 0) return;
@@ -85,11 +105,16 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
     const filtered = nodeFilter
       ? nodes.filter(node => 
           node.id.toLowerCase().includes(nodeFilter.toLowerCase()) || 
-          node.category.toLowerCase().includes(nodeFilter.toLowerCase()))
+          (node.category && node.category.toLowerCase().includes(nodeFilter.toLowerCase())))
       : nodes.slice(0, 20);
     
     setFilteredNodes(filtered);
   }, [nodes, nodeFilter]);
+
+  // Handle node size change
+  const handleNodeSizeChange = (values: number[]) => {
+    onNodeSizeChange(values[0]);
+  };
 
   // This function ensures each category color picker only updates its own color
   const handleCategoryColorChange = (category: string, color: string) => {
@@ -100,37 +125,14 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
     // Update colors state
     setCategoryColors(updatedColors);
     
-    // For custom theme, we need to update the theme data
-    const updatedThemes = {...dynamicColorThemes};
-    if (!updatedThemes.custom) {
-      updatedThemes.custom = {...(updatedThemes.default || {})};
-    } else {
-      updatedThemes.custom = {...updatedThemes.custom};
-    }
-    
-    // Only update this specific category's color
-    updatedThemes.custom[category] = color;
-    setDynamicColorThemes(updatedThemes);
-    
-    // Make sure we're on custom theme
-    if (colorTheme !== 'custom') {
-      setColorTheme('custom');
-    }
-    
     // Mark that we have custom changes
     setHasCustomChanges(true);
-    
-    // Update theme tab to "custom"
-    setActiveTab('custom');
-    
-    // Notify parent component
-    if (onColorsChanged) {
-      onColorsChanged({
-        colorTheme: 'custom',
-        activeColorTab: 'custom',
-        nodeSize
-      });
-    }
+  };
+  
+  // Apply group colors to the visualization
+  const handleApplyGroupColors = () => {
+    onApplyGroupColors(categoryColors);
+    setHasCustomChanges(false);
   };
   
   // For the color theme selection (radio buttons)
@@ -143,112 +145,82 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
       }
     }
     
-    setColorTheme(theme);
-    setActiveTab('presets');
+    onColorThemeChange(theme);
     
     // Reset custom changes flag if switching away from custom
     if (theme !== 'custom') {
       setHasCustomChanges(false);
     }
-    
-    // Notify parent
-    if (onColorsChanged) {
-      onColorsChanged({
-        colorTheme: theme,
-        activeColorTab: 'presets',
-        nodeSize
-      });
-    }
+  };
+  
+  // Handle individual node select
+  const handleNodeSelect = (node: Node) => {
+    setSelectedColorNode(node);
+    // Use custom color if available, otherwise use theme color
+    const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default || {};
+    const currentColor = customNodeColors[node.id] || 
+                        currentTheme[node.category] || 
+                        "#3498db";
+    setSelectedColorValue(currentColor);
   };
   
   // Handle individual node color change
-  const handleNodeColorChange = (nodeId: string, color: string) => {
-    setCustomNodeColors(prev => ({
-      ...prev,
-      [nodeId]: color
-    }));
-    
-    // Notify parent component with the updated data
-    if (onColorsChanged) {
-      onColorsChanged({
-        customNodeColors: {
-          ...customNodeColors,
-          [nodeId]: color
-        }
-      });
+  const handleNodeColorChange = (color: string) => {
+    setSelectedColorValue(color);
+  };
+  
+  // Apply individual node color
+  const handleApplyIndividualColor = () => {
+    if (selectedColorNode) {
+      onApplyIndividualColor(selectedColorNode.id, selectedColorValue);
     }
   };
   
   // Reset individual node color
-  const handleResetNodeColor = (nodeId: string) => {
-    setCustomNodeColors(prev => {
-      const newColors = {...prev};
-      delete newColors[nodeId];
-      return newColors;
-    });
-    
-    // Notify parent component
-    if (onColorsChanged) {
-      onColorsChanged({
-        customNodeColors: {...customNodeColors} // Send a copy without the removed entry
-      });
-    }
-  };
-  
-  // Update node size
-  const handleNodeSizeChange = (values: number[]) => {
-    setNodeSize(values[0]);
-    
-    // Notify parent component
-    if (onColorsChanged) {
-      onColorsChanged({
-        nodeSize: values[0]
-      });
+  const handleResetNodeColor = () => {
+    if (selectedColorNode) {
+      onResetIndividualColor(selectedColorNode.id);
     }
   };
   
   // Apply background settings
   const handleApplyBackgroundSettings = () => {
-    // Notify parent component
-    if (onColorsChanged) {
-      onColorsChanged({
-        backgroundColor,
-        textColor,
-        linkColor,
-        backgroundOpacity,
-        nodeStrokeColor
-      });
-    }
+    onApplyBackgroundColors(
+      localBgColor,
+      localTxtColor,
+      localLinkColor,
+      localBgOpacity,
+      localNodeStrokeColor
+    );
   };
   
   // Reset background settings
   const handleResetBackgroundSettings = () => {
-    setBackgroundColor('#f5f5f5');
-    setTextColor('#ffffff');
-    setLinkColor('#999999');
-    setBackgroundOpacity(1.0);
-    setNodeStrokeColor('#000000');
-    
-    // Notify parent component
-    if (onColorsChanged) {
-      onColorsChanged({
-        backgroundColor: '#f5f5f5',
-        textColor: '#ffffff',
-        linkColor: '#999999',
-        backgroundOpacity: 1.0,
-        nodeStrokeColor: '#000000'
-      });
-    }
+    onResetBackgroundColors();
+    // Reset local state too
+    setLocalBgColor('#f5f5f5');
+    setLocalTxtColor('#ffffff');
+    setLocalLinkColor('#999999');
+    setLocalBgOpacity(1.0);
+    setLocalNodeStrokeColor('#000000');
+  };
+
+  // Helper to get theme preview colors
+  const getThemePreviewColors = (themeName: string) => {
+    return uniqueCategories.slice(0, 5).map(category => {
+      const themeColors = dynamicColorThemes[themeName] || {};
+      return themeColors[category] || "#cccccc";
+    });
   };
 
   return (
     <div className="text-sm">
-      <Tabs defaultValue="presets" value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="w-full mb-4">
-          <TabsTrigger value="presets" className="flex-1">Presets</TabsTrigger>
-          <TabsTrigger value="groups" className="flex-1">Groups</TabsTrigger>
-          <TabsTrigger value="nodes" className="flex-1">Nodes</TabsTrigger>
-          <TabsTrigger value="background" className="flex-1">Background</TabsTrigger>
+      <Tabs value={activeColorTab} onValueChange={onColorTabChange}>
+        <TabsList className="w-full mb-4 grid grid-cols-4">
+          <TabsTrigger value="presets" className="px-2">Presets</TabsTrigger>
+          <TabsTrigger value="byGroup" className="px-2">Groups</TabsTrigger>
+          <TabsTrigger value="individual" className="px-2">Nodes</TabsTrigger>
+          <TabsTrigger value="background" className="px-2">BG</TabsTrigger>
         </TabsList>
         
         {/* Presets Tab */}
@@ -313,21 +285,39 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
         </TabsContent>
         
         {/* Groups Tab */}
-        <TabsContent value="groups" className="space-y-4">
+        <TabsContent value="byGroup" className="space-y-4">
           <div className="mb-2">
             <p className="text-xs text-gray-400 mb-2">Customize colors for each category group:</p>
             <div className="space-y-2 max-h-56 overflow-y-auto pr-2">
               {uniqueCategories.map(category => (
                 <div key={category} className="flex items-center mb-2">
-                  <label className="w-24 inline-block text-xs text-gray-300">{category}:</label>
+                  <label className="w-24 inline-block text-xs text-gray-300 truncate" title={category}>{category}:</label>
                   <input
                     type="color"
                     value={categoryColors[category] || "#3498db"}
                     onChange={(e) => handleCategoryColorChange(category, e.target.value)}
                     className="w-6 h-6 rounded-sm cursor-pointer"
+                    style={{padding: 0}}
                   />
+                  <div 
+                    className="w-6 h-6 ml-2 rounded-sm"
+                    style={{backgroundColor: dynamicColorThemes[colorTheme]?.[category] || "#3498db"}}
+                    title="Current theme color"
+                  ></div>
                 </div>
               ))}
+            </div>
+            
+            <div className="flex flex-wrap gap-2 mt-4">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex-1 text-xs bg-blue-600 text-white hover:bg-blue-500"
+                onClick={handleApplyGroupColors}
+              >
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                Apply Group Colors
+              </Button>
             </div>
           </div>
           
@@ -337,11 +327,16 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
                 ? "Using custom colors for categories" 
                 : `Using "${colorTheme}" theme colors`}
             </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {hasCustomChanges 
+                ? "You have unsaved color changes" 
+                : "No pending changes"}
+            </p>
           </div>
         </TabsContent>
         
         {/* Nodes Tab */}
-        <TabsContent value="nodes" className="space-y-4">
+        <TabsContent value="individual" className="space-y-4">
           <div className="mb-2">
             <div className="relative">
               <input
@@ -349,46 +344,45 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
                 placeholder="Search nodes..."
                 value={nodeFilter}
                 onChange={(e) => setNodeFilter(e.target.value)}
-                className="w-full p-2 rounded-md border border-gray-600 bg-gray-700 text-white text-xs"
+                className="w-full p-2 rounded-md border border-gray-600 bg-gray-700 text-white text-xs pl-8"
               />
-              <Search className="w-4 h-4 absolute right-2 top-2 text-gray-400" />
+              <Search className="w-4 h-4 absolute left-2 top-2 text-gray-400" />
             </div>
             
-            <div className="mt-4 space-y-2 max-h-56 overflow-y-auto pr-2">
-              {filteredNodes.map(node => (
-                <div key={node.id} className="flex items-center mb-1 group">
+            <div className="mt-4 space-y-1 max-h-56 overflow-y-auto pr-2">
+              {filteredNodes.map(node => {
+                // Get appropriate color
+                const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default || {};
+                const nodeColor = customNodeColors[node.id] || 
+                                currentTheme[node.category] || 
+                                "#cccccc";
+                
+                return (
+                <div 
+                  key={node.id} 
+                  className={`flex items-center py-1 px-2 rounded ${
+                    selectedColorNode?.id === node.id ? 'bg-gray-600' : 'hover:bg-gray-700'
+                  } cursor-pointer group`}
+                  onClick={() => handleNodeSelect(node)}
+                >
                   <span 
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{
-                      backgroundColor: customNodeColors[node.id] || 
-                        dynamicColorThemes[colorTheme]?.[node.category] || 
-                        "#cccccc"
-                    }}
+                    className="w-3 h-3 rounded-full mr-2 flex-shrink-0"
+                    style={{ backgroundColor: nodeColor }}
                   ></span>
                   <span className="text-xs flex-grow truncate" title={node.id}>
                     {node.id}
                   </span>
-                  <div className="ml-auto flex items-center">
-                    <input
-                      type="color"
-                      value={customNodeColors[node.id] || 
-                        dynamicColorThemes[colorTheme]?.[node.category] || 
-                        "#cccccc"}
-                      onChange={(e) => handleNodeColorChange(node.id, e.target.value)}
-                      className="w-5 h-5 rounded-sm cursor-pointer opacity-40 group-hover:opacity-100"
-                    />
-                    {customNodeColors[node.id] && (
-                      <button
-                        onClick={() => handleResetNodeColor(node.id)}
-                        className="ml-1 p-1 text-gray-400 hover:text-gray-200 opacity-40 group-hover:opacity-100"
-                        title="Reset to category color"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                      </button>
-                    )}
+                  <div className="ml-auto flex-shrink-0 text-xs text-gray-400">
+                    {node.category}
                   </div>
+                  {customNodeColors[node.id] && (
+                    <div 
+                      className="ml-1 w-2 h-2 rounded-full bg-blue-400"
+                      title="Has custom color"
+                    ></div>
+                  )}
                 </div>
-              ))}
+              )})}
               {filteredNodes.length === 0 && (
                 <div className="text-xs text-gray-400 py-2">
                   No nodes match your search
@@ -396,6 +390,52 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
               )}
             </div>
           </div>
+          
+          {selectedColorNode && (
+            <div className="p-3 bg-gray-700 rounded-md">
+              <div className="mb-2">
+                <h3 className="text-sm font-medium mb-1">{selectedColorNode.id}</h3>
+                <p className="text-xs text-gray-400">Category: {selectedColorNode.category}</p>
+              </div>
+              
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="color"
+                  value={selectedColorValue}
+                  onChange={(e) => handleNodeColorChange(e.target.value)}
+                  className="w-8 h-8 rounded-sm cursor-pointer"
+                  style={{padding: 0}}
+                />
+                <div className="flex flex-col">
+                  <span className="text-xs">Selected Color</span>
+                  <span className="text-xs text-gray-400">{selectedColorValue}</span>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex-1 text-xs bg-blue-600 text-white hover:bg-blue-500"
+                  onClick={handleApplyIndividualColor}
+                >
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Apply Color
+                </Button>
+                
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex-1 text-xs bg-gray-600 text-white hover:bg-gray-500"
+                  onClick={handleResetNodeColor}
+                  disabled={!customNodeColors[selectedColorNode.id]}
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  Reset
+                </Button>
+              </div>
+            </div>
+          )}
           
           <div className="mt-4 bg-gray-800 p-3 rounded-md">
             <p className="text-xs text-gray-400">
@@ -411,53 +451,61 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
               <label className="w-24 inline-block text-xs text-gray-300">Background:</label>
               <input
                 type="color"
-                value={backgroundColor}
-                onChange={(e) => setBackgroundColor(e.target.value)}
+                value={localBgColor}
+                onChange={(e) => setLocalBgColor(e.target.value)}
                 className="w-6 h-6 rounded-sm cursor-pointer"
+                style={{padding: 0}}
               />
+              <span className="ml-2 text-xs">{localBgColor}</span>
             </div>
             
             <div className="flex items-center">
               <label className="w-24 inline-block text-xs text-gray-300">Opacity:</label>
               <Slider
-                value={[backgroundOpacity]}
+                value={[localBgOpacity]}
                 min={0.1}
                 max={1.0}
                 step={0.1}
-                onValueChange={(vals) => setBackgroundOpacity(vals[0])}
+                onValueChange={(vals) => setLocalBgOpacity(vals[0])}
                 className="flex-grow"
               />
-              <span className="w-8 text-right ml-2 text-xs">{backgroundOpacity.toFixed(1)}</span>
+              <span className="w-8 text-right ml-2 text-xs">{localBgOpacity.toFixed(1)}</span>
             </div>
             
             <div className="flex items-center">
               <label className="w-24 inline-block text-xs text-gray-300">Text Color:</label>
               <input
                 type="color"
-                value={textColor}
-                onChange={(e) => setTextColor(e.target.value)}
+                value={localTxtColor}
+                onChange={(e) => setLocalTxtColor(e.target.value)}
                 className="w-6 h-6 rounded-sm cursor-pointer"
+                style={{padding: 0}}
               />
+              <span className="ml-2 text-xs">{localTxtColor}</span>
             </div>
             
             <div className="flex items-center">
               <label className="w-24 inline-block text-xs text-gray-300">Link Color:</label>
               <input
                 type="color"
-                value={linkColor}
-                onChange={(e) => setLinkColor(e.target.value)}
+                value={localLinkColor}
+                onChange={(e) => setLocalLinkColor(e.target.value)}
                 className="w-6 h-6 rounded-sm cursor-pointer"
+                style={{padding: 0}}
               />
+              <span className="ml-2 text-xs">{localLinkColor}</span>
             </div>
             
             <div className="flex items-center">
               <label className="w-24 inline-block text-xs text-gray-300">Node Border:</label>
               <input
                 type="color"
-                value={nodeStrokeColor}
-                onChange={(e) => setNodeStrokeColor(e.target.value)}
+                value={localNodeStrokeColor}
+                onChange={(e) => setLocalNodeStrokeColor(e.target.value)}
                 className="w-6 h-6 rounded-sm cursor-pointer"
+                style={{padding: 0}}
               />
+              <span className="ml-2 text-xs">{localNodeStrokeColor}</span>
             </div>
           </div>
           
@@ -465,7 +513,7 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
             <Button 
               variant="outline" 
               size="sm" 
-              className="flex-1 text-xs bg-gray-600 text-white hover:bg-gray-500"
+              className="flex-1 text-xs bg-blue-600 text-white hover:bg-blue-500"
               onClick={handleApplyBackgroundSettings}
             >
               <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -482,29 +530,20 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
               Reset
             </Button>
           </div>
+          
+          <div className="p-3 bg-gray-700 rounded-md">
+            <div className="flex gap-3 items-center">
+              <div className="flex-1 h-8 rounded-md" style={{backgroundColor: localBgColor, opacity: localBgOpacity}}></div>
+              <div className="w-1 h-8 rounded-md" style={{backgroundColor: localLinkColor}}></div>
+              <div className="w-4 h-4 rounded-full" style={{backgroundColor: "#3498db", border: `2px solid ${localNodeStrokeColor}`}}></div>
+              <div className="text-xs rounded-md px-1" style={{color: localTxtColor, backgroundColor: "rgba(0,0,0,0.5)"}}>Text</div>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">Preview of color scheme</p>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
   );
 };
-
-// Missing Search component (adding a simple implementation)
-const Search = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <circle cx="11" cy="11" r="8" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-);
 
 export default NetworkColorControls;

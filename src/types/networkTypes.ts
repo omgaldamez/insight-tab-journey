@@ -4,7 +4,7 @@ import { NodeData, LinkData } from '@/types/types';
 import * as d3 from 'd3';
 
 // Define VisualizationType to include '3d'
-export type VisualizationType = 'network' | 'radial' | 'arc' | '3d' | 'rad360' | 'arcLineal';
+export type VisualizationType = 'network'| 'arc' | '3d' | 'rad360' | 'arcLineal';
 
 // Define node data structure for D3
 export interface Node extends d3.SimulationNodeDatum {

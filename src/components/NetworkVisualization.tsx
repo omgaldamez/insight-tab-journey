@@ -11,7 +11,6 @@ import {
   CategoryCounts,
   VisualizationType
 } from '@/types/networkTypes';
-import RadialVisualization from './RadialVisualization';
 import ArcVisualization from './ArcVisualization';
 import BaseVisualization from './BaseVisualization';
 import { findNodeConnections } from './TooltipUtils';
@@ -73,26 +72,6 @@ declare global {
   }
 }
 
-// Direct fallback color map for nodes
-const getCategoryColor = (category: string): string => {
-  const categoryColors: Record<string, string> = {
-    'person': '#e74c3c',
-    'organization': '#2ecc71',
-    'location': '#f39c12',
-    'event': '#9b59b6',
-    'concept': '#1abc9c',
-    'item': '#34495e',
-    'resource': '#e67e22',
-    'work': '#e67e22',
-    'publication': '#9b59b6',
-    'project': '#1abc9c',
-    'group': '#2980b9',
-    'default': '#95a5a6'
-  };
-  
-  return categoryColors[category] || categoryColors.default;
-};
-
 const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({ 
   onCreditsClick, 
   nodeData = [],
@@ -120,6 +99,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const prevLinkDistanceRef = useRef<number>(70);
   const prevNodeChargeRef = useRef<number>(-300);
   const prevLinkStrengthRef = useRef<number>(1.0);
+  
+  // Track if parameter changes are being applied to prevent unnecessary updates
+  const isUpdatingRef = useRef<boolean>(false);
 
   // State
   const [isLoading, setIsLoading] = useState(true);
@@ -150,7 +132,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const [dataLoaded, setDataLoaded] = useState(false);  // Track if data has been loaded
   const visualizationInitialized = useRef(false);  // Track if visualization has been initialized
   
-  // Use the color management hook
+  // Use the network colors hook
   const colors = useNetworkColors({
     initialColorTheme: colorTheme,
     initialNodeSize: nodeSize,
@@ -229,6 +211,138 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       setLocalVisualizationType(visualizationType);
     }
   }, [visualizationType]);
+
+  // Apply force parameters to simulation
+  const applyForceParametersToSimulation = useCallback(() => {
+    if (!simulationRef.current || localVisualizationType !== 'network') return;
+    
+    // Skip if already updating to prevent recursive updates
+    if (isUpdatingRef.current) {
+      console.log("Already updating forces, skipping");
+      return false;
+    }
+
+    // Set flag to prevent recursive updates
+    isUpdatingRef.current = true;
+    
+    const simulation = simulationRef.current;
+    
+    try {
+      console.log("Directly applying all force parameters to simulation");
+      
+      // IMPORTANT: Stop the simulation first
+      simulation.stop();
+      
+      // Recreate ALL forces from scratch for maximum reliability
+      
+      // 1. Store existing nodes and links
+      const nodes = simulation.nodes();
+      const linkForce = simulation.force("link") as d3.ForceLink<Node, Link>;
+      const links = linkForce ? linkForce.links() : [];
+      
+      // 2. Remove all existing forces
+      simulation.force("link", null)
+                .force("charge", null)
+                .force("center", null)
+                .force("collision", null);
+      
+      // 3. Get container dimensions for center force
+      let width = 800, height = 600; // Fallback values
+      if (containerRef.current) {
+        width = containerRef.current.clientWidth;
+        height = containerRef.current.clientHeight;
+      }
+      
+      // 4. Recreate all forces with current parameters
+      simulation.force("link", d3.forceLink<Node, Link>(links)
+                  .id(d => d.id)
+                  .distance(linkDistance)
+                  .strength(linkStrength))
+                .force("charge", d3.forceManyBody<Node>()
+                  .strength(nodeCharge))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collision", d3.forceCollide<Node>()
+                  .radius(d => 7 * colors.nodeSize + 2)
+                  .strength(1));
+      
+      console.log("Recreated all forces with current parameters:", {
+        linkDistance,
+        linkStrength,
+        nodeCharge,
+        nodeSize: colors.nodeSize
+      });
+      
+      // 5. Completely reheat the simulation
+      simulation.alphaTarget(0.3)  // Target higher alpha to keep simulation active
+                .alpha(1.0)        // Maximum alpha value to ensure movement
+                .restart();        // Restart with these values
+      
+      // 6. After a short time, reset alphaTarget to allow cooling
+      setTimeout(() => {
+        if (simulationRef.current) {
+          simulationRef.current.alphaTarget(0);
+          console.log("Reset alphaTarget to 0 after force parameter update");
+          
+          // Clear updating flag after a short delay
+          setTimeout(() => {
+            isUpdatingRef.current = false;
+          }, 100);
+        }
+      }, 500);
+      
+      console.log("Simulation completely reheated with maximum alpha");
+      
+      return true;
+    } catch (error) {
+      console.error("Error recreating forces:", error);
+      isUpdatingRef.current = false;
+      return false;
+    }
+  }, [linkDistance, linkStrength, nodeCharge, colors.nodeSize, localVisualizationType, containerRef]);
+
+  // Add this effect to apply force parameters when they change
+  useEffect(() => {
+    if (!visualizationInitialized.current || localVisualizationType !== 'network') return;
+    
+    // Skip initial render to avoid double-initialization
+    const isInitialRender = 
+      prevLinkDistanceRef.current === linkDistance &&
+      prevLinkStrengthRef.current === linkStrength &&
+      prevNodeChargeRef.current === nodeCharge;
+    
+    if (isInitialRender) {
+      console.log("Skipping initial force parameter update");
+      return;
+    }
+    
+    // Skip if already updating
+    if (isUpdatingRef.current) {
+      console.log("Already updating, skipping force parameter effect");
+      return;
+    }
+    
+    console.log("Force parameters changed, completely recreating forces");
+    applyForceParametersToSimulation();
+    
+    // Update refs for next comparison
+    prevLinkDistanceRef.current = linkDistance;
+    prevLinkStrengthRef.current = linkStrength;
+    prevNodeChargeRef.current = nodeCharge;
+    
+  }, [linkDistance, linkStrength, nodeCharge, localVisualizationType, applyForceParametersToSimulation]);
+
+  // Add initialization of color themes from categories
+  useEffect(() => {
+    if (
+      nodeData.length > 0 && 
+      uniqueCategories.length > 0 && 
+      (!colors.dynamicColorThemes.default || 
+      Object.keys(colors.dynamicColorThemes.default).length === 0)
+    ) {
+      console.log("Initializing color themes from categories");
+      colors.generateDynamicColorThemes(uniqueCategories);
+    }
+  }, [nodeData, uniqueCategories, colors]);
 
   // Process imported data - only do this once
   useEffect(() => {
@@ -348,77 +462,144 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   }, [nodeData, linkData, toast, colors]);
 
-  // Create drag behavior with enhanced handling to prevent zoom/pan conflicts
-  const createDragBehavior = useCallback((simulation: d3.Simulation<Node, Link>) => {
+  // Create drag behavior with direct state access to fix the fixNodesOnDrag toggle issue
+  const createDragBehavior = useCallback(() => {
+    if (!simulationRef.current) {
+      console.error("Cannot create drag behavior - simulation not initialized");
+      return d3.drag<SVGCircleElement, SimulatedNode>();
+    }
+    
+    console.log("Creating new drag behavior with fixNodesOnDrag:", localFixNodesOnDrag);
+    
+    const simulation = simulationRef.current;
+    
     return d3.drag<SVGCircleElement, SimulatedNode>()
       .on("start", function(event, d) {
         // Prevent event from propagating to avoid conflicts with zoom
-        event.sourceEvent.stopPropagation();
+        if (event.sourceEvent) event.sourceEvent.stopPropagation();
         
-        if (!event.active) simulation.alphaTarget(0.3).restart();
+        // Reheat the simulation when dragging starts
+        if (!event.active) {
+          simulation.alphaTarget(0.3).restart();
+          console.log("Reheated simulation for dragging");
+        }
+        
+        // Always store the initial position when starting to drag
         d.fx = d.x;
         d.fy = d.y;
         
         // Make the dragged node appear on top
         d3.select(this).raise();
+        
+        console.log("Drag start:", d.id);
       })
       .on("drag", function(event, d) {
         // Prevent event from propagating
-        event.sourceEvent.stopPropagation();
+        if (event.sourceEvent) event.sourceEvent.stopPropagation();
         
+        // Move the node to follow the cursor
         d.fx = event.x;
         d.fy = event.y;
         
-        // Ensure smooth dragging by applying changes immediately
+        // Update visual position immediately
         d3.select(this)
           .attr("cx", d.fx)
           .attr("cy", d.fy);
           
-        // Update connected links immediately for responsive dragging
-        const svg = d3.select(svgRef.current);
-        svg.selectAll<SVGLineElement, Link>(".link")
-          .filter(l => {
-            const source = typeof l.source === 'object' ? l.source.id : l.source;
-            const target = typeof l.target === 'object' ? l.target.id : l.target;
-            return source === d.id || target === d.id;
-          })
-          .each(function(l) {
-            const isSource = (typeof l.source === 'object' ? l.source.id : l.source) === d.id;
-            
-            if (isSource) {
-              d3.select(this)
-                .attr("x1", d.fx)
-                .attr("y1", d.fy);
-            } else {
-              d3.select(this)
-                .attr("x2", d.fx)
-                .attr("y2", d.fy);
-            }
-          });
+        // Update connected links immediately
+        if (svgRef.current) {
+          const svg = d3.select(svgRef.current);
           
-        // Update the label position
-        svg.selectAll<SVGTextElement, Node>(".node-label")
-          .filter(n => n.id === d.id)
-          .attr("x", d.fx)
-          .attr("y", d.fy);
+          svg.selectAll<SVGLineElement, Link>(".link")
+            .filter(l => {
+              const source = typeof l.source === 'object' ? l.source.id : l.source;
+              const target = typeof l.target === 'object' ? l.target.id : l.target;
+              return source === d.id || target === d.id;
+            })
+            .each(function(l) {
+              const element = d3.select(this);
+              const isSource = (typeof l.source === 'object' ? l.source.id : l.source) === d.id;
+              
+              if (isSource) {
+                element.attr("x1", d.fx).attr("y1", d.fy);
+              } else {
+                element.attr("x2", d.fx).attr("y2", d.fy);
+              }
+            });
+            
+          // Update label position
+          svg.selectAll<SVGTextElement, Node>(".node-label")
+            .filter(n => n.id === d.id)
+            .attr("x", d.fx)
+            .attr("y", d.fy);
+        }
       })
       .on("end", function(event, d) {
         // Prevent event from propagating
-        event.sourceEvent.stopPropagation();
+        if (event.sourceEvent) event.sourceEvent.stopPropagation();
         
-        if (!event.active) simulation.alphaTarget(0);
+        if (!event.active) {
+          // Always cool down the simulation when dragging ends
+          simulation.alphaTarget(0);
+        }
         
-        // If fixNodesOnDrag is false, release the node back to the simulation
-        if (!localFixNodesOnDrag) {
+        // CRITICAL: Force a direct check of fixNodesOnDrag from component state
+        // This ensures we always use the latest value, not the closure-captured one
+        const currentFixed = document.getElementById('network-visualization-container')?.getAttribute('data-fix-nodes') === 'true';
+        
+        if (!currentFixed) {
+          console.log("Releasing node:", d.id);
           d.fx = null;
           d.fy = null;
           
-          // Very gentle alpha to allow local repositioning without disrupting the whole layout
-          simulation.alpha(0.05).restart();
-          console.log("Node released with minimal alpha to avoid layout shifts");
+          // Apply alpha boost to allow nodes to reposition
+          simulation.alpha(0.3).restart();
+        } else {
+          console.log("Keeping node fixed at:", d.id, d.fx, d.fy);
         }
       });
-  }, [localFixNodesOnDrag]);
+  }, [svgRef]); // Remove localFixNodesOnDrag dependency to avoid recreating the behavior
+
+  // Function to directly update the drag behavior on all nodes
+  const updateDragBehaviorOnAllNodes = useCallback(() => {
+    if (!svgRef.current || !simulationRef.current) return;
+    
+    try {
+      console.log("Updating drag behavior on all nodes with fixNodesOnDrag:", localFixNodesOnDrag);
+      
+      const svg = d3.select(svgRef.current);
+      const dragBehavior = createDragBehavior();
+      
+      // Apply the updated drag behavior to all nodes
+      svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
+        .call(dragBehavior as d3.DragBehavior<SVGCircleElement, unknown, SimulatedNode>);
+      
+      // If we're turning off node fixing, also release all currently fixed nodes
+      if (!localFixNodesOnDrag) {
+        console.log("Releasing all fixed nodes due to toggle change");
+        
+        svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
+          .each(function(d) {
+            d.fx = null;
+            d.fy = null;
+          });
+        
+        // Apply higher alpha to reposition nodes
+        simulationRef.current.alpha(1).restart();
+      }
+    } catch (error) {
+      console.error("Error updating drag behavior on nodes:", error);
+    }
+  }, [createDragBehavior, localFixNodesOnDrag]);
+
+  // Update drag behavior when fixNodesOnDrag changes
+  useEffect(() => {
+    if (!visualizationInitialized.current || localVisualizationType !== 'network') return;
+    
+    console.log("fixNodesOnDrag changed to:", localFixNodesOnDrag);
+    updateDragBehaviorOnAllNodes();
+    
+  }, [localFixNodesOnDrag, localVisualizationType, updateDragBehaviorOnAllNodes]);
 
   // Create D3 visualization - only for network visualization type
   useEffect(() => {
@@ -435,8 +616,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         
         // Update node colors
         svg.selectAll<SVGCircleElement, Node>(".node")
-  .attr("fill", (d: Node) => colors.getNodeColor(d))
-  .attr("r", (_d: Node) => 7 * colors.nodeSize);
+          .attr("fill", (d: Node) => colors.getNodeColor(d))
+          .attr("r", (_d: Node) => 7 * colors.nodeSize);
           
         // Update node labels
         svg.selectAll(".node-label")
@@ -453,6 +634,26 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
           const { r, g, b } = colors.rgbBackgroundColor;
           containerRef.current.style.backgroundColor = 
             `rgba(${r}, ${g}, ${b}, ${colors.backgroundOpacity})`;
+        }
+        
+        // Apply current physics parameters to the existing simulation
+        if (simulationRef.current) {
+          const simulation = simulationRef.current;
+          
+          // Update charge force
+          simulation.force("charge", d3.forceManyBody().strength(nodeCharge));
+          
+          // Update link force
+          const linkForce = simulation.force("link") as d3.ForceLink<Node, Link>;
+          if (linkForce) {
+            linkForce.distance(linkDistance).strength(linkStrength);
+          }
+          
+          // Update collision force
+          simulation.force("collision", d3.forceCollide().radius(d => 7 * colors.nodeSize + 2));
+          
+          // Reheat simulation slightly to show changes
+          simulation.alpha(0.3).restart();
         }
         
         return; // Skip full rebuild
@@ -541,7 +742,15 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .force("charge", d3.forceManyBody()
           .strength(nodeCharge * 2)) // Stronger repulsion initially
         .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collision", d3.forceCollide().radius(d => 10 * colors.nodeSize));
+        .force("collision", d3.forceCollide().radius(d => 10 * colors.nodeSize).strength(1));
+
+      console.log("Initial simulation parameters:", {
+        linkDistance: linkDistance * 2,
+        linkStrength,
+        nodeCharge: nodeCharge * 2,
+        nodeSize: colors.nodeSize,
+        collisionRadius: 10 * colors.nodeSize
+      });
 
       // Store current parameter values in refs
       prevLinkDistanceRef.current = linkDistance;
@@ -567,17 +776,29 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
 
       // After initial positioning, restore normal parameters
       setTimeout(() => {
+        console.log("Resetting simulation forces to normal values after initial positioning");
+        
         const linkForce = simulation.force("link") as d3.ForceLink<Node, Link>;
         if (linkForce) {
-          linkForce.distance(linkDistance);
+          linkForce.distance(linkDistance).strength(linkStrength);
+          console.log(`Reset link force: distance=${linkDistance}, strength=${linkStrength}`);
         }
         
         const chargeForce = simulation.force("charge") as d3.ForceManyBody<Node>;
         if (chargeForce) {
           chargeForce.strength(nodeCharge);
+          console.log(`Reset charge force: ${nodeCharge}`);
         }
         
-        simulation.alpha(0.3).restart();
+        const collisionForce = simulation.force("collision") as d3.ForceCollide<Node>;
+        if (collisionForce) {
+          collisionForce.radius(d => 7 * colors.nodeSize + 2).strength(1);
+          console.log(`Reset collision radius: ${7 * colors.nodeSize + 2}`);
+        }
+        
+        // Use higher alpha for more visible effect
+        simulation.alpha(0.5).restart();
+        console.log("Simulation restarted with alpha 0.5 after resetting forces");
       }, 1000);
       
       // Create links with proper type casting
@@ -619,8 +840,15 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .style("text-shadow", `0 1px 2px rgba(0, 0, 0, 0.7)`);
       
       // Create and apply drag behavior
-      const dragBehavior = createDragBehavior(simulation);
-      node.call(dragBehavior as d3.DragBehavior<SVGCircleElement, unknown, Node>);
+      const dragBehavior = createDragBehavior();
+      
+      // Ensure the drag behavior is correctly initialized on all nodes
+      try {
+        node.call(dragBehavior as d3.DragBehavior<SVGCircleElement, unknown, Node>);
+        console.log("Drag behavior initialized on all nodes");
+      } catch (error) {
+        console.error("Error initializing drag behavior:", error);
+      }
       
       // Event handlers
       node
@@ -718,6 +946,61 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     forceUpdate  // Include forceUpdate to trigger re-renders when needed
   ]);
 
+  // Update colors when they change
+  useEffect(() => {
+    // Skip if visualization type is not network
+    if (localVisualizationType !== 'network') {
+      return;
+    }
+
+    // Skip if not initialized yet
+    if (!visualizationInitialized.current || !svgRef.current) {
+      return;
+    }
+    
+    try {
+      console.log("Updating network visualization colors");
+      const svg = d3.select(svgRef.current);
+      
+      // Update node colors
+      svg.selectAll<SVGCircleElement, Node>(".node")
+        .attr("fill", (d: Node) => colors.getNodeColor(d))
+        .attr("r", (_d: Node) => 7 * colors.nodeSize)
+        .attr("stroke", colors.nodeStrokeColor);
+        
+      // Update node labels
+      svg.selectAll(".node-label")
+        .style("font-size", `${8 * Math.min(1.2, colors.nodeSize)}px`)
+        .style("fill", colors.textColor);
+        
+      // Update link colors
+      svg.selectAll(".link")
+        .attr("stroke", colors.linkColor)
+        .attr("stroke-width", 1.5);
+        
+      // Update background if container exists
+      if (containerRef.current) {
+        const { r, g, b } = colors.rgbBackgroundColor;
+        containerRef.current.style.backgroundColor = 
+          `rgba(${r}, ${g}, ${b}, ${colors.backgroundOpacity})`;
+      }
+      
+      console.log("Colors updated successfully");
+    } catch (error) {
+      console.error("Error updating visualization colors:", error);
+    }
+  }, [
+    colors.colorTheme,
+    colors.nodeSize,
+    colors.textColor,
+    colors.linkColor,
+    colors.backgroundColor,
+    colors.backgroundOpacity,
+    colors.nodeStrokeColor,
+    colors.customNodeColors,
+    localVisualizationType
+  ]);
+
   // Cleanup function when component unmounts
   useEffect(() => {
     return () => {
@@ -730,86 +1013,6 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       visualizationInitialized.current = false;
     };
   }, []);
-
-  // IMPROVED: Update simulation parameters immediately for smoother slider interactions
-  const handleSliderChange = useCallback((type: string, value: number) => {
-    console.log(`Slider changed: ${type} = ${value}`);
-    
-    // Update state
-    switch (type) {
-      case "nodeSize":
-        colors.setNodeSize(value);
-        break;
-      case "linkDistance":
-        setLinkDistance(value);
-        break;
-      case "linkStrength":
-        setLinkStrength(value);
-        break;
-      case "nodeCharge":
-        setNodeCharge(value);
-        break;
-      default:
-        break;
-    }
-    
-    // Apply changes directly to simulation if available
-    if (simulationRef.current && svgRef.current) {
-      const simulation = simulationRef.current;
-      const svg = d3.select(svgRef.current);
-      
-      switch (type) {
-        case "nodeSize": {
-          // Update node size
-          svg.selectAll<SVGCircleElement, Node>(".node")
-            .attr("r", d => 7 * value);
-          
-          // Update font size
-          svg.selectAll<SVGTextElement, Node>(".node-label")
-            .style("font-size", `${8 * Math.min(1.2, value)}px`);
-          
-          // Update collision radius
-          const collisionForce = simulation.force("collision") as d3.ForceCollide<Node> | null;
-          if (collisionForce) {
-            collisionForce.radius(d => (7 * value) + 2);
-          }
-          break;
-        }
-          
-        case "linkDistance": {
-          const linkForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
-          if (linkForce) {
-            linkForce.distance(value);
-          }
-          break;
-        }
-          
-        case "linkStrength": {
-          const linkStrForce = simulation.force("link") as d3.ForceLink<Node, Link> | null;
-          if (linkStrForce) {
-            linkStrForce.strength(value);
-          }
-          break;
-        }
-          
-        case "nodeCharge": {
-          const chargeForce = simulation.force("charge") as d3.ForceManyBody<Node> | null;
-          if (chargeForce) {
-            chargeForce.strength(value);
-          }
-          break;
-        }
-      }
-      
-      // Store current values for future comparison
-      if (type === "linkDistance") prevLinkDistanceRef.current = value;
-      if (type === "nodeCharge") prevNodeChargeRef.current = value;
-      if (type === "linkStrength") prevLinkStrengthRef.current = value;
-      
-      // Apply a small alpha to update the simulation smoothly
-      simulation.alpha(0.08).restart();
-    }
-  }, [colors]);
 
   // Add a new useEffect hook for handling resize events without auto zoom
   useEffect(() => {
@@ -951,6 +1154,103 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   }, []);
 
+  // Update the handleSliderChange function to apply forces more directly and with higher alpha
+  const handleSliderChange = useCallback((type: string, value: number) => {
+    console.log(`Slider changed: ${type} = ${value}`);
+    
+    // Skip if not in network visualization
+    if (localVisualizationType !== 'network') {
+      console.log(`Skipping slider update for ${type} - not in network visualization`);
+      return;
+    }
+    
+    // Skip if simulation not available
+    if (!simulationRef.current || !svgRef.current) {
+      console.warn(`Cannot update ${type} - simulation or SVG reference missing`);
+      return;
+    }
+    
+    const simulation = simulationRef.current;
+    const svg = d3.select(svgRef.current);
+    
+    try {
+      // Stop the simulation before making changes
+      simulation.stop();
+
+      // Apply changes DIRECTLY with more aggressive alpha values
+      switch (type) {
+        case "nodeSize":
+          console.log(`Applying node size: ${value}`);
+          
+          // Update node circles
+          svg.selectAll<SVGCircleElement, Node>(".node")
+            .attr("r", d => 7 * value);
+          
+          // Update node labels
+          svg.selectAll<SVGTextElement, Node>(".node-label")
+            .style("font-size", `${8 * Math.min(1.2, value)}px`);
+          
+          // Update collision radius with new value
+          simulation.force("collision", d3.forceCollide<Node>()
+            .radius(d => 7 * value + 2)
+            .strength(1));
+          break;
+          
+        case "linkDistance":
+          { console.log(`Applying link distance: ${value}`);
+          
+          // Completely rebuild the link force for more reliable updates
+          const oldLinkForce = simulation.force("link") as d3.ForceLink<Node, Link>;
+          if (oldLinkForce) {
+            const links = oldLinkForce.links();
+            const strength = oldLinkForce.strength();
+            
+            simulation.force("link", d3.forceLink<Node, Link>(links)
+              .id(d => d.id)
+              .distance(value)
+              .strength(strength));
+              
+            console.log("Rebuilt link force with distance:", value);
+          }
+          break; }
+          
+        case "linkStrength":
+          { console.log(`Applying link strength: ${value}`);
+          
+          // Completely rebuild the link force for more reliable updates
+          const oldStrengthForce = simulation.force("link") as d3.ForceLink<Node, Link>;
+          if (oldStrengthForce) {
+            const links = oldStrengthForce.links();
+            const distance = oldStrengthForce.distance();
+            
+            simulation.force("link", d3.forceLink<Node, Link>(links)
+              .id(d => d.id)
+              .distance(distance)
+              .strength(value));
+              
+            console.log("Rebuilt link force with strength:", value);
+          }
+          break; }
+          
+        case "nodeCharge":
+          console.log(`Applying node charge: ${value}`);
+          
+          // Rebuild the charge force entirely
+          simulation.force("charge", d3.forceManyBody<Node>().strength(value));
+          console.log("Rebuilt charge force with strength:", value);
+          break;
+      }
+      
+      // Use a higher alpha to ensure changes are visible
+      simulation.alpha(0.8).restart();
+      
+      console.log(`Simulation restarted after ${type} change with alpha 0.8`);
+      
+    } catch (error) {
+      console.error(`Error updating ${type}:`, error);
+    }
+  }, [localVisualizationType]);
+
   // Function to toggle section expansion
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({
@@ -978,52 +1278,78 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setNetworkTitle(newTitle);
   };
 
-  // Handle toggle fix nodes
+  // Handle toggle fix nodes - Simplified and more direct
   const handleToggleFixNodes = () => {
     const newValue = !localFixNodesOnDrag;
-    console.log("Toggling fixNodesOnDrag:", newValue);
+    console.log("Toggling fixNodesOnDrag from", localFixNodesOnDrag, "to", newValue);
+    
+    // Update local state
     setLocalFixNodesOnDrag(newValue);
     
-    // Get current simulation
-    const currentSimulation = simulationRef.current;
+    // Update the DOM attribute for direct access from drag handlers
+    if (containerRef.current) {
+      containerRef.current.setAttribute('data-fix-nodes', newValue ? 'true' : 'false');
+    }
     
-    // Apply changes immediately
-    if (svgRef.current && currentSimulation) {
+    // Skip direct handling if we're not in network visualization
+    if (localVisualizationType !== 'network') {
+      console.log("Not in network visualization, skipping direct toggle handling");
+      
+      toast({
+        title: newValue ? "Nodes will stay fixed" : "Nodes will follow simulation",
+        description: newValue 
+          ? "Nodes will remain where you drop them" 
+          : "Nodes will return to simulation flow after dragging"
+      });
+      
+      return;
+    }
+    
+    // Handle direct manipulation of the simulation
+    if (simulationRef.current && svgRef.current) {
       try {
-        console.log("Applying fixNodesOnDrag change to simulation");
+        const simulation = simulationRef.current;
+        const svg = d3.select(svgRef.current);
         
-        // When turning off fixed nodes, reset all fx/fy values
+        // Stop simulation to make changes
+        simulation.stop();
+        
+        // If turning off node fixing, release all fixed nodes
         if (!newValue) {
-          const svg = d3.select(svgRef.current);
+          console.log("Releasing all fixed nodes");
+          
           svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
             .each(function(d) {
-              // Unfix all nodes
+              // Release all fixed positions
               d.fx = null;
               d.fy = null;
+              
+              // Also reset velocities for clean movement
+              d.vx = 0;
+              d.vy = 0;
             });
-          
-          // Apply higher alpha
-          currentSimulation.alpha(0.3).restart();
-          console.log("Restarted simulation with moderate alpha 0.3 after unfixing nodes");
+            
+          // Apply high alpha to ensure visible movement
+          simulation.alpha(0.5).restart();
+        } else {
+          // Just restart with low alpha if fixing nodes
+          simulation.alpha(0.1).restart();
         }
         
-        toast({
-          title: newValue ? "Nodes will stay fixed" : "Nodes will follow simulation",
-          description: newValue 
-            ? "Nodes will remain where you drop them" 
-            : "Nodes will return to simulation flow after dragging"
-        });
+        console.log("Applied toggle change to network nodes");
       } catch (error) {
-        console.error("Error toggling fix nodes:", error);
-        toast({
-          title: "Error",
-          description: "Failed to update node behavior",
-          variant: "destructive"
-        });
+        console.error("Error handling fix nodes toggle:", error);
       }
     } else {
-      console.log("Cannot apply fix nodes toggle - references not available");
+      console.log("Cannot directly update simulation - missing references");
     }
+    
+    toast({
+      title: newValue ? "Nodes will stay fixed" : "Nodes will follow simulation",
+      description: newValue 
+        ? "Nodes will remain where you drop them" 
+        : "Nodes will return to simulation flow after dragging"
+    });
   };
 
   // Handle visualization type change - simplified to minimize state changes
@@ -1047,9 +1373,130 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     });
   };
 
-  // Function to properly clean up and reinitialize the visualization
+  // Completely rewrite the Reset Simulation function to properly reset everything
+  const handleResetSimulation = () => {
+    console.log("Completely resetting simulation");
+    
+    // Skip if not network visualization
+    if (localVisualizationType !== 'network') {
+      console.log("Skipping simulation reset - not in network visualization");
+      return;
+    }
+    
+    // Reset state values to defaults
+    setLinkDistance(70);
+    setLinkStrength(1.0);
+    setNodeCharge(-300);
+    colors.setNodeSize(1.0);
+    
+    // Update reference values
+    prevLinkDistanceRef.current = 70;
+    prevNodeChargeRef.current = -300;
+    prevLinkStrengthRef.current = 1.0;
+    
+    // Get current simulation
+    const currentSimulation = simulationRef.current;
+    
+    if (!currentSimulation || !svgRef.current) {
+      console.log("Simulation not available - performing complete reinitialization");
+      reinitializeVisualization();
+      return;
+    }
+    
+    try {
+      // Stop the current simulation
+      currentSimulation.stop();
+      
+      // Get container dimensions
+      let width = 800, height = 600;
+      if (containerRef.current) {
+        width = containerRef.current.clientWidth;
+        height = containerRef.current.clientHeight;
+      }
+      
+      // Get the current nodes and links
+      const nodes = currentSimulation.nodes();
+      
+      // Reset all node positions and fixed states
+      const svg = d3.select(svgRef.current);
+      svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
+        .each(function(d) {
+          // Completely unfix all nodes
+          d.fx = null;
+          d.fy = null;
+          
+          // Reset velocities
+          d.vx = 0;
+          d.vy = 0;
+          
+          // Randomize positions to create a fresh layout
+          const angle = Math.random() * 2 * Math.PI;
+          const radius = Math.min(width, height) * 0.4 * Math.random();
+          d.x = width / 2 + radius * Math.cos(angle);
+          d.y = height / 2 + radius * Math.sin(angle);
+        });
+      
+      // Get all links (independent of the old forces)
+      const links = processedData.links.filter(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        
+        // Only include links where both nodes exist in the current visualization
+        return nodes.some(n => n.id === sourceId) && nodes.some(n => n.id === targetId);
+      });
+      
+      // Clear ALL existing forces
+      currentSimulation.force("link", null)
+                     .force("charge", null)
+                     .force("center", null)
+                     .force("collision", null);
+      
+      // Recreate forces with default parameters
+      currentSimulation.force("link", d3.forceLink<Node, Link>(links)
+                       .id(d => d.id)
+                       .distance(70)
+                       .strength(1.0))
+                     .force("charge", d3.forceManyBody<Node>()
+                       .strength(-300))
+                     .force("center", d3.forceCenter(width / 2, height / 2))
+                     .force("collision", d3.forceCollide<Node>()
+                       .radius(d => 7 * 1.0 + 2)
+                       .strength(1));
+      
+      // Update visual elements
+      svg.selectAll<SVGCircleElement, Node>(".node")
+         .attr("r", 7);
+      
+      svg.selectAll<SVGTextElement, Node>(".node-label")
+         .style("font-size", "8px");
+      
+      // Restart with maximum alpha for complete reheat
+      currentSimulation.alpha(1.0).restart();
+      
+      console.log("Simulation fully reset and reheated");
+      
+      toast({
+        title: "Physics Reset",
+        description: "Network parameters have been reset to default values",
+      });
+    } catch (error) {
+      console.error("Error during simulation reset:", error);
+      toast({
+        title: "Reset Failed",
+        description: "Could not reset network physics. Trying full reinitialization...",
+        variant: "destructive"
+      });
+      
+      // Fall back to complete reinitialization
+      setTimeout(() => {
+        reinitializeVisualization();
+      }, 100);
+    }
+  };
+
+  // Complete reinitialization function 
   const reinitializeVisualization = () => {
-    console.log("Reinitializing visualization");
+    console.log("Completely reinitializing visualization");
     
     try {
       // Clean up existing simulation
@@ -1066,6 +1513,17 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       // Reset visualization initialized flag
       visualizationInitialized.current = false;
       
+      // Reset all parameters to defaults
+      setLinkDistance(70);
+      setLinkStrength(1.0);
+      setNodeCharge(-300);
+      colors.setNodeSize(1.0);
+      
+      // Update reference values
+      prevLinkDistanceRef.current = 70;
+      prevNodeChargeRef.current = -300;
+      prevLinkStrengthRef.current = 1.0;
+      
       // Set a flag to trigger the useEffect that creates the visualization
       setIsLoading(true);
       
@@ -1076,21 +1534,70 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       
       // Clear any error state
       setVisualizationError(null);
+      
+      toast({
+        title: "Visualization Reset",
+        description: "Network visualization has been completely reinitialized",
+      });
     } catch (error) {
       console.error("Error reinitializing visualization:", error);
       setVisualizationError(error instanceof Error ? error.message : "Unknown error during reinitialization");
+      
+      toast({
+        title: "Error",
+        description: "Failed to reinitialize the visualization. Please try reloading the page.",
+        variant: "destructive"
+      });
     }
   };
 
-  // Handle parameter change - Use the enhanced slider change handler
+  // Handle parameter change - Update to ensure correct state updates
   const handleParameterChange = (type: string, value: number) => {
-    // Use the improved slider handler for immediate feedback
+    console.log(`Parameter change called: ${type} = ${value}`);
+    
+    // Skip if not in network visualization
+    if (localVisualizationType !== 'network') {
+      console.log(`Skipping parameter change for ${type} - not in network visualization`);
+      return;
+    }
+    
+    // Update state based on parameter type
+    switch (type) {
+      case "nodeSize":
+        colors.setNodeSize(value);
+        break;
+      case "linkDistance":
+        setLinkDistance(value);
+        break;
+      case "linkStrength":
+        setLinkStrength(value); 
+        break;
+      case "nodeCharge":
+        setNodeCharge(value);
+        break;
+      default:
+        break;
+    }
+    
+    // Store this new value in the DOM for direct access if needed
+    if (containerRef.current) {
+      containerRef.current.setAttribute(`data-${type}`, value.toString());
+    }
+    
+    // Apply change immediately to the simulation
     handleSliderChange(type, value);
   };
 
   // Handle node group change
   const handleNodeGroupChange = (group: string) => {
     console.log(`Node group changed to: ${group}`);
+    
+    // Only apply if network visualization
+    if (localVisualizationType !== 'network') {
+      console.log(`Skipping node group change - not in network visualization`);
+      return;
+    }
+    
     setNodeGroup(group);
     // Full reinitialize is needed for this change
     reinitializeVisualization();
@@ -1116,7 +1623,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   // Handle color tab change
   const handleColorTabChange = (tab: string) => {
     console.log(`Color tab changed to: ${tab}`);
-    setActiveColorTab(tab);
+    colors.setActiveColorTab(tab);
   };
 
   // Handle apply group colors
@@ -1130,6 +1637,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       }
     });
     
+    // Force update to refresh the visualization
+    setForceUpdate(prev => !prev);
+    
     toast({
       title: "Group Colors Applied",
       description: "Custom colors have been applied to categories",
@@ -1141,6 +1651,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     console.log(`Applying individual color for node ${nodeId}: ${color}`);
     if (colors.applyIndividualColor) {
       colors.applyIndividualColor(nodeId, color);
+      // Force update to refresh the visualization
+      setForceUpdate(prev => !prev);
     }
   };
 
@@ -1149,6 +1661,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     console.log(`Resetting individual color for node ${nodeId}`);
     if (colors.resetIndividualColor) {
       colors.resetIndividualColor(nodeId);
+      // Force update to refresh the visualization
+      setForceUpdate(prev => !prev);
     }
   };
 
@@ -1167,6 +1681,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     colors.setLinkColor(lnkColor);
     colors.setBackgroundOpacity(opacity);
     colors.setNodeStrokeColor(nodeStrokeClr);
+    
+    // Force update to refresh the visualization
+    setForceUpdate(prev => !prev);
   };
 
   // Handle reset background colors
@@ -1174,91 +1691,20 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     console.log("Resetting background colors");
     if (colors.resetBackgroundColors) {
       colors.resetBackgroundColors();
-    }
-  };
-
-  // Handle reset simulation
-  const handleResetSimulation = () => {
-    console.log("Resetting simulation");
-    
-    // Reset state values to defaults
-    setLinkDistance(70);
-    setLinkStrength(1.0);
-    setNodeCharge(-300);
-    colors.setNodeSize(1.0);
-    
-    // Update reference values
-    prevLinkDistanceRef.current = 70;
-    prevNodeChargeRef.current = -300;
-    prevLinkStrengthRef.current = 1.0;
-    
-    // Get current simulation
-    const currentSimulation = simulationRef.current;
-    
-    // Apply changes to the simulation
-    if (currentSimulation && svgRef.current) {
-      try {
-        console.log("Applying reset to simulation directly");
-        
-        // Reset all node positions and fixed states
-        const svg = d3.select(svgRef.current);
-        svg.selectAll<SVGCircleElement, SimulatedNode>(".node")
-          .each(function(d) {
-            // Completely unfix all nodes
-            d.fx = null;
-            d.fy = null;
-            
-            // Reset velocities
-            d.vx = 0;
-            d.vy = 0;
-          });
-        
-        // Apply default force parameters
-        const linkForce = currentSimulation.force("link") as d3.ForceLink<Node, Link>;
-        if (linkForce) {
-          linkForce.distance(70).strength(1.0);
-        }
-        
-        const chargeForce = currentSimulation.force("charge") as d3.ForceManyBody<Node>;
-        if (chargeForce) {
-          chargeForce.strength(-300);
-        }
-        
-        // Update visual elements
-        svg.selectAll<SVGCircleElement, Node>(".node")
-           .attr("r", 7);
-        
-        svg.selectAll<SVGTextElement, Node>(".node-label")
-           .style("font-size", "8px");
-        
-        // CRITICAL: Restart with high alpha
-        currentSimulation.alpha(1.0).restart();
-        console.log("Simulation fully reset with alpha 1.0");
-        
-        toast({
-          title: "Simulation Reset",
-          description: "Physics parameters have been reset to default values",
-        });
-      } catch (error) {
-        console.error("Error resetting simulation:", error);
-        toast({
-          title: "Error",
-          description: `Failed to reset simulation: ${error instanceof Error ? error.message : "Unknown error"}`,
-          variant: "destructive"
-        });
-      }
-    } else {
-      console.log("Cannot reset simulation - references not available");
-      toast({
-        title: "Reset Physics",
-        description: "Parameters reset to defaults but simulation not available for update",
-      });
+      // Force update to refresh
+      setForceUpdate(prev => !prev);
     }
   };
 
   // Handle reset graph
   const handleResetGraph = () => {
     console.log("Resetting graph");
+    
+    // Skip if not network visualization
+    if (localVisualizationType !== 'network') {
+      console.log("Skipping graph reset - not in network visualization");
+      return;
+    }
     
     // Reset all visual properties
     setNodeGroup('all');
@@ -1351,135 +1797,92 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   };
 
   // Direct visualization type checking
-  const isRadial = localVisualizationType === 'radial';
   const isArc = localVisualizationType === 'arc';
   const isNetwork = localVisualizationType === 'network';
   const isRad360 = localVisualizationType === 'rad360';
+  const isArcLineal = localVisualizationType === 'arcLineal';
+  const is3D = localVisualizationType === '3d';
 
-  // Using visibility-based conditional rendering instead of mounting/unmounting
+  // IMPROVEMENT: Fully unmount non-active visualizations rather than hiding them
   return (
     <BaseVisualization
       children={
         <div className="w-full h-full">
-          {/* Network Graph Container - always present but conditionally visible */}
-          <div 
-            style={{ 
-              display: isNetwork ? 'block' : 'none',
-              width: '100%',
-              height: '100%'
-            }}
-          >
-            <div 
-              ref={containerRef} 
-              className="w-full h-full relative" 
-              id="network-visualization-container" 
-              style={{
-                backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
-                touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
-              }}
-            >
-              <svg 
-                ref={svgRef} 
-                className="w-full h-full"
-                style={{ pointerEvents: "all" }} // Explicit pointer events to fix zoom
-              />
-              
-              {/* File Buttons */}
-              <FileButtons 
-                onDownloadData={downloadData}
-                onDownloadGraph={downloadGraph}
-                onResetSelection={handleResetSelection}
-                nodeData={nodeData.map(node => ({
-                  id: node.id || '',
-                  name: node.name || '',
-                  category: node.category || '',
-                  type: node.type || ''
-                }))}
-                linkData={linkData.map(link => ({
-                  ...link,
-                  source: typeof link.source === 'object' ? String(link.source.id) : String(link.source),
-                  target: typeof link.target === 'object' ? String(link.target.id) : String(link.target),
-                }))}
-              />
-              
-              {/* Zoom Controls */}
-              <ZoomControls
-                onZoomIn={zoomIn}
-                onZoomOut={zoomOut}
-                onReset={zoomToFit}
-                isZoomInitialized={isZoomInitialized}
-              />
-              
-              {/* Tooltip */}
+          {/* Network Graph Container - fully unmounted when not active */}
+          {isNetwork && (
+            <div className="w-full h-full">
               <div 
-                ref={tooltipRef} 
-                className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
-                style={{ 
-                  opacity: 0,
-                  visibility: "hidden",
-                  transition: 'opacity 0.15s ease-in-out',
-                  boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
-                  transform: 'translate(0, 0)',
-                  maxHeight: '300px',
-                  overflowY: 'auto',
+                ref={containerRef} 
+                className="w-full h-full relative" 
+                id="network-visualization-container" 
+                data-fix-nodes={localFixNodesOnDrag ? 'true' : 'false'}
+                style={{
+                  backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
+                  touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
                 }}
-              />
-              
-              {/* Network components */}
-              <NetworkTooltip tooltipRef={tooltipRef} nodes={processedData.nodes} links={processedData.links} />
-              <NetworkLegend 
-                categories={uniqueCategories} 
-                colorTheme={colors.colorTheme} 
-                dynamicColorThemes={colors.dynamicColorThemes} 
-                colorPalette={Object.values(colors.dynamicColorThemes.default || {})}
-              />
-              <NetworkHelper />
+              >
+                <svg 
+                  ref={svgRef} 
+                  className="w-full h-full"
+                  style={{ pointerEvents: "all" }} // Explicit pointer events to fix zoom
+                />
+                
+                {/* File Buttons */}
+                <FileButtons 
+                  onDownloadData={downloadData}
+                  onDownloadGraph={downloadGraph}
+                  onResetSelection={handleResetSelection}
+                  nodeData={nodeData.map(node => ({
+                    id: node.id || '',
+                    name: node.name || '',
+                    category: node.category || '',
+                    type: node.type || ''
+                  }))}
+                  linkData={linkData.map(link => ({
+                    ...link,
+                    source: typeof link.source === 'object' ? String(link.source.id) : String(link.source),
+                    target: typeof link.target === 'object' ? String(link.target.id) : String(link.target),
+                  }))}
+                />
+                
+                {/* Zoom Controls */}
+                <ZoomControls
+                  onZoomIn={zoomIn}
+                  onZoomOut={zoomOut}
+                  onReset={zoomToFit}
+                  isZoomInitialized={isZoomInitialized}
+                />
+                
+                {/* Tooltip */}
+                <div 
+                  ref={tooltipRef} 
+                  className="absolute bg-black/85 text-white px-3 py-2 rounded-md text-sm pointer-events-none z-50 max-w-64" 
+                  style={{ 
+                    opacity: 0,
+                    visibility: "hidden",
+                    transition: 'opacity 0.15s ease-in-out',
+                    boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+                    transform: 'translate(0, 0)',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                  }}
+                />
+                
+                {/* Network components */}
+                <NetworkTooltip tooltipRef={tooltipRef} nodes={processedData.nodes} links={processedData.links} />
+                <NetworkLegend 
+                  categories={uniqueCategories} 
+                  colorTheme={colors.colorTheme} 
+                  dynamicColorThemes={colors.dynamicColorThemes} 
+                  colorPalette={Object.values(colors.dynamicColorThemes.default || {})}
+                />
+                <NetworkHelper />
+              </div>
             </div>
-          </div>
+          )}
           
-          {/* Radial Visualization Container - always present but conditionally visible */}
-          <div 
-            style={{ 
-              display: isRadial ? 'block' : 'none',
-              width: '100%', 
-              height: '100%' 
-            }}
-          >
-            <RadialVisualization
-              onCreditsClick={onCreditsClick}
-              nodeData={nodeData.map(node => ({
-                id: String(node.id),
-                name: node.name || '',
-                category: node.category || '',
-                type: node.type || ''
-              }))}
-              linkData={linkData.map(link => ({
-                source: typeof link.source === 'object' ? link.source.id : link.source,
-                target: typeof link.target === 'object' ? link.target.id : link.target,
-              }))}
-              visualizationType={localVisualizationType}
-              onVisualizationTypeChange={handleVisualizationTypeChange}
-              colorTheme={colors.colorTheme}
-              nodeSize={colors.nodeSize}
-              linkColor={colors.linkColor}
-              backgroundColor={colors.backgroundColor}
-              backgroundOpacity={colors.backgroundOpacity}
-              customNodeColors={colors.customNodeColors}
-              dynamicColorThemes={colors.dynamicColorThemes}
-              onDownloadData={downloadData}
-              onDownloadGraph={downloadGraph}
-              onResetSelection={handleResetSelection}
-            />
-          </div>
-          
-          {/* Arc Visualization Container - always present but conditionally visible */}
-          <div 
-            style={{ 
-              display: isArc ? 'block' : 'none',
-              width: '100%', 
-              height: '100%' 
-            }}
-          >
+          {/* Arc Visualization Container - fully unmounted when not active */}
+          {isArc && (
             <ArcVisualization
               onCreditsClick={onCreditsClick}
               nodeData={nodeData.map(node => ({
@@ -1505,80 +1908,65 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
               onDownloadGraph={downloadGraph}
               onResetSelection={handleResetSelection}
             />
-          </div>
+          )}
 
-{/* Rad360 Visualization Container - always present but conditionally visible */}
-<div 
-  style={{ 
-    display: localVisualizationType === 'rad360' ? 'block' : 'none',
-    width: '100%', 
-    height: '100%' 
-  }}
->
-  <Rad360Visualization
-    onCreditsClick={onCreditsClick}
-    nodeData={nodeData.map(node => ({
-      id: String(node.id),
-      name: node.name || '',
-      category: node.category || '',
-      type: node.type || ''
-    }))}
-    linkData={linkData.map(link => ({
-      source: typeof link.source === 'object' ? link.source.id : link.source,
-      target: typeof link.target === 'object' ? link.target.id : link.target,
-    }))}
-    visualizationType={localVisualizationType}
-    onVisualizationTypeChange={handleVisualizationTypeChange}
-    colorTheme={colors.colorTheme}
-    nodeSize={colors.nodeSize}
-    linkColor={colors.linkColor}
-    backgroundColor={colors.backgroundColor}
-    backgroundOpacity={colors.backgroundOpacity}
-    customNodeColors={colors.customNodeColors}
-    dynamicColorThemes={colors.dynamicColorThemes}
-    onDownloadData={downloadData}
-    onDownloadGraph={downloadGraph}
-    onResetSelection={handleResetSelection}
-  />
-</div>
+          {/* Rad360 Visualization Container - fully unmounted when not active */}
+          {isRad360 && (
+            <Rad360Visualization
+              onCreditsClick={onCreditsClick}
+              nodeData={nodeData.map(node => ({
+                id: String(node.id),
+                name: node.name || '',
+                category: node.category || '',
+                type: node.type || ''
+              }))}
+              linkData={linkData.map(link => ({
+                source: typeof link.source === 'object' ? link.source.id : link.source,
+                target: typeof link.target === 'object' ? link.target.id : link.target,
+              }))}
+              visualizationType={localVisualizationType}
+              onVisualizationTypeChange={handleVisualizationTypeChange}
+              colorTheme={colors.colorTheme}
+              nodeSize={colors.nodeSize}
+              linkColor={colors.linkColor}
+              backgroundColor={colors.backgroundColor}
+              backgroundOpacity={colors.backgroundOpacity}
+              customNodeColors={colors.customNodeColors}
+              dynamicColorThemes={colors.dynamicColorThemes}
+              onDownloadData={downloadData}
+              onDownloadGraph={downloadGraph}
+              onResetSelection={handleResetSelection}
+            />
+          )}
 
-
-{/* ArcLineal Visualization Container - always present but conditionally visible */}
-<div 
-  style={{ 
-    display: localVisualizationType === 'arcLineal' ? 'block' : 'none',
-    width: '100%', 
-    height: '100%' 
-  }}
->
-  <ArcLinealVisualization
-    onCreditsClick={onCreditsClick}
-    nodeData={nodeData.map(node => ({
-      id: String(node.id),
-      name: node.name || '',
-      category: node.category || '',
-      type: node.type || ''
-    }))}
-    linkData={linkData.map(link => ({
-      source: typeof link.source === 'object' ? link.source.id : link.source,
-      target: typeof link.target === 'object' ? link.target.id : link.target,
-    }))}
-    visualizationType={localVisualizationType}
-    onVisualizationTypeChange={handleVisualizationTypeChange}
-    colorTheme={colors.colorTheme}
-    nodeSize={colors.nodeSize}
-    linkColor={colors.linkColor}
-    backgroundColor={colors.backgroundColor}
-    backgroundOpacity={colors.backgroundOpacity}
-    customNodeColors={colors.customNodeColors}
-    dynamicColorThemes={colors.dynamicColorThemes}
-    onDownloadData={downloadData}
-    onDownloadGraph={downloadGraph}
-    onResetSelection={handleResetSelection}
-  />
-</div>
-
-
+          {/* ArcLineal Visualization Container - fully unmounted when not active */}
+          {isArcLineal && (
+            <ArcLinealVisualization
+              onCreditsClick={onCreditsClick}
+              nodeData={nodeData.map(node => ({
+                id: String(node.id),
+                name: node.name || '',
+                category: node.category || '',
+                type: node.type || ''
+              }))}
+              linkData={linkData.map(link => ({
+                source: typeof link.source === 'object' ? link.source.id : link.source,
+                target: typeof link.target === 'object' ? link.target.id : link.target,
+              }))}
+              visualizationType={localVisualizationType}
+              onVisualizationTypeChange={handleVisualizationTypeChange}
+              colorTheme={colors.colorTheme}
+              nodeSize={colors.nodeSize}
+              linkColor={colors.linkColor}
+              backgroundColor={colors.backgroundColor}
+              backgroundOpacity={colors.backgroundOpacity}
+              customNodeColors={colors.customNodeColors}
+              dynamicColorThemes={colors.dynamicColorThemes}
+              onDownloadData={downloadData}
+              onDownloadGraph={downloadGraph}
+              onResetSelection={handleResetSelection}
+            />
+          )}
         </div>
       }
       nodeData={nodeData}
