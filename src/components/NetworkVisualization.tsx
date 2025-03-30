@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as d3 from 'd3';
 import { useToast } from "@/components/ui/use-toast";
@@ -13,19 +14,7 @@ import {
 import RadialVisualization from './RadialVisualization';
 import ArcVisualization from './ArcVisualization';
 import BaseVisualization from './BaseVisualization';
-import { 
-  hexToRgb, 
-  generateDynamicColorThemes,
-  getNodeColor
-} from '@/utils/visualizationUtils';
-import NetworkTooltip from './NetworkTooltip';
-// Import utility functions from separate file
-import { 
-  showTooltip, 
-  moveTooltip, 
-  hideTooltip,
-  findNodeConnections 
-} from './TooltipUtils';
+import { findNodeConnections } from './TooltipUtils';
 import {
   NetworkLegend,
   NetworkHelper,
@@ -34,6 +23,9 @@ import {
 import useZoomPan from '@/hooks/useZoomPan';
 import useFileExport from '@/hooks/useFileExport';
 import ZoomControls from './ZoomControls';
+import NetworkTooltip from './NetworkTooltip';
+import useNetworkColors from '@/hooks/useNetworkColors';
+import { showTooltip, moveTooltip, hideTooltip } from './TooltipUtils';
 
 // Import VisualizationType explicitly 
 import { VisualizationType } from './NetworkSidebar';
@@ -45,25 +37,6 @@ declare global {
     paramUpdateTimeout?: number;
   }
 }
-
-// Define color palette
-const COLOR_PALETTE = [
-  "#e74c3c", // Red
-  "#3498db", // Blue
-  "#2ecc71", // Green
-  "#f39c12", // Orange
-  "#9b59b6", // Purple
-  "#1abc9c", // Teal
-  "#34495e", // Dark Blue
-  "#e67e22", // Dark Orange
-  "#27ae60", // Dark Green
-  "#8e44ad", // Dark Purple
-  "#16a085", // Dark Teal
-  "#d35400", // Rust
-  "#2980b9", // Royal Blue
-  "#c0392b", // Dark Red
-  "#f1c40f"  // Yellow
-];
 
 const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({ 
   onCreditsClick, 
@@ -98,8 +71,6 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const [linkDistance, setLinkDistance] = useState(70);
   const [linkStrength, setLinkStrength] = useState(1.0);
   const [nodeCharge, setNodeCharge] = useState(-300);
-  const [localNodeSize, setLocalNodeSize] = useState(nodeSize);
-  const [customNodeColorsState, setCustomNodeColorsState] = useState<Record<string, string>>(customNodeColors || {});
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [selectedNodeConnections, setSelectedNodeConnections] = useState<{ to: string[]; from: string[] }>({ to: [], from: [] });
   const [expandedSections, setExpandedSections] = useState({
@@ -110,22 +81,28 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     visualizationType: true
   });
   const [nodeGroup, setNodeGroup] = useState('all');
-  const [localColorTheme, setLocalColorTheme] = useState(colorTheme);
   const [activeColorTab, setActiveColorTab] = useState('presets');
-  const [localBackgroundColor, setLocalBackgroundColor] = useState(backgroundColor);
-  const [textColor, setTextColor] = useState("#ffffff");
-  const [localLinkColor, setLocalLinkColor] = useState(linkColor);
-  const [nodeStrokeColor, setNodeStrokeColor] = useState("#000000");
-  const [localBackgroundOpacity, setLocalBackgroundOpacity] = useState(backgroundOpacity);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [networkTitle, setNetworkTitle] = useState("Untitled Network");
   const [processedData, setProcessedData] = useState<{ nodes: Node[], links: Link[] }>({ nodes: [], links: [] });
   const [nodeCounts, setNodeCounts] = useState<CategoryCounts>({ total: 0 });
   const [uniqueCategories, setUniqueCategories] = useState<string[]>([]);
-  const [dynamicColorThemesState, setDynamicColorThemesState] = useState<Record<string, Record<string, string>>>(dynamicColorThemes || {});
   const [visualizationError, setVisualizationError] = useState<string | null>(null);
   const [localFixNodesOnDrag, setLocalFixNodesOnDrag] = useState(fixNodesOnDrag);
   const [localVisualizationType, setLocalVisualizationType] = useState<VisualizationType>(visualizationType);
+  
+  // Use the color management hook
+  const colors = useNetworkColors({
+    initialColorTheme: colorTheme,
+    initialNodeSize: nodeSize,
+    initialLinkColor: linkColor,
+    initialBackgroundColor: backgroundColor,
+    initialTextColor: "#ffffff",
+    initialNodeStrokeColor: "#000000",
+    initialBackgroundOpacity: backgroundOpacity,
+    initialCustomNodeColors: customNodeColors,
+    initialDynamicColorThemes: dynamicColorThemes
+  });
   
   const { toast } = useToast();
 
@@ -166,6 +143,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     }
   }, [isLoading, reinitializeZoom]);
 
+  // Setup the file export hook
   const { downloadData, downloadGraph } = useFileExport({
     svgRef,
     nodes: processedData.nodes,
@@ -178,11 +156,11 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         variant: isError ? "destructive" : "default"
       });
     },
-    backgroundColor: localBackgroundColor,
-    backgroundOpacity: localBackgroundOpacity,
-    textColor,
-    linkColor: localLinkColor,
-    nodeStrokeColor,
+    backgroundColor: colors.backgroundColor,
+    backgroundOpacity: colors.backgroundOpacity,
+    textColor: colors.textColor,
+    linkColor: colors.linkColor,
+    nodeStrokeColor: colors.nodeStrokeColor,
     getTransform
   });
 
@@ -247,9 +225,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       const uniqueCats = Array.from(new Set(categories)).filter(Boolean);
       setUniqueCategories(uniqueCats);
 
-      // Generate dynamic color themes
-      const themes = generateDynamicColorThemes(uniqueCats, COLOR_PALETTE);
-      setDynamicColorThemesState(themes);
+      // Generate dynamic color themes - IMPORTANT: Do this only once during initial data processing
+      if (uniqueCats.length > 0 && Object.keys(colors.dynamicColorThemes).length <= 1) {
+        colors.generateDynamicColorThemes(uniqueCats);
+      }
 
       // Calculate node counts by category
       const counts: CategoryCounts = { total: processedNodes.length };
@@ -364,6 +343,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       });
       return;
     }
+    
+    // Debug log to track re-renders
+    console.log("Rendering NetworkVisualization, isLoading:", isLoading);
 
     // This is a critical check to ensure the container is rendered
     if (!containerRef.current) {
@@ -429,7 +411,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .force("charge", d3.forceManyBody()
           .strength(nodeCharge * 2)) // Stronger repulsion initially
         .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collision", d3.forceCollide().radius(d => 10 * localNodeSize));
+        .force("collision", d3.forceCollide().radius(d => 10 * colors.nodeSize));
 
       // Store current parameter values in refs
       prevLinkDistanceRef.current = linkDistance;
@@ -476,7 +458,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .enter()
         .append("line")
         .attr("class", "link")
-        .attr("stroke", localLinkColor)
+        .attr("stroke", colors.linkColor)
         .attr("stroke-width", 1.5);
       
       // Create nodes
@@ -487,9 +469,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .enter()
         .append("circle")
         .attr("class", "node")
-        .attr("r", d => 7 * localNodeSize)
-        .attr("fill", d => getNodeColor(d, customNodeColorsState, localColorTheme, dynamicColorThemesState))
-        .attr("stroke", nodeStrokeColor)
+        .attr("r", d => 7 * colors.nodeSize)
+        .attr("fill", d => colors.getNodeColor(d))
+        .attr("stroke", colors.nodeStrokeColor)
         .attr("stroke-width", 1);
       
       // Create node labels
@@ -502,8 +484,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         .attr("class", "node-label")
         .attr("dy", "0.3em")
         .text(d => d.id.length > 15 ? d.id.substring(0, 12) + '...' : d.id)
-        .style("fill", textColor)
-        .style("font-size", d => `${8 * Math.min(1.2, localNodeSize)}px`)
+        .style("fill", colors.textColor)
+        .style("font-size", d => `${8 * Math.min(1.2, colors.nodeSize)}px`)
         .style("text-shadow", `0 1px 2px rgba(0, 0, 0, 0.7)`);
       
       // Create and apply drag behavior
@@ -563,8 +545,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       
       // Apply background color to the container
       if (containerRef.current) {
-        const bgColor = hexToRgb(localBackgroundColor);
-        containerRef.current.style.backgroundColor = `rgba(${bgColor.r}, ${bgColor.g}, ${bgColor.b}, ${localBackgroundOpacity})`;
+        const { r, g, b } = colors.rgbBackgroundColor;
+        containerRef.current.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${colors.backgroundOpacity})`;
       }
       
       console.log("D3 visualization created successfully");
@@ -589,7 +571,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         variant: "destructive"
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  
   }, [
     isLoading, 
     nodeGroup, 
@@ -599,19 +581,14 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     linkDistance, 
     linkStrength, 
     nodeCharge, 
-    localNodeSize, 
-    localColorTheme, 
-    customNodeColorsState, 
-    dynamicColorThemesState, 
-    textColor, 
-    localLinkColor, 
-    nodeStrokeColor, 
-    localBackgroundColor, 
-    localBackgroundOpacity,
     toast,
     reinitializeZoom
+    // Explicitly NOT including individual color properties to prevent re-renders
+    // The colors object will be accessed with latest values when needed
   ]);
 
+
+  
   // IMPROVED: Update simulation parameters immediately for smoother slider interactions
   const handleSliderChange = useCallback((type: string, value: number) => {
     console.log(`Slider changed: ${type} = ${value}`);
@@ -619,7 +596,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     // Update state
     switch (type) {
       case "nodeSize":
-        setLocalNodeSize(value);
+        colors.setNodeSize(value);
         break;
       case "linkDistance":
         setLinkDistance(value);
@@ -690,7 +667,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       // Apply a small alpha to update the simulation smoothly
       simulation.alpha(0.08).restart();
     }
-  }, [svgRef, simulationRef]);
+  }, [svgRef, simulationRef, colors]);
 
   // Add a new useEffect hook for handling resize events without auto zoom
   useEffect(() => {
@@ -978,35 +955,23 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   // Handle color theme change
   const handleColorThemeChange = (theme: string) => {
     console.log(`Color theme changed to: ${theme}`);
-    setLocalColorTheme(theme);
+    colors.setColorTheme(theme);
   };
 
   // Handle color tab change
   const handleColorTabChange = (tab: string) => {
     console.log(`Color tab changed to: ${tab}`);
-    setActiveColorTab(tab);
+    colors.setActiveColorTab(tab);
   };
 
   // Handle apply group colors
   const handleApplyGroupColors = (categoryColorMap: Record<string, string>) => {
     console.log("Applying group colors", categoryColorMap);
     
-    // Create a copy of the dynamic color themes
-    const updatedThemes = { ...dynamicColorThemesState };
-    
-    // Update the custom theme with the new category colors
-    updatedThemes.custom = { ...updatedThemes.custom };
-    
-    // Apply each category color from the map
-    Object.keys(categoryColorMap).forEach(category => {
-      updatedThemes.custom[category] = categoryColorMap[category];
+    // Apply each category color individually since the applyGroupColors method was refactored
+    Object.entries(categoryColorMap).forEach(([category, color]) => {
+      colors.updateCategoryColor(category, color);
     });
-    
-    // Update the dynamic color themes
-    setDynamicColorThemesState(updatedThemes);
-    
-    // Set the color theme to custom
-    setLocalColorTheme('custom');
     
     toast({
       title: "Group Colors Applied",
@@ -1017,20 +982,13 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   // Handle apply individual color
   const handleApplyIndividualColor = (nodeId: string, color: string) => {
     console.log(`Applying individual color for node ${nodeId}: ${color}`);
-    setCustomNodeColorsState(prev => ({
-      ...prev,
-      [nodeId]: color
-    }));
+    colors.applyIndividualColor(nodeId, color);
   };
 
   // Handle reset individual color
   const handleResetIndividualColor = (nodeId: string) => {
     console.log(`Resetting individual color for node ${nodeId}`);
-    setCustomNodeColorsState(prev => {
-      const newColors = { ...prev };
-      delete newColors[nodeId];
-      return newColors;
-    });
+    colors.resetIndividualColor(nodeId);
   };
 
   // Handle apply background colors
@@ -1042,21 +1000,18 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     nodeStrokeClr: string
   ) => {
     console.log(`Applying background colors: bg=${bgColor}, text=${txtColor}, link=${lnkColor}, opacity=${opacity}, nodeStroke=${nodeStrokeClr}`);
-    setLocalBackgroundColor(bgColor);
-    setTextColor(txtColor);
-    setLocalLinkColor(lnkColor);
-    setLocalBackgroundOpacity(opacity);
-    setNodeStrokeColor(nodeStrokeClr);
+    // Individual setters replace the applyBackgroundColors method from previous version
+    colors.setBackgroundColor(bgColor);
+    colors.setTextColor(txtColor);
+    colors.setLinkColor(lnkColor);
+    colors.setBackgroundOpacity(opacity);
+    colors.setNodeStrokeColor(nodeStrokeClr);
   };
 
   // Handle reset background colors
   const handleResetBackgroundColors = () => {
     console.log("Resetting background colors");
-    setLocalBackgroundColor("#f5f5f5");
-    setTextColor("#ffffff");
-    setLocalLinkColor("#999999");
-    setLocalBackgroundOpacity(1.0);
-    setNodeStrokeColor("#000000");
+    colors.resetBackgroundColors();
   };
 
   // Handle reset simulation
@@ -1067,7 +1022,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     setLinkDistance(70);
     setLinkStrength(1.0);
     setNodeCharge(-300);
-    setLocalNodeSize(1.0);
+    colors.setNodeSize(1.0);
     
     // Update reference values
     prevLinkDistanceRef.current = 70;
@@ -1144,13 +1099,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     
     // Reset all visual properties
     setNodeGroup('all');
-    setLocalColorTheme('default');
-    setCustomNodeColorsState({});
-    setLocalBackgroundColor("#f5f5f5");
-    setTextColor("#ffffff");
-    setLocalLinkColor("#999999");
-    setLocalBackgroundOpacity(1.0);
-    setNodeStrokeColor("#000000");
+    colors.resetAllColors();
     
     // Reset nodes positions and unfix all nodes
     if (svgRef.current && processedData.nodes.length > 0) {
@@ -1195,15 +1144,15 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     linkDistance,
     linkStrength,
     nodeCharge,
-    localNodeSize,
+    localNodeSize: colors.nodeSize,
     nodeGroup,
-    localColorTheme,
-    activeColorTab,
-    localBackgroundColor,
-    textColor,
-    localLinkColor,
-    nodeStrokeColor,
-    localBackgroundOpacity,
+    localColorTheme: colors.colorTheme,
+    activeColorTab: colors.activeColorTab,
+    localBackgroundColor: colors.backgroundColor,
+    textColor: colors.textColor,
+    localLinkColor: colors.linkColor,
+    nodeStrokeColor: colors.nodeStrokeColor,
+    localBackgroundOpacity: colors.backgroundOpacity,
     isSidebarCollapsed,
     networkTitle,
     localFixNodesOnDrag,
@@ -1215,10 +1164,10 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     handleNodeGroupChange,
     handleColorThemeChange,
     handleApplyGroupColors,
-    handleApplyIndividualColor,
-    handleResetIndividualColor,
+    handleApplyIndividualColor: colors.applyIndividualColor,
+    handleResetIndividualColor: colors.resetIndividualColor,
     handleApplyBackgroundColors,
-    handleResetBackgroundColors,
+    handleResetBackgroundColors: colors.resetBackgroundColors,
     handleResetSimulation,
     handleResetGraph,
     toggleSection,
@@ -1248,13 +1197,13 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
               linkData={linkData}
               visualizationType={localVisualizationType}
               onVisualizationTypeChange={handleVisualizationTypeChange}
-              colorTheme={localColorTheme}
-              nodeSize={localNodeSize}
-              linkColor={localLinkColor}
-              backgroundColor={localBackgroundColor}
-              backgroundOpacity={localBackgroundOpacity}
-              customNodeColors={customNodeColorsState}
-              dynamicColorThemes={dynamicColorThemesState[localColorTheme] || {}}
+              colorTheme={colors.colorTheme}
+              nodeSize={colors.nodeSize}
+              linkColor={colors.linkColor}
+              backgroundColor={colors.backgroundColor}
+              backgroundOpacity={colors.backgroundOpacity}
+              customNodeColors={colors.customNodeColors}
+              dynamicColorThemes={colors.dynamicColorThemes[colors.colorTheme] || {}}
             />
           </div>
         }
@@ -1271,8 +1220,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         processedData={processedData}
         sidebar={sidebarState}
         handlers={handlers}
-        customNodeColorsState={customNodeColorsState}
-        dynamicColorThemesState={dynamicColorThemesState}
+        customNodeColorsState={colors.customNodeColors}
+        dynamicColorThemesState={colors.dynamicColorThemes}
       />
     );
   } else if (localVisualizationType === 'arc') {
@@ -1286,13 +1235,13 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
               linkData={linkData}
               visualizationType={localVisualizationType}
               onVisualizationTypeChange={handleVisualizationTypeChange}
-              colorTheme={localColorTheme}
-              nodeSize={localNodeSize}
-              linkColor={localLinkColor}
-              backgroundColor={localBackgroundColor}
-              backgroundOpacity={localBackgroundOpacity}
-              customNodeColors={customNodeColorsState}
-              dynamicColorThemes={dynamicColorThemesState[localColorTheme] || {}}
+              colorTheme={colors.colorTheme}
+              nodeSize={colors.nodeSize}
+              linkColor={colors.linkColor}
+              backgroundColor={colors.backgroundColor}
+              backgroundOpacity={colors.backgroundOpacity}
+              customNodeColors={colors.customNodeColors}
+              dynamicColorThemes={colors.dynamicColorThemes[colors.colorTheme] || {}}
             />
           </div>
         }
@@ -1309,8 +1258,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
         processedData={processedData}
         sidebar={sidebarState}
         handlers={handlers}
-        customNodeColorsState={customNodeColorsState}
-        dynamicColorThemesState={dynamicColorThemesState}
+        customNodeColorsState={colors.customNodeColors}
+        dynamicColorThemesState={colors.dynamicColorThemes}
       />
     );
   } 
@@ -1325,7 +1274,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
             className="w-full h-full relative" 
             id="network-visualization-container" 
             style={{
-              backgroundColor: `rgba(${hexToRgb(localBackgroundColor).r}, ${hexToRgb(localBackgroundColor).g}, ${hexToRgb(localBackgroundColor).b}, ${localBackgroundOpacity})`,
+              backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
               touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
             }}
           >
@@ -1368,7 +1317,12 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
             
             {/* Network components */}
             <NetworkTooltip tooltipRef={tooltipRef} nodes={processedData.nodes} links={processedData.links} />
-            <NetworkLegend categories={uniqueCategories} colorTheme={localColorTheme} dynamicColorThemes={dynamicColorThemesState} colorPalette={COLOR_PALETTE} />
+            <NetworkLegend 
+              categories={uniqueCategories} 
+              colorTheme={colors.colorTheme} 
+              dynamicColorThemes={colors.dynamicColorThemes} 
+              colorPalette={Object.values(colors.dynamicColorThemes.default || {})}
+            />
             <NetworkHelper />
           </div>
         </>
@@ -1386,8 +1340,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
       processedData={processedData}
       sidebar={sidebarState}
       handlers={handlers}
-      customNodeColorsState={customNodeColorsState}
-      dynamicColorThemesState={dynamicColorThemesState}
+      customNodeColorsState={colors.customNodeColors}
+      dynamicColorThemesState={colors.dynamicColorThemes}
       onZoomToFit={zoomToFit} // Pass zoomToFit directly for use in the sidebar
     />
   );

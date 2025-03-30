@@ -5,6 +5,7 @@ import { NodeData, LinkData } from "@/types/types";
 import { AlertCircle } from "lucide-react";
 import { VisualizationType } from "./NetworkSidebar";
 import FileButtons from "./FileButtons";
+import useNetworkColors from "@/hooks/useNetworkColors";
 
 interface ArcVisualizationProps {
   onCreditsClick?: () => void;
@@ -59,6 +60,19 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
   const [uniqueCategories, setUniqueCategories] = useState<string[]>([]);
   const [processedData, setProcessedData] = useState<{ nodes: Node[], links: Link[] }>({ nodes: [], links: [] });
 
+  // Use the network colors hook
+  const colors = useNetworkColors({
+    initialColorTheme: colorTheme,
+    initialNodeSize: nodeSize,
+    initialLinkColor: linkColor,
+    initialBackgroundColor: backgroundColor,
+    initialTextColor: "#333333",
+    initialNodeStrokeColor: "#ffffff",
+    initialBackgroundOpacity: backgroundOpacity,
+    initialCustomNodeColors: customNodeColors,
+    initialDynamicColorThemes: { [colorTheme]: dynamicColorThemes }
+  });
+
   // Process the imported data
   useEffect(() => {
     if (nodeData.length === 0 || linkData.length === 0) {
@@ -86,6 +100,11 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       const categories = processedNodes.map(node => node.category);
       const uniqueCats = Array.from(new Set(categories));
       setUniqueCategories(uniqueCats);
+      
+      // Generate color themes - ONLY when needed
+      if (uniqueCats.length > 0 && Object.keys(colors.dynamicColorThemes).length <= 1) {
+        colors.generateDynamicColorThemes(uniqueCats);
+      }
 
       setProcessedData({ nodes: processedNodes, links: processedLinks });
       
@@ -105,6 +124,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         variant: "destructive"
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeData, linkData, toast]);
 
   // Create D3 visualization
@@ -133,14 +153,11 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         .append("g")
         .attr("transform", `translate(${margin.left}, ${margin.top})`);
       
-      // Color scale for categories
-      const color = d3.scaleOrdinal(d3.schemeCategory10)
-        .domain(uniqueCategories);
-      
       // Add a legend
       const legendData = uniqueCategories.map(category => ({
         category,
-        color: dynamicColorThemes[category] || color(category) as string
+        color: colors.dynamicColorThemes[colors.colorTheme]?.[category] || 
+               d3.schemeCategory10[uniqueCategories.indexOf(category) % 10]
       }));
 
       const legend = svg.append("g")
@@ -229,19 +246,8 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       svg.append("rect")
         .attr("width", width)
         .attr("height", height)
-        .attr("fill", backgroundColor)
-        .attr("opacity", backgroundOpacity);
-      
-      // Function to get node color based on customization
-      function getNodeColor(d: Node): string {
-        // First check for custom node color
-        if (customNodeColors[d.id]) {
-          return customNodeColors[d.id];
-        }
-        
-        // Use the category color from current theme or fallback to d3 scheme
-        return dynamicColorThemes[d.category] || color(d.category) as string;
-      }
+        .attr("fill", colors.backgroundColor)
+        .attr("opacity", colors.backgroundOpacity);
       
       // Create arcs for links
       const link = svg.append("g")
@@ -285,18 +291,19 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
           const source = typeof d.source === 'object' ? d.source : nodeMap.get(d.source as string);
           const target = typeof d.target === 'object' ? d.target : nodeMap.get(d.target as string);
           
-          if (source && target) {
+          if (source) {
             // Get color for the link based on source node's category
             const sourceCategory = source.category;
-            if (dynamicColorThemes[sourceCategory]) {
-              return dynamicColorThemes[sourceCategory];
+            const themeColors = colors.dynamicColorThemes[colors.colorTheme] || {};
+            if (themeColors[sourceCategory]) {
+              return themeColors[sourceCategory];
             }
           }
           
           // Fall back to the default link color
-          return linkColor;
+          return colors.linkColor;
         })
-        .attr("stroke-width", 2 * Math.max(0.7, nodeSize * 0.75))
+        .attr("stroke-width", 2 * Math.max(0.7, colors.nodeSize * 0.75))
         .attr("stroke-opacity", 0.85) // Increased opacity for better visibility
         .attr("stroke-linecap", "round"); // Rounded ends for smoother appearance
       
@@ -308,11 +315,11 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         .enter()
         .append("circle")
         .attr("class", "node")
-        .attr("r", 5 * nodeSize)
+        .attr("r", 5 * colors.nodeSize)
         .attr("cx", d => d.x || 0)
         .attr("cy", d => d.y || 0)
-        .attr("fill", d => getNodeColor(d))
-        .attr("stroke", "#fff")
+        .attr("fill", d => colors.getNodeColor(d))
+        .attr("stroke", colors.nodeStrokeColor)
         .attr("stroke-width", 1.5);
       
       // Add labels
@@ -328,8 +335,8 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         .attr("text-anchor", "middle")
         .attr("dominant-baseline", "auto")
         .text(d => d.id.length > 15 ? d.id.substring(0, 12) + '...' : d.id)
-        .style("font-size", `${Math.max(8, 10 * nodeSize)}px`)
-        .style("fill", "#333")
+        .style("font-size", `${Math.max(8, 10 * colors.nodeSize)}px`)
+        .style("fill", colors.textColor)
         .style("text-shadow", "0 1px 2px rgba(255,255,255,0.7)")
         .style("pointer-events", "none");
       
@@ -339,7 +346,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         
         // Highlight the selected node
         d3.select(this)
-          .attr("r", 8 * nodeSize)
+          .attr("r", 8 * colors.nodeSize)
           .attr("stroke", "#000")
           .attr("stroke-width", 2);
         
@@ -380,7 +387,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
           const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
           const targetId = typeof l.target === 'object' ? l.target.id : l.target;
           const isConnected = (sourceId === d.id || targetId === d.id);
-          return isConnected ? 3 * nodeSize : 2 * Math.max(0.7, nodeSize * 0.75);
+          return isConnected ? 3 * colors.nodeSize : 2 * Math.max(0.7, colors.nodeSize * 0.75);
         });
         
         // Highlight connected labels
@@ -468,16 +475,16 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       .on("mouseout", function() {
         if (!tooltipRef.current) return;
         
-        // Restore node
+        // Restore node appearance
         d3.select(this)
-          .attr("r", 5 * nodeSize)
-          .attr("stroke", "#fff")
+          .attr("r", 5 * colors.nodeSize)
+          .attr("stroke", colors.nodeStrokeColor)
           .attr("stroke-width", 1.5);
         
         // Reset opacity and width for all elements
         node.attr('opacity', 1);
         link.attr('opacity', 0.85)
-            .attr('stroke-width', 2 * Math.max(0.7, nodeSize * 0.75));
+            .attr('stroke-width', 2 * Math.max(0.7, colors.nodeSize * 0.75));
         label.attr('opacity', 1);
         
         // Hide tooltip
@@ -522,28 +529,17 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         variant: "destructive"
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isLoading, 
     processedData, 
     uniqueCategories, 
-    toast, 
-    nodeSize, 
-    linkColor, 
-    backgroundColor, 
-    backgroundOpacity, 
-    customNodeColors, 
-    dynamicColorThemes
+    toast
+    // Not including colors properties as dependencies to prevent
+    // unnecessary re-renders while still having access to current values
   ]);
 
-  // Function to convert hex to rgb
-  const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-      r: parseInt(result[1], 16),
-      g: parseInt(result[2], 16),
-      b: parseInt(result[3], 16)
-    } : { r: 245, g: 245, b: 245 }; // Default to #f5f5f5
-  };
+
 
   if (isLoading) {
     return (
@@ -562,7 +558,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       ref={containerRef} 
       className="w-full h-full"
       style={{ 
-        backgroundColor: `rgba(${hexToRgb(backgroundColor).r}, ${hexToRgb(backgroundColor).g}, ${hexToRgb(backgroundColor).b}, ${backgroundOpacity})`
+        backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`
       }}
     >
       <svg 

@@ -5,6 +5,7 @@ import { NodeData, LinkData } from "@/types/types";
 import { AlertCircle } from "lucide-react";
 import FileButtons from "./FileButtons";
 import { VisualizationType } from "./NetworkSidebar";
+import useNetworkColors from "@/hooks/useNetworkColors";
 
 interface RadialVisualizationProps {
   onCreditsClick?: () => void;
@@ -68,6 +69,19 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
   const [visualizationError, setVisualizationError] = useState<string | null>(null);
   const [uniqueCategories, setUniqueCategories] = useState<string[]>([]);
   const [processedData, setProcessedData] = useState<{ nodes: Node[], links: Link[] }>({ nodes: [], links: [] });
+  
+  // Use the colors hook
+  const colors = useNetworkColors({
+    initialColorTheme: colorTheme,
+    initialNodeSize: nodeSize,
+    initialLinkColor: linkColor,
+    initialBackgroundColor: backgroundColor,
+    initialTextColor: "#ffffff",
+    initialNodeStrokeColor: "#ffffff",
+    initialBackgroundOpacity: backgroundOpacity,
+    initialCustomNodeColors: customNodeColors,
+    initialDynamicColorThemes: { [colorTheme]: dynamicColorThemes }
+  });
 
   // Process the imported data
   useEffect(() => {
@@ -96,6 +110,11 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       const categories = processedNodes.map(node => node.category);
       const uniqueCats = Array.from(new Set(categories));
       setUniqueCategories(uniqueCats);
+      
+      // Generate color themes - ONLY if not already generated
+      if (uniqueCats.length > 0 && Object.keys(colors.dynamicColorThemes).length <= 1) {
+        colors.generateDynamicColorThemes(uniqueCats);
+      }
 
       // Assign hierarchy depth (for radial layout)
       // Start with category nodes as root (depth 0)
@@ -131,6 +150,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         variant: "destructive"
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeData, linkData, toast]);
 
   // Create D3 visualization
@@ -166,8 +186,8 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         .attr("height", height + margin.top + margin.bottom)
         .attr("x", -(width/2 + margin.left))
         .attr("y", -(height/2 + margin.top))
-        .attr("fill", backgroundColor)
-        .attr("opacity", backgroundOpacity);
+        .attr("fill", colors.backgroundColor)
+        .attr("opacity", colors.backgroundOpacity);
       
       // Color scale for categories
       const color = d3.scaleOrdinal(d3.schemeCategory10)
@@ -176,7 +196,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       // Add a legend
       const legendData = uniqueCategories.map(category => ({
         category,
-        color: dynamicColorThemes[category] || color(category) as string
+        color: colors.dynamicColorThemes[colors.colorTheme]?.[category] || color(category) as string
       }));
 
       const legend = svg.append("g")
@@ -389,27 +409,17 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
           if (source) {
             // Get color for the link based on source node's category
             const sourceCategory = source.category;
-            if (dynamicColorThemes[sourceCategory]) {
-              return dynamicColorThemes[sourceCategory];
+            const themeColors = colors.dynamicColorThemes[colors.colorTheme] || {};
+            if (themeColors[sourceCategory]) {
+              return themeColors[sourceCategory];
             }
           }
           
           // Fall back to the default link color
-          return linkColor;
+          return colors.linkColor;
         })
-        .attr("stroke-width", 1.5 * nodeSize)
+        .attr("stroke-width", 1.5 * colors.nodeSize)
         .attr("stroke-opacity", 0.6);
-      
-      // Function to get node color based on customization
-      function getNodeColor(d: Node): string {
-        // First check for custom node color
-        if (customNodeColors[d.id]) {
-          return customNodeColors[d.id];
-        }
-        
-        // Use the category color from current theme or fallback to d3 scheme
-        return dynamicColorThemes[d.category] || color(d.category) as string;
-      }
       
       // Create nodes
       const node = svg.append("g")
@@ -419,10 +429,10 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         .enter()
         .append("circle")
         .attr("class", "node")
-        .attr("r", (d: Node) => (d.depth === 0 ? 8 : 5) * nodeSize)
+        .attr("r", (d: Node) => (d.depth === 0 ? 8 : 5) * colors.nodeSize)
         .attr("cx", d => d.x || 0)
         .attr("cy", d => d.y || 0)
-        .attr("fill", d => getNodeColor(d))
+        .attr("fill", d => colors.getNodeColor(d))
         .attr("stroke", "#fff")
         .attr("stroke-width", 1.5);
       
@@ -437,13 +447,13 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         .attr("x", d => {
           const x = d.x || 0;
           const angle = Math.atan2(d.y || 0, x);
-          const offset = ((d.depth === 0 ? 8 : 5) * nodeSize) + 5;
+          const offset = ((d.depth === 0 ? 8 : 5) * colors.nodeSize) + 5;
           return x + offset * Math.cos(angle);
         })
         .attr("y", d => {
           const y = d.y || 0;
           const angle = Math.atan2(y, d.x || 0);
-          const offset = ((d.depth === 0 ? 8 : 5) * nodeSize) + 5;
+          const offset = ((d.depth === 0 ? 8 : 5) * colors.nodeSize) + 5;
           return y + offset * Math.sin(angle);
         })
         .attr("text-anchor", d => {
@@ -455,7 +465,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
           return y > 0 ? "hanging" : y < 0 ? "auto" : "middle";
         })
         .text(d => d.id.length > 15 ? d.id.substring(0, 12) + '...' : d.id)
-        .style("font-size", `${Math.max(8, 10 * nodeSize)}px`)
+        .style("font-size", `${Math.max(8, 10 * colors.nodeSize)}px`)
         .style("fill", "#333")
         .style("text-shadow", "0 1px 2px rgba(255,255,255,0.7)")
         .style("pointer-events", "none");
@@ -466,7 +476,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         
         // Highlight the selected node
         d3.select(this)
-          .attr("r", (d.depth === 0 ? 8 : 5) * nodeSize * 1.5)
+          .attr("r", (d.depth === 0 ? 8 : 5) * colors.nodeSize * 1.5)
           .attr("stroke", "#000")
           .attr("stroke-width", 2);
         
@@ -507,7 +517,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
           const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
           const targetId = typeof l.target === 'object' ? l.target.id : l.target;
           const isConnected = (sourceId === d.id || targetId === d.id);
-          return isConnected ? 2 * nodeSize : 1.5 * nodeSize;
+          return isConnected ? 2 * colors.nodeSize : 1.5 * colors.nodeSize;
         });
         
         // Highlight connected labels
@@ -600,14 +610,14 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         
         // Restore node appearance
         d3.select(this)
-          .attr("r", (d: Node) => (d.depth === 0 ? 8 : 5) * nodeSize)
+          .attr("r", (d: Node) => (d.depth === 0 ? 8 : 5) * colors.nodeSize)
           .attr("stroke", "#fff")
           .attr("stroke-width", 1.5);
         
         // Reset opacity for all nodes, links, and labels
         node.attr('opacity', 1);
         link.attr('opacity', 0.6)
-            .attr('stroke-width', 1.5 * nodeSize);
+            .attr('stroke-width', 1.5 * colors.nodeSize);
         nodeLabel.attr('opacity', 1);
         
         // Hide tooltip
@@ -653,29 +663,18 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
         variant: "destructive"
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isLoading, 
     processedData, 
     uniqueCategories, 
-    toast, 
-    nodeSize, 
-    linkColor, 
-    backgroundColor, 
-    backgroundOpacity, 
-    customNodeColors, 
-    dynamicColorThemes
+    toast
+    // Accessing colors directly in the render function,
+    // not including in dependencies to prevent re-renders
   ]);
 
-  // Function to convert hex to rgb
-  const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-      r: parseInt(result[1], 16),
-      g: parseInt(result[2], 16),
-      b: parseInt(result[3], 16)
-    } : { r: 245, g: 245, b: 245 }; // Default to #f5f5f5
-  };
 
+  
   if (isLoading) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -693,7 +692,7 @@ const RadialVisualization: React.FC<RadialVisualizationProps> = ({
       ref={containerRef} 
       className="w-full h-full"
       style={{ 
-        backgroundColor: `rgba(${hexToRgb(backgroundColor).r}, ${hexToRgb(backgroundColor).g}, ${hexToRgb(backgroundColor).b}, ${backgroundOpacity})`
+        backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`
       }}
     >
       <svg 

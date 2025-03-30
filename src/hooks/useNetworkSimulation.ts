@@ -80,6 +80,7 @@ const useNetworkSimulation = ({
         simulationRef.current.stop();
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, links]); // CRITICAL: Only depend on nodes and links, NOT on the parameters
 
   // Update forces when parameters change, without reinitializing simulation
@@ -119,6 +120,7 @@ const useNetworkSimulation = ({
     } catch (error) {
       console.error("Error updating forces:", error);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkDistance, linkStrength, nodeCharge, fixNodesOnDrag]);
 
   // Setup drag behavior as a separate function
