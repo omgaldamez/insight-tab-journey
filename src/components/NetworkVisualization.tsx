@@ -27,6 +27,9 @@ import NetworkTooltip from './NetworkTooltip';
 import useNetworkColors from '@/hooks/useNetworkColors';
 import { showTooltip, moveTooltip, hideTooltip } from './TooltipUtils';
 import VisualizationControls from './VisualizationControls';
+import Rad360Visualization from './Rad360Visualization';
+import ArcLinealVisualization from './ArcLinealVisualization';
+
 
 // Define interfaces for handling both raw data and processed nodes/links
 interface NodeData {
@@ -1351,6 +1354,7 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   const isRadial = localVisualizationType === 'radial';
   const isArc = localVisualizationType === 'arc';
   const isNetwork = localVisualizationType === 'network';
+  const isRad360 = localVisualizationType === 'rad360';
 
   // Using visibility-based conditional rendering instead of mounting/unmounting
   return (
@@ -1502,6 +1506,79 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
               onResetSelection={handleResetSelection}
             />
           </div>
+
+{/* Rad360 Visualization Container - always present but conditionally visible */}
+<div 
+  style={{ 
+    display: localVisualizationType === 'rad360' ? 'block' : 'none',
+    width: '100%', 
+    height: '100%' 
+  }}
+>
+  <Rad360Visualization
+    onCreditsClick={onCreditsClick}
+    nodeData={nodeData.map(node => ({
+      id: String(node.id),
+      name: node.name || '',
+      category: node.category || '',
+      type: node.type || ''
+    }))}
+    linkData={linkData.map(link => ({
+      source: typeof link.source === 'object' ? link.source.id : link.source,
+      target: typeof link.target === 'object' ? link.target.id : link.target,
+    }))}
+    visualizationType={localVisualizationType}
+    onVisualizationTypeChange={handleVisualizationTypeChange}
+    colorTheme={colors.colorTheme}
+    nodeSize={colors.nodeSize}
+    linkColor={colors.linkColor}
+    backgroundColor={colors.backgroundColor}
+    backgroundOpacity={colors.backgroundOpacity}
+    customNodeColors={colors.customNodeColors}
+    dynamicColorThemes={colors.dynamicColorThemes}
+    onDownloadData={downloadData}
+    onDownloadGraph={downloadGraph}
+    onResetSelection={handleResetSelection}
+  />
+</div>
+
+
+{/* ArcLineal Visualization Container - always present but conditionally visible */}
+<div 
+  style={{ 
+    display: localVisualizationType === 'arcLineal' ? 'block' : 'none',
+    width: '100%', 
+    height: '100%' 
+  }}
+>
+  <ArcLinealVisualization
+    onCreditsClick={onCreditsClick}
+    nodeData={nodeData.map(node => ({
+      id: String(node.id),
+      name: node.name || '',
+      category: node.category || '',
+      type: node.type || ''
+    }))}
+    linkData={linkData.map(link => ({
+      source: typeof link.source === 'object' ? link.source.id : link.source,
+      target: typeof link.target === 'object' ? link.target.id : link.target,
+    }))}
+    visualizationType={localVisualizationType}
+    onVisualizationTypeChange={handleVisualizationTypeChange}
+    colorTheme={colors.colorTheme}
+    nodeSize={colors.nodeSize}
+    linkColor={colors.linkColor}
+    backgroundColor={colors.backgroundColor}
+    backgroundOpacity={colors.backgroundOpacity}
+    customNodeColors={colors.customNodeColors}
+    dynamicColorThemes={colors.dynamicColorThemes}
+    onDownloadData={downloadData}
+    onDownloadGraph={downloadGraph}
+    onResetSelection={handleResetSelection}
+  />
+</div>
+
+
         </div>
       }
       nodeData={nodeData}

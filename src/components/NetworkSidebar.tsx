@@ -371,6 +371,29 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
                 <Box className="w-4 h-4 mr-2" />
                 <span>3D Graph</span>
               </button>
+              <button
+  className={`flex items-center px-3 py-2 rounded-md ${
+    visualizationType === 'rad360' 
+      ? 'bg-blue-600 text-white' 
+      : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+  }`}
+  onClick={() => onVisualizationTypeChange('rad360')}
+>
+  <Circle className="w-4 h-4 mr-2" />
+  <span>Rad360 Graph</span>
+</button>
+
+<button
+  className={`flex items-center px-3 py-2 rounded-md ${
+    visualizationType === 'arcLineal' 
+      ? 'bg-blue-600 text-white' 
+      : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+  }`}
+  onClick={() => onVisualizationTypeChange('arcLineal')}
+>
+  <GitBranch className="w-4 h-4 mr-2" />
+  <span>Arc Lineal</span>
+</button>
             </div>
             <div className="mt-3 text-xs text-gray-400">
               <p>Select different visualization types to explore your network data from various perspectives.</p>
@@ -588,37 +611,8 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         </div>
       )}
       
-      {/* Node Controls Section */}
-      <div className="px-5 mb-3">
-        <button 
-          className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
-          onClick={() => onToggleSection('nodeControls')}
-        >
-          <h2 className="text-base font-medium text-blue-400 m-0">Node Controls</h2>
-          {expandedSections.nodeControls ? 
-            <ChevronDown className="w-4 h-4 text-white" /> : 
-            <ChevronRight className="w-4 h-4 text-white" />
-          }
-        </button>
-        
-        {expandedSections.nodeControls && (
-          <div className="mb-4 bg-gray-700 p-3 rounded-md">
-            <select 
-              className="w-full p-2 rounded-md border border-gray-600 bg-gray-700 text-white text-sm"
-              value={nodeGroup}
-              onChange={(e) => onNodeGroupChange(e.target.value)}
-            >
-              <option value="all">All Groups</option>
-              {uniqueCategories.map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-      
-      {/* Color Controls Section */}
-      <div className="px-5 mb-3">
+  {/* Color Controls Section */}
+  <div className="px-5 mb-3">
         <button 
           className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
           onClick={() => onToggleSection('colorControls')}
@@ -867,6 +861,37 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         )}
       </div>
       
+
+      {/* Node Controls Section */}
+      <div className="px-5 mb-3">
+        <button 
+          className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
+          onClick={() => onToggleSection('nodeControls')}
+        >
+          <h2 className="text-base font-medium text-blue-400 m-0">Node Controls</h2>
+          {expandedSections.nodeControls ? 
+            <ChevronDown className="w-4 h-4 text-white" /> : 
+            <ChevronRight className="w-4 h-4 text-white" />
+          }
+        </button>
+        
+        {expandedSections.nodeControls && (
+          <div className="mb-4 bg-gray-700 p-3 rounded-md">
+            <select 
+              className="w-full p-2 rounded-md border border-gray-600 bg-gray-700 text-white text-sm"
+              value={nodeGroup}
+              onChange={(e) => onNodeGroupChange(e.target.value)}
+            >
+              <option value="all">All Groups</option>
+              {uniqueCategories.map(category => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+      
+    
       {/* Network Info Section */}
       <div className="px-5 mb-3">
         <button 
