@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
-import { ArrowRight, MapPin } from 'lucide-react';
+import { ArrowRight, MapPin, FileDown, Loader2 } from 'lucide-react';
 import { Node, Link, VisualizationType } from '@/types/networkTypes';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 
 interface RouteFinderProps {
   nodeData: Node[];
@@ -29,10 +31,12 @@ interface Route {
   distance: number;
   pathNodes: Node[];
   pathLinks: Link[];
+  group: number;        // Group number (1 for shortest, 2 for second shortest, etc.)
+  alternativeIndex: number; // Alternative index within the group (0 for main, 1-2 for alternatives)
 }
 
 // Helper function to get node ID regardless of node format
-const getNodeId = (node: { id: string } | string | null): string => {
+const getNodeId = (node: { id: string } | string): string => {
   if (typeof node === 'object' && node !== null) {
     return node.id;
   }
@@ -172,11 +176,12 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
   }, [adjacencyList]);
 
   // Optimized function to find alternate paths - with timeout and path length limiting
-  const findAlternatePaths = useCallback((startNodeId: string, endNodeId: string, maxPaths: number = 3): Route[] => {
+  // Enhanced to find multiple alternatives for each stop count
+  const findAlternatePaths = useCallback((startNodeId: string, endNodeId: string, maxPathsPerLength: number = 3): Route[] => {
     perfRef.current.start("findAlternatePaths");
     
     // Check cache first
-    const cacheKey = `${startNodeId}-${endNodeId}-${maxPaths}`;
+    const cacheKey = `${startNodeId}-${endNodeId}-${maxPathsPerLength}`;
     if (routeCache.has(cacheKey)) {
       const cachedRoutes = routeCache.get(cacheKey)!;
       perfRef.current.logPerformance("findAlternatePaths (cached)");
@@ -188,14 +193,13 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
 
     // Time limit for search to prevent hanging
     const startTime = performance.now();
-    const MAX_SEARCH_TIME = 3000; // 3 seconds max
+    const MAX_SEARCH_TIME = 5000; // 5 seconds max - increased for more thorough search
 
-    // Find all paths using BFS with path tracking instead of DFS
-    // This will find shorter paths first, which is usually what we want
+    // Find all paths using BFS with path tracking
     const allPaths: string[][] = [];
     const visitedPaths = new Set<string>();
     const queue: string[][] = [[startNodeId]];
-    const maxPathLength = Math.min(10, nodeData.length); // Stricter limit for large graphs
+    const maxPathLength = Math.min(15, nodeData.length); // Increased limit for more paths
     
     while (queue.length > 0 && performance.now() - startTime < MAX_SEARCH_TIME) {
       const path = queue.shift()!;
@@ -204,10 +208,6 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
       // Check if we found a path to the target
       if (currentNode === endNodeId) {
         allPaths.push([...path]);
-        // If we have enough paths, we can stop
-        if (allPaths.length >= maxPaths) {
-          break;
-        }
         continue;
       }
       
@@ -236,13 +236,44 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
       console.warn("Path finding timed out - returning partial results");
     }
     
-    // Sort paths by length and get the top paths
-    const sortedPaths = allPaths
-      .sort((a, b) => a.length - b.length)
-      .slice(0, maxPaths);
+    // Group paths by length
+    const pathsByLength: Map<number, string[][]> = new Map();
     
-    // Convert paths to Route objects with distance and nodes/links
-    const routes = sortedPaths.map(path => {
+    allPaths.forEach(path => {
+      const length = path.length - 1; // Convert to number of connections
+      if (!pathsByLength.has(length)) {
+        pathsByLength.set(length, []);
+      }
+      pathsByLength.get(length)!.push(path);
+    });
+    
+    // Sort lengths and take top 3 lengths
+    const sortedLengths = Array.from(pathsByLength.keys()).sort((a, b) => a - b);
+    const topLengths = sortedLengths.slice(0, 3);
+    
+    // For each length, take up to 3 paths
+    const selectedPaths: string[][] = [];
+    
+    topLengths.forEach(length => {
+      const pathsOfThisLength = pathsByLength.get(length) || [];
+      
+      // For paths of the same length, we need a way to differentiate them
+      // We can use a simple heuristic - paths with more diverse nodes might be better alternatives
+      // This is just a simple way to ensure we get different paths
+      pathsOfThisLength.sort((a, b) => {
+        // Simple heuristic: sum of character codes can give us a consistent,
+        // yet somewhat arbitrary way to sort paths of same length
+        const sumA = a.reduce((sum, nodeId) => sum + nodeId.charCodeAt(0), 0);
+        const sumB = b.reduce((sum, nodeId) => sum + nodeId.charCodeAt(0), 0);
+        return sumA - sumB;
+      });
+      
+      // Take up to maxPathsPerLength paths of this length
+      selectedPaths.push(...pathsOfThisLength.slice(0, maxPathsPerLength));
+    });
+    
+    // Mark route groups - routes with the same number of connections
+    const routes = selectedPaths.map(path => {
       // Get the links and nodes for this path
       const pathLinks: Link[] = [];
       const nodeSet = new Set<string>(path);
@@ -271,15 +302,45 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
         path,
         distance: path.length - 1, // Number of links
         pathNodes,
-        pathLinks
+        pathLinks,
+        group: 0, // Will be filled later
+        alternativeIndex: 0 // Will be filled later
       };
     });
     
+    // Group routes by distance
+    const routesByDistance: Map<number, Route[]> = new Map();
+    
+    routes.forEach(route => {
+      if (!routesByDistance.has(route.distance)) {
+        routesByDistance.set(route.distance, []);
+      }
+      routesByDistance.get(route.distance)!.push(route);
+    });
+    
+    // Set group and alternative indices
+    let groupIndex = 1;
+    const finalRoutes: Route[] = [];
+    
+    Array.from(routesByDistance.keys())
+      .sort((a, b) => a - b)
+      .forEach(distance => {
+        const routesWithThisDistance = routesByDistance.get(distance)!;
+        
+        routesWithThisDistance.forEach((route, alternativeIndex) => {
+          route.group = groupIndex;
+          route.alternativeIndex = alternativeIndex;
+          finalRoutes.push(route);
+        });
+        
+        groupIndex++;
+      });
+    
     // Cache the result
-    routeCache.set(cacheKey, routes);
+    routeCache.set(cacheKey, finalRoutes);
     
     perfRef.current.logPerformance("findAlternatePaths");
-    return routes;
+    return finalRoutes;
   }, [adjacencyList, linkData, nodeData]);
 
   // Debounced route calculation with a ref to track previous calculations
@@ -587,6 +648,7 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
         setSimulation(null);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeData, linkData, customNodeColors, sourceNode, targetNode]);
   
   // Reset visualization initialization when component remounts or data changes significantly
@@ -769,49 +831,199 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
       );
     }
 
+    // Group routes by distance group
+    const routeGroups = new Map<number, Route[]>();
+    routes.forEach(route => {
+      if (!routeGroups.has(route.group)) {
+        routeGroups.set(route.group, []);
+      }
+      routeGroups.get(route.group)!.push(route);
+    });
+
+    const orderedGroups = Array.from(routeGroups.entries()).sort((a, b) => a[0] - b[0]);
+
     return (
-      <div className="space-y-4">
-        {routes.map((route, index) => (
-          <Card 
-            key={index}
-            className={`overflow-hidden transition-all cursor-pointer ${
-              index === highlightedRouteIndex 
-                ? 'border-2 border-blue-500 shadow-md' 
-                : 'hover:shadow-md'
-            }`}
-            onClick={() => handleSelectRoute(index)}
+      <div className="space-y-6">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-sm font-medium text-gray-700">Found {routes.length} possible route{routes.length !== 1 ? 's' : ''}</h3>
+          <Button 
+            size="sm"
+            variant="outline"
+            onClick={generatePdfReport}
+            disabled={generatingPDF}
+            className="gap-1 text-xs"
           >
-            <CardHeader className="p-3 pb-0">
-              <div className="flex justify-between items-center">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Badge variant={index === 0 ? "default" : (index === 1 ? "secondary" : "outline")}>
-                    Route {index + 1}
-                  </Badge>
-                  <span className="text-sm font-normal">
-                    {route.distance} {route.distance === 1 ? 'connection' : 'connections'}
-                  </span>
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="p-3 pt-2">
-              <div className="flex items-center gap-1 flex-wrap">
-                {route.path.map((nodeId, i) => (
-                  <React.Fragment key={i}>
-                    <Badge variant="outline" className={`
-                      ${nodeId === sourceNode ? 'bg-orange-100 text-orange-700 border-orange-200' : ''}
-                      ${nodeId === targetNode ? 'bg-green-100 text-green-700 border-green-200' : ''}
-                    `}>
-                      {nodeId}
-                    </Badge>
-                    {i < route.path.length - 1 && (
-                      <ArrowRight size={12} className="text-gray-400" />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+            {generatingPDF ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <FileDown size={14} />
+                Export PDF
+              </>
+            )}
+          </Button>
+        </div>
+        
+        {orderedGroups.map(([group, groupRoutes]) => {
+          // Sort routes within group by alternativeIndex
+          const sortedGroupRoutes = [...groupRoutes].sort((a, b) => a.alternativeIndex - b.alternativeIndex);
+          const mainRoute = sortedGroupRoutes[0];
+          const alternatives = sortedGroupRoutes.slice(1);
+          
+          return (
+            <div key={group} className="space-y-2">
+              {/* Main route */}
+              <Card 
+                className={`overflow-hidden transition-all cursor-pointer ${
+                  sortedGroupRoutes.some(r => routes.indexOf(r) === highlightedRouteIndex)
+                    ? 'border-l-4 border-l-blue-500'
+                    : ''
+                }`}
+              >
+                <CardHeader className="p-3 pb-0 bg-gradient-to-r from-blue-50 to-transparent">
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Badge variant="default">
+                        Route {group}
+                      </Badge>
+                      <span className="text-sm font-normal">
+                        {mainRoute.distance} {mainRoute.distance === 1 ? 'connection' : 'connections'}
+                      </span>
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent 
+                  className={`p-3 pt-2 ${
+                    routes.indexOf(mainRoute) === highlightedRouteIndex
+                      ? 'bg-blue-50'
+                      : ''
+                  }`}
+                  onClick={() => handleSelectRoute(routes.indexOf(mainRoute))}
+                >
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {mainRoute.path.map((nodeId, i) => (
+                      <React.Fragment key={i}>
+                        <Badge variant="outline" className={`
+                          ${nodeId === sourceNode ? 'bg-orange-100 text-orange-700 border-orange-200' : ''}
+                          ${nodeId === targetNode ? 'bg-green-100 text-green-700 border-green-200' : ''}
+                        `}>
+                          {nodeId}
+                        </Badge>
+                        {i < mainRoute.path.length - 1 && (
+                          <ArrowRight size={12} className="text-gray-400" />
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </CardContent>
+                
+                {/* Alternatives */}
+                {alternatives.length > 0 && (
+                  <div className="border-t border-gray-100">
+                    <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50">
+                      Alternative Routes (same number of connections)
+                    </div>
+                    
+                    {alternatives.map((route, altIndex) => (
+                      <div 
+                        key={altIndex}
+                        className={`px-3 py-2 border-t border-gray-100 cursor-pointer text-sm ${
+                          routes.indexOf(route) === highlightedRouteIndex
+                            ? 'bg-blue-50'
+                            : 'hover:bg-gray-50'
+                        }`}
+                        onClick={() => handleSelectRoute(routes.indexOf(route))}
+                      >
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <Badge variant="outline" className="bg-gray-100 text-gray-700">
+                            Alt {altIndex + 1}
+                          </Badge>
+                          {route.path.map((nodeId, i) => (
+                            <React.Fragment key={i}>
+                              <Badge variant="outline" className={`
+                                text-xs py-0 px-1
+                                ${nodeId === sourceNode ? 'bg-orange-50 text-orange-700 border-orange-100' : ''}
+                                ${nodeId === targetNode ? 'bg-green-50 text-green-700 border-green-100' : ''}
+                              `}>
+                                {nodeId}
+                              </Badge>
+                              {i < route.path.length - 1 && (
+                                <ArrowRight size={8} className="text-gray-300" />
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
+          );
+        })}
+        
+        {/* Hidden div to render PDF content - not visible to user */}
+        <div 
+          ref={pdfContentRef} 
+          className="fixed left-0 top-0 w-0 h-0 overflow-hidden opacity-0 pointer-events-none"
+          aria-hidden="true"
+        >
+          <div id="pdf-content" className="bg-white p-8 w-[794px]">
+            <h1 className="text-2xl font-bold text-blue-900">Route Analysis Report</h1>
+            <p className="text-gray-600">From {sourceNode} to {targetNode}</p>
+            <div className="mt-4">
+              {orderedGroups.map(([group, groupRoutes]) => {
+                const sortedGroupRoutes = [...groupRoutes].sort((a, b) => a.alternativeIndex - b.alternativeIndex);
+                return (
+                  <div key={group} className="mb-4 border p-3 rounded">
+                    <h3 className="font-medium">Route {group}: {sortedGroupRoutes[0].distance} connections</h3>
+                    <div className="flex flex-wrap items-center gap-1 mt-2">
+                      {sortedGroupRoutes[0].path.map((nodeId, i) => (
+                        <React.Fragment key={i}>
+                          <span className={`px-2 py-1 rounded text-sm
+                            ${nodeId === sourceNode ? 'bg-orange-100 text-orange-700' : ''}
+                            ${nodeId === targetNode ? 'bg-green-100 text-green-700' : ''}
+                            ${nodeId !== sourceNode && nodeId !== targetNode ? 'bg-blue-50 text-blue-700' : ''}
+                          `}>
+                            {nodeId}
+                          </span>
+                          {i < sortedGroupRoutes[0].path.length - 1 && (
+                            <span className="text-gray-400">→</span>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    
+                    {sortedGroupRoutes.slice(1).map((route, altIndex) => (
+                      <div key={altIndex} className="mt-2 pt-2 border-t border-gray-200">
+                        <h4 className="text-sm font-medium">Alternative {altIndex + 1}</h4>
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {route.path.map((nodeId, i) => (
+                            <React.Fragment key={i}>
+                              <span className={`px-2 py-0.5 rounded text-xs
+                                ${nodeId === sourceNode ? 'bg-orange-50 text-orange-700' : ''}
+                                ${nodeId === targetNode ? 'bg-green-50 text-green-700' : ''}
+                                ${nodeId !== sourceNode && nodeId !== targetNode ? 'bg-gray-50 text-gray-700' : ''}
+                              `}>
+                                {nodeId}
+                              </span>
+                              {i < route.path.length - 1 && (
+                                <span className="text-gray-300">→</span>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -828,6 +1040,312 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
         )}
       </div>
     );
+  };
+  
+  // PDF Generation
+  const [generatingPDF, setGeneratingPDF] = useState(false);
+  const pdfContentRef = useRef<HTMLDivElement>(null);
+  
+  // Function to generate PDF report of routes
+  const generatePdfReport = async () => {
+    if (routes.length === 0) {
+      setError("Please select source and target nodes to generate routes first");
+      return;
+    }
+    
+    try {
+      setGeneratingPDF(true);
+      
+      // Create PDF document with A4 dimensions
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      // PDF dimensions
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      const contentWidth = pageWidth - (margin * 2);
+      
+      // Add title
+      pdf.setFontSize(20);
+      pdf.setTextColor(0, 51, 102);
+      pdf.text('Route Analysis Report', margin, margin + 5);
+      
+      // Add subtitle with source and target
+      pdf.setFontSize(14);
+      pdf.setTextColor(60, 60, 60);
+      pdf.text(`From "${sourceNode}" to "${targetNode}"`, margin, margin + 15);
+      
+      // Add date
+      pdf.setFontSize(10);
+      pdf.setTextColor(100, 100, 100);
+      const dateStr = new Date().toLocaleDateString();
+      pdf.text(`Generated on ${dateStr}`, margin, margin + 22);
+      
+      // Add horizontal line
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(margin, margin + 27, pageWidth - margin, margin + 27);
+      
+      // Add dataset info
+      pdf.setFontSize(11);
+      pdf.setTextColor(80, 80, 80);
+      pdf.text(`Network: ${nodeData.length} nodes, ${linkData.length} connections`, margin, margin + 35);
+      
+      // Add route summary title
+      pdf.setFontSize(16);
+      pdf.setTextColor(0, 102, 102);
+      pdf.text('Route Summary', margin, margin + 45);
+      
+      // Group routes by distance group
+      const routeGroups = new Map<number, Route[]>();
+      routes.forEach(route => {
+        if (!routeGroups.has(route.group)) {
+          routeGroups.set(route.group, []);
+        }
+        routeGroups.get(route.group)!.push(route);
+      });
+
+      const orderedGroups = Array.from(routeGroups.entries()).sort((a, b) => a[0] - b[0]);
+      
+      // Add routes information
+      let yPosition = margin + 55;
+      
+      // For each group of routes
+      for (const [groupIndex, groupRoutes] of orderedGroups) {
+        // Sort routes within group by alternativeIndex
+        const sortedGroupRoutes = [...groupRoutes].sort((a, b) => a.alternativeIndex - b.alternativeIndex);
+        const mainRoute = sortedGroupRoutes[0];
+        const alternatives = sortedGroupRoutes.slice(1);
+        
+        // Check if we need a new page
+        if (yPosition > pageHeight - 60) {
+          pdf.addPage();
+          yPosition = margin + 20;
+        }
+        
+        // Main route header
+        pdf.setFillColor(240, 248, 255); // Light blue background
+        pdf.roundedRect(margin, yPosition, contentWidth, 10, 2, 2, 'F');
+        
+        pdf.setFontSize(13);
+        pdf.setTextColor(0, 51, 102);
+        pdf.text(`Route ${groupIndex}: ${mainRoute.distance} ${mainRoute.distance === 1 ? 'connection' : 'connections'}`, margin + 5, yPosition + 7);
+        
+        yPosition += 16;
+        
+        // Main route path
+        pdf.setFontSize(10);
+        
+        // Layout nodes with arrows
+        let currentX = margin + 5;
+        let currentY = yPosition;
+        let lineCounter = 0;
+        
+        // Draw main route path
+        for (let j = 0; j < mainRoute.path.length; j++) {
+          const nodeId = mainRoute.path[j];
+          const nodeText = nodeId;
+          const textWidth = pdf.getTextWidth(nodeText) + 10; // Padding
+          
+          // Check if we need to move to next line
+          if (currentX + textWidth + 10 > pageWidth - margin && j > 0) {
+            currentX = margin + 10;
+            currentY += 10;
+            lineCounter = 0;
+          }
+          
+          // Node with color background
+          let bgColor;
+          if (nodeId === sourceNode) {
+            bgColor = [255, 235, 210]; // Light orange for source
+          } else if (nodeId === targetNode) {
+            bgColor = [220, 255, 220]; // Light green for target
+          } else {
+            bgColor = [230, 240, 255]; // Light blue for intermediate
+          }
+          
+          pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+          pdf.roundedRect(currentX, currentY - 4, textWidth, 6, 2, 2, 'F');
+          
+          // Node text
+          pdf.setTextColor(0, 0, 0);
+          pdf.text(nodeText, currentX + 5, currentY);
+          
+          // Add arrow if not the last node
+          if (j < mainRoute.path.length - 1) {
+            currentX += textWidth + 2;
+            pdf.setDrawColor(150, 150, 150);
+            pdf.line(currentX, currentY - 1, currentX + 5, currentY - 1);
+            pdf.line(currentX + 5, currentY - 1, currentX + 3, currentY - 2);
+            pdf.line(currentX + 5, currentY - 1, currentX + 3, currentY);
+            currentX += 8;
+          } else {
+            currentX += textWidth + 10;
+          }
+          
+          lineCounter++;
+        }
+        
+        // Update y position based on how many lines were used
+        const mainRouteLines = Math.ceil(mainRoute.path.length / 7); // Approximate nodes per line
+        yPosition += mainRouteLines * 10;
+        
+        // Add alternatives if any
+        if (alternatives.length > 0) {
+          // Alternatives header
+          pdf.setFontSize(11);
+          pdf.setTextColor(90, 90, 90);
+          pdf.text("Alternative Routes (same distance):", margin + 5, yPosition + 5);
+          
+          yPosition += 10;
+          
+          // Draw each alternative route
+          for (let i = 0; i < alternatives.length; i++) {
+            const route = alternatives[i];
+            
+            // Check if we need a new page
+            if (yPosition > pageHeight - 40) {
+              pdf.addPage();
+              yPosition = margin + 20;
+            }
+            
+            // Alternative route header
+            pdf.setFillColor(245, 245, 245); // Light gray background
+            pdf.roundedRect(margin + 5, yPosition, contentWidth - 10, 8, 2, 2, 'F');
+            
+            pdf.setFontSize(10);
+            pdf.setTextColor(80, 80, 80);
+            pdf.text(`Alternative ${i + 1}`, margin + 10, yPosition + 5.5);
+            
+            yPosition += 12;
+            
+            // Alternative route path
+            pdf.setFontSize(9);
+            
+            // Layout nodes with arrows
+            currentX = margin + 15;
+            currentY = yPosition;
+            lineCounter = 0;
+            
+            // Draw alternative route path
+            for (let j = 0; j < route.path.length; j++) {
+              const nodeId = route.path[j];
+              const nodeText = nodeId;
+              const textWidth = pdf.getTextWidth(nodeText) + 6; // Smaller padding
+              
+              // Check if we need to move to next line
+              if (currentX + textWidth + 10 > pageWidth - margin && j > 0) {
+                currentX = margin + 15;
+                currentY += 8;
+                lineCounter = 0;
+              }
+              
+              // Node with color background (lighter colors for alternatives)
+              let bgColor;
+              if (nodeId === sourceNode) {
+                bgColor = [255, 245, 230]; // Lighter orange for source
+              } else if (nodeId === targetNode) {
+                bgColor = [240, 255, 240]; // Lighter green for target
+              } else {
+                bgColor = [245, 250, 255]; // Lighter blue for intermediate
+              }
+              
+              pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+              pdf.roundedRect(currentX, currentY - 3, textWidth, 5, 1, 1, 'F');
+              
+              // Node text
+              pdf.setTextColor(60, 60, 60);
+              pdf.text(nodeText, currentX + 3, currentY);
+              
+              // Add arrow if not the last node
+              if (j < route.path.length - 1) {
+                currentX += textWidth + 2;
+                pdf.setDrawColor(180, 180, 180);
+                pdf.line(currentX, currentY - 1, currentX + 4, currentY - 1);
+                pdf.line(currentX + 4, currentY - 1, currentX + 2, currentY - 2);
+                pdf.line(currentX + 4, currentY - 1, currentX + 2, currentY);
+                currentX += 6;
+              } else {
+                currentX += textWidth + 10;
+              }
+              
+              lineCounter++;
+            }
+            
+            // Update y position based on how many lines were used
+            const altRouteLines = Math.ceil(route.path.length / 8); // Approximate nodes per line
+            yPosition += altRouteLines * 8 + 5;
+          }
+        }
+        
+        // Add some spacing between route groups
+        yPosition += 15;
+        
+        // Add divider between route groups
+        pdf.setDrawColor(230, 230, 230);
+        pdf.line(margin, yPosition - 8, pageWidth - margin, yPosition - 8);
+      }
+      
+      // Capture the visualization as image
+      if (svgRef.current) {
+        try {
+          const canvas = await html2canvas(svgRef.current as unknown as HTMLElement, {
+            backgroundColor: "#f8f8f8",
+            scale: 2
+          });
+          
+          // Make sure we have space for the visualization
+          if (yPosition + 120 > pageHeight) {
+            pdf.addPage();
+            yPosition = margin;
+          } else {
+            // Add some space
+            yPosition += 10;
+          }
+          
+          // Add title for visualization
+          pdf.setFontSize(16);
+          pdf.setTextColor(0, 102, 102);
+          pdf.text('Network Visualization', margin, yPosition + 10);
+          
+          // Add the network visualization image
+          const imgData = canvas.toDataURL('image/png');
+          const imgWidth = contentWidth;
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+          
+          // Check if image would go off page
+          if (yPosition + imgHeight + 25 > pageHeight) {
+            pdf.addPage();
+            yPosition = margin;
+          }
+          
+          pdf.addImage(imgData, 'PNG', margin, yPosition + 15, imgWidth, imgHeight);
+          
+          // Add caption
+          pdf.setFontSize(9);
+          pdf.setTextColor(100, 100, 100);
+          pdf.text('Network graph showing the highlighted route between nodes', margin, yPosition + imgHeight + 20);
+        } catch (err) {
+          console.error("Error capturing visualization:", err);
+        }
+      }
+      
+      // Add footer
+      pdf.setFontSize(8);
+      pdf.setTextColor(150, 150, 150);
+      pdf.text('Generated with Route Finder Visualization Tool', margin, pageHeight - 10);
+      
+      // Save the PDF
+      pdf.save(`route-analysis-${sourceNode}-to-${targetNode}.pdf`);
+    } catch (err) {
+      console.error("Error generating PDF:", err);
+      setError("Failed to generate PDF report. Please try again.");
+    } finally {
+      setGeneratingPDF(false);
+    }
   };
 
   // Memoize node dropdowns to prevent unnecessary re-renders
