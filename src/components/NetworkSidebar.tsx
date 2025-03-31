@@ -17,8 +17,9 @@ import {
   RotateCcw,
   Info,
   Network, // Added Network icon for the 3D network layout
-  Globe, // Replaced Sphere with Globe icon for the 3D sphere layout
-  ZoomOut
+  Globe, 
+  ZoomOut,
+  Target 
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import NetworkColorControls from './NetworkColorControls';
@@ -26,7 +27,7 @@ import { getNodeColor } from '@/utils/colorThemes';
 import TooltipSettings, { TooltipDetail, TooltipTrigger } from './TooltipSettings';
 
 // Update visualization type to include 3D
-export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal';
+export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav';
 
 interface ColorTheme {
   [key: string]: string;
@@ -294,73 +295,92 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
         </button>
         
         {expandedSections.visualizationType && (
-          <div className="mb-4 bg-gray-700 p-3 rounded-md">
-            <div className="grid grid-cols-1 gap-2">
-              <button
-                className={`flex items-center px-3 py-2 rounded-md ${
-                  visualizationType === 'network' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
-                }`}
-                onClick={() => onVisualizationTypeChange('network')}
-              >
-                <LayoutGrid className="w-4 h-4 mr-2" />
-                <span>Network Graph</span>
-              </button>
-              
-              
-              <button
-                className={`flex items-center px-3 py-2 rounded-md ${
-                  visualizationType === 'arc' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
-                }`}
-                onClick={() => onVisualizationTypeChange('arc')}
-              >
-                <GitBranch className="w-4 h-4 mr-2" />
-                <span>Arc Graph</span>
-              </button>
-              
-              <button
-                className={`flex items-center px-3 py-2 rounded-md ${
-                  visualizationType === '3d' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
-                }`}
-                onClick={() => onVisualizationTypeChange('3d')}
-              >
-                <Box className="w-4 h-4 mr-2" />
-                <span>3D Graph</span>
-              </button>
-              <button
+  <div className="mb-4 bg-gray-700 p-3 rounded-md">
+    <div className="grid grid-cols-1 gap-2">
+      {/* Network button */}
+      <button
+        className={`flex items-center px-3 py-2 rounded-md ${
+          visualizationType === 'network' 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+        }`}
+        onClick={() => onVisualizationTypeChange('network')}
+      >
+        <LayoutGrid className="w-4 h-4 mr-2" />
+        <span>Network Graph</span>
+      </button>
+      
+      {/* Arc button */}
+      <button
+        className={`flex items-center px-3 py-2 rounded-md ${
+          visualizationType === 'arc' 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+        }`}
+        onClick={() => onVisualizationTypeChange('arc')}
+      >
+        <GitBranch className="w-4 h-4 mr-2" />
+        <span>Arc Graph</span>
+      </button>
+      
+      {/* 3D button */}
+      <button
+        className={`flex items-center px-3 py-2 rounded-md ${
+          visualizationType === '3d' 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+        }`}
+        onClick={() => onVisualizationTypeChange('3d')}
+      >
+        <Box className="w-4 h-4 mr-2" />
+        <span>3D Graph</span>
+      </button>
+      
+      {/* Rad360 button */}
+      <button
+        className={`flex items-center px-3 py-2 rounded-md ${
+          visualizationType === 'rad360' 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+        }`}
+        onClick={() => onVisualizationTypeChange('rad360')}
+      >
+        <Circle className="w-4 h-4 mr-2" />
+        <span>Rad360 Graph</span>
+      </button>
+      
+      {/* ArcLineal button */}
+      <button
+        className={`flex items-center px-3 py-2 rounded-md ${
+          visualizationType === 'arcLineal' 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+        }`}
+        onClick={() => onVisualizationTypeChange('arcLineal')}
+      >
+        <GitBranch className="w-4 h-4 mr-2" />
+        <span>Arc Lineal</span>
+      </button>
+      
+      {/* Node Navigator button */}
+      <button
   className={`flex items-center px-3 py-2 rounded-md ${
-    visualizationType === 'rad360' 
+    visualizationType === 'nodeNav' 
       ? 'bg-blue-600 text-white' 
       : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
   }`}
-  onClick={() => onVisualizationTypeChange('rad360')}
+  onClick={() => onVisualizationTypeChange('nodeNav' as VisualizationType)}
 >
-  <Circle className="w-4 h-4 mr-2" />
-  <span>Rad360 Graph</span>
+  <Target className="w-4 h-4 mr-2" />
+  <span>Node Navigator</span>
 </button>
-
-<button
-  className={`flex items-center px-3 py-2 rounded-md ${
-    visualizationType === 'arcLineal' 
-      ? 'bg-blue-600 text-white' 
-      : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
-  }`}
-  onClick={() => onVisualizationTypeChange('arcLineal')}
->
-  <GitBranch className="w-4 h-4 mr-2" />
-  <span>Arc Lineal</span>
-</button>
-            </div>
-            <div className="mt-3 text-xs text-gray-400">
-              <p>Select different visualization types to explore your network data from various perspectives.</p>
-            </div>
-          </div>
-        )}
+    </div>
+    
+    <div className="mt-3 text-xs text-gray-400">
+      <p>Select different visualization types to explore your network data from various perspectives.</p>
+    </div>
+  </div>
+)}
       </div>
 
       {/* Network Controls Section - Only shown for network visualization type */}

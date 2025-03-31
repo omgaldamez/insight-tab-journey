@@ -554,9 +554,13 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     }
   };
   
-  // Show tooltip for a node
-  const showTooltip = (event: MouseEvent, node: Node, connections: {to: string[], from: string[]}) => {
-    if (!tooltipRef.current) return;
+// Completely revised showTooltip function for 3D visualization
+const showTooltip = (
+    hoveredMesh: THREE.Mesh,
+    node: Node,
+    connections: {to: string[], from: string[]}
+  ) => {
+    if (!tooltipRef.current || !containerRef.current || !cameraRef.current || !rendererRef.current) return;
     
     // Build tooltip content
     let tooltipContent = `<strong>${node.id}</strong><br>Category: ${node.category}<br>`;
@@ -567,15 +571,53 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       tooltipContent += `<em>Click and drag to reposition node</em>`;
     }
     
-    // Set content and position
+    // Get 3D position of the node
+    const nodePosition = hoveredMesh.position.clone();
+    
+    // Project to 2D screen coordinates
+    const screenPosition = project3DPositionTo2D(
+      nodePosition,
+      cameraRef.current,
+      rendererRef.current
+    );
+    
+    // Set content and make temporarily visible but transparent for size calculation
     const tooltip = tooltipRef.current;
     tooltip.innerHTML = tooltipContent;
     tooltip.style.visibility = "visible";
-    tooltip.style.opacity = "1";
+    tooltip.style.opacity = "0";
     
-    // Position tooltip near mouse
-    tooltip.style.left = `${event.clientX + 15}px`;
-    tooltip.style.top = `${event.clientY - 10}px`;
+    // Force layout calculation to get accurate dimensions
+    const tooltipWidth = tooltip.offsetWidth;
+    const tooltipHeight = tooltip.offsetHeight;
+    
+    // Get container dimensions and position
+    const containerRect = containerRef.current.getBoundingClientRect();
+    
+    // Calculate position relative to container
+    let xPosition = screenPosition.x;
+    let yPosition = screenPosition.y - tooltipHeight - 10; // Position above the node
+    
+    // Add buffer margin
+    const buffer = 10;
+    
+    // Boundary checks to keep tooltip inside container
+    if (xPosition + tooltipWidth + buffer > containerRect.width) {
+      xPosition = Math.max(buffer, screenPosition.x - tooltipWidth);
+    }
+    
+    if (yPosition < buffer) {
+      yPosition = screenPosition.y + 20; // Position below the node instead
+    }
+    
+    // Ensure tooltip doesn't go off the edges
+    xPosition = Math.max(buffer, Math.min(xPosition, containerRect.width - tooltipWidth - buffer));
+    yPosition = Math.max(buffer, Math.min(yPosition, containerRect.height - tooltipHeight - buffer));
+    
+    // Position tooltip and make visible
+    tooltip.style.left = `${xPosition}px`;
+    tooltip.style.top = `${yPosition}px`;
+    tooltip.style.opacity = "1";
   };
   
   // Hide tooltip
@@ -585,11 +627,66 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     tooltipRef.current.style.visibility = "hidden";
   };
   
-  // Move tooltip with mouse
-  const moveTooltip = (event: MouseEvent) => {
-    if (!tooltipRef.current) return;
-    tooltipRef.current.style.left = `${event.clientX + 15}px`;
-    tooltipRef.current.style.top = `${event.clientY - 10}px`;
+// Add a new function for projecting 3D coordinates to 2D screen space
+const project3DPositionTo2D = (
+    position: THREE.Vector3,
+    camera: THREE.Camera,
+    renderer: THREE.WebGLRenderer
+  ): { x: number, y: number } => {
+    // Clone position to avoid modifying the original
+    const pos = position.clone();
+    
+    // Project 3D position to normalized device coordinates (NDC)
+    pos.project(camera);
+    
+    // Calculate viewport position
+    const widthHalf = renderer.domElement.clientWidth / 2;
+    const heightHalf = renderer.domElement.clientHeight / 2;
+    
+    // Convert to screen coordinates
+    const x = (pos.x * widthHalf) + widthHalf;
+    const y = -(pos.y * heightHalf) + heightHalf;
+    
+    return { x, y };
+  };
+
+// Move tooltip with mouse, with improved positioning
+const moveTooltip = (event: MouseEvent) => {
+    if (!tooltipRef.current || !containerRef.current) return;
+    
+    const tooltip = tooltipRef.current;
+    const containerRect = containerRef.current.getBoundingClientRect();
+    
+    // Get current tooltip dimensions
+    const tooltipWidth = tooltip.offsetWidth;
+    const tooltipHeight = tooltip.offsetHeight;
+    
+    // Calculate position relative to container
+    const absX = event.clientX;
+    const absY = event.clientY;
+    
+    // Translate to position within the container
+    let xPosition = absX - containerRect.left + 15;
+    let yPosition = absY - containerRect.top - 10;
+    
+    // Add buffer margin
+    const buffer = 10;
+    
+    // Boundary checks
+    if (xPosition + tooltipWidth + buffer > containerRect.width) {
+      xPosition = absX - containerRect.left - tooltipWidth - buffer;
+    }
+    
+    if (yPosition + tooltipHeight + buffer > containerRect.height) {
+      yPosition = absY - containerRect.top - tooltipHeight - buffer;
+    }
+    
+    if (xPosition < buffer) xPosition = buffer;
+    if (yPosition < buffer) yPosition = buffer;
+    
+    // Update tooltip position
+    tooltip.style.left = `${xPosition}px`;
+    tooltip.style.top = `${yPosition}px`;
   };
   
   // Find node connections
@@ -1008,73 +1105,72 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       const mouse = new THREE.Vector2();
       let intersectedObject: THREE.Mesh | null = null;
       
-      // Mouse events for interaction
-      const handleMouseMove = (event: MouseEvent) => {
-        // Skip raycasting when dragging a node
-        if (isDraggingNodeRef.current && draggedNodeRef.current) {
-          return;
+// Updated mouse move handler in the useEffect that initializes Three.js scene
+const handleMouseMove = (event: MouseEvent) => {
+    // Skip raycasting when dragging a node
+    if (isDraggingNodeRef.current && draggedNodeRef.current) {
+      return;
+    }
+    
+    // Calculate mouse position in normalized device coordinates
+    const width = containerRef.current?.clientWidth || 800;
+    const height = containerRef.current?.clientHeight || 600;
+    mouse.x = (event.offsetX / width) * 2 - 1;
+    mouse.y = -(event.offsetY / height) * 2 + 1;
+    
+    // Update the raycaster
+    raycaster.setFromCamera(mouse, camera);
+    
+    // Find intersections with nodes
+    const intersects = raycaster.intersectObjects(nodeObjects);
+    
+    // If we were hovering over an object and now we're not
+    if (intersects.length === 0) {
+      if (intersectedObject) {
+        // Reset the node appearance
+        const material = intersectedObject.material as THREE.MeshStandardMaterial;
+        if (material) {
+          material.emissive.set(0x000000);
+          material.needsUpdate = true;
         }
-        
-        // Calculate mouse position in normalized device coordinates
-        mouse.x = (event.clientX / width) * 2 - 1;
-        mouse.y = - (event.clientY / height) * 2 + 1;
-        
-        // Update the raycaster
-        raycaster.setFromCamera(mouse, camera);
-        
-        // Find intersections with nodes
-        const intersects = raycaster.intersectObjects(nodeObjects);
-        
-        // If we were hovering over an object and now we're not
-        if (intersects.length === 0) {
-          if (intersectedObject) {
-            // Reset the node appearance
-            const material = intersectedObject.material as THREE.MeshStandardMaterial;
-            if (material) {
-              material.emissive.set(0x000000);
-              material.needsUpdate = true;
-            }
-            intersectedObject = null;
-            hideTooltip();
-          }
-          return;
+        intersectedObject = null;
+        hideTooltip();
+      }
+      return;
+    }
+    
+    // We're hovering over a node
+    const hoveredMesh = intersects[0].object as THREE.Mesh;
+    
+    // If it's a different node than before
+    if (intersectedObject !== hoveredMesh) {
+      // Reset old intersected object if it exists
+      if (intersectedObject) {
+        const material = intersectedObject.material as THREE.MeshStandardMaterial;
+        if (material) {
+          material.emissive.set(0x000000);
+          material.needsUpdate = true;
         }
-        
-        // We're hovering over a node
-        const hoveredMesh = intersects[0].object as THREE.Mesh;
-        
-        // If it's a different node than before
-        if (intersectedObject !== hoveredMesh) {
-          // Reset old intersected object if it exists
-          if (intersectedObject) {
-            const material = intersectedObject.material as THREE.MeshStandardMaterial;
-            if (material) {
-              material.emissive.set(0x000000);
-              material.needsUpdate = true;
-            }
-          }
-          
-          // Highlight new intersected object
-          intersectedObject = hoveredMesh;
-          const material = intersectedObject.material as THREE.MeshStandardMaterial;
-          if (material) {
-            material.emissive.set(0x333333);
-            material.needsUpdate = true;
-          }
-          
-          // Show tooltip
-          const nodeId = hoveredMesh.userData.nodeId;
-          const node = nodeData.find(n => n.id === nodeId);
-          
-          if (node) {
-            const connections = findNodeConnections(node.id);
-            showTooltip(event, node, connections);
-          }
-        } else {
-          // Move tooltip with mouse
-          moveTooltip(event);
-        }
-      };
+      }
+      
+      // Highlight new intersected object
+      intersectedObject = hoveredMesh;
+      const material = intersectedObject.material as THREE.MeshStandardMaterial;
+      if (material) {
+        material.emissive.set(0x333333);
+        material.needsUpdate = true;
+      }
+      
+      // Show tooltip
+      const nodeId = hoveredMesh.userData.nodeId;
+      const node = nodeData.find(n => n.id === nodeId);
+      
+      if (node) {
+        const connections = findNodeConnections(node.id);
+        showTooltip(hoveredMesh, node, connections);
+      }
+    }
+  };
       
       const handleClick = (event: MouseEvent) => {
         // Only handle left-click

@@ -37,6 +37,8 @@ import {
   getNodeTextRepresentation,
   getNodeJsonRepresentation
 } from './TooltipUtils';
+import NodeNavVisualization from './NodeNavVisualization';
+
 
 // Define interfaces for handling both raw data and processed nodes/links
 interface NodeData {
@@ -2041,6 +2043,7 @@ const handleExportNodeData = (format: 'text' | 'json') => {
   const isRad360 = localVisualizationType === 'rad360';
   const isArcLineal = localVisualizationType === 'arcLineal';
   const is3D = localVisualizationType === '3d';
+  const isNodeNav = localVisualizationType === ('nodeNav' as VisualizationType);
 
   // IMPROVEMENT: Fully unmount non-active visualizations rather than hiding them
   return (
@@ -2221,6 +2224,36 @@ const handleExportNodeData = (format: 'text' | 'json') => {
               onResetSelection={handleResetSelection}
             />
           )}
+
+{isNodeNav && (
+  <NodeNavVisualization
+    onCreditsClick={onCreditsClick}
+    nodeData={nodeData.map(node => ({
+      id: String(node.id),
+      name: node.name || '',
+      category: node.category || '',
+      type: node.type || ''
+    }))}
+    linkData={linkData.map(link => ({
+      source: typeof link.source === 'object' ? link.source.id : link.source,
+      target: typeof link.target === 'object' ? link.target.id : link.target,
+    }))}
+    visualizationType={localVisualizationType}
+    onVisualizationTypeChange={handleVisualizationTypeChange}
+    colorTheme={colors.colorTheme}
+    nodeSize={colors.nodeSize}
+    linkColor={colors.linkColor}
+    backgroundColor={colors.backgroundColor}
+    backgroundOpacity={colors.backgroundOpacity}
+    customNodeColors={colors.customNodeColors}
+    dynamicColorThemes={colors.dynamicColorThemes}
+    onDownloadData={downloadData}
+    onDownloadGraph={downloadGraph}
+    onResetSelection={handleResetSelection}
+  />
+)}
+
+
         </div>
       }
       nodeData={nodeData}

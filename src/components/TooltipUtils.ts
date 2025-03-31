@@ -343,7 +343,7 @@ export const moveTooltip = (
     .style("top", `${position.y}px`);
 };
 
-// Hide tooltip function - UPDATED to not hide persistent tooltips
+// Update hideTooltip function
 export const hideTooltip = (
   tooltipRef: RefObject<HTMLDivElement>,
   tooltipTrigger: TooltipTrigger = 'hover',
@@ -353,12 +353,12 @@ export const hideTooltip = (
   
   const tooltip = d3.select(tooltipRef.current);
   
-  // Don't hide persistent tooltips
-  if (tooltip.classed("persistent-tooltip")) {
+  // Don't hide persistent tooltips unless explicitly needed
+  if (tooltip.classed("persistent-tooltip") && tooltipTrigger === 'persistent') {
     return;
   }
   
-  // Hide non-persistent tooltip
+  // Hide tooltip
   tooltip
     .style("opacity", "0")
     .style("visibility", "hidden");

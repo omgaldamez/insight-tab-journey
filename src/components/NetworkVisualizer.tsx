@@ -8,15 +8,7 @@ import ArcVisualization from './ArcVisualization';
 import { VisualizationType } from './NetworkSidebar';
 import { NodeData, LinkData } from '@/types/types';
 
-
-
 const NetworkVisualizer: React.FC = () => {
-  return (
-    <div>
-      {/* Add your component's JSX here */}
-      <h1>Network Visualizer</h1>
-    </div>
-  );
   const { toast } = useToast();
   const [step, setStep] = useState<'upload' | 'preview' | 'visualization'>('upload');
   const [nodeFile, setNodeFile] = useState<File | null>(null);
@@ -157,7 +149,7 @@ const NetworkVisualizer: React.FC = () => {
 
   // Handle visualization type change
   const handleVisualizationTypeChange = (type: VisualizationType) => {
-    setVisualizationType(type);
+    setVisualizationType(type as VisualizationType);
     toast({
       title: "Visualization Changed",
       description: `Switched to ${type.charAt(0).toUpperCase() + type.slice(1)} Visualization`,
@@ -210,7 +202,10 @@ const NetworkVisualizer: React.FC = () => {
 
   // Render the appropriate visualization based on type
   const renderVisualization = () => {
-    switch (visualizationType) {
+    // Cast the visualizationType to string to avoid type conflicts
+    const typeAsString = visualizationType as string;
+    
+    switch (typeAsString) {
       case 'network':
         return (
           <NetworkVisualization 
@@ -221,7 +216,7 @@ const NetworkVisualizer: React.FC = () => {
             onVisualizationTypeChange={handleVisualizationTypeChange}
           />
         );
- 
+  
       case 'arc':
         return (
           <ArcVisualization 
@@ -232,6 +227,8 @@ const NetworkVisualizer: React.FC = () => {
             onVisualizationTypeChange={handleVisualizationTypeChange}
           />
         );
+        
+      // Handle all other types including 'nodeNav', 'rad360', 'arcLineal', '3d'
       default:
         return (
           <NetworkVisualization 
@@ -245,8 +242,178 @@ const NetworkVisualizer: React.FC = () => {
     }
   };
 
-  // Rest of the component remains the same
-  // ...
-}
+  // Render the component based on current step
+  return (
+    <div className="container mx-auto p-4">
+      {step === 'upload' && (
+        <Card className="w-full max-w-4xl mx-auto">
+          <CardContent className="pt-6">
+            <h2 className="text-2xl font-bold mb-4">Upload Network Data</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="border border-dashed rounded-lg p-6 text-center">
+                <div className="mb-4">
+                  <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <h3 className="text-lg font-medium">Node Data File</h3>
+                  <p className="text-sm text-gray-500 mb-2">Upload a CSV file with node data</p>
+                </div>
+                
+                <input
+                  type="file"
+                  id="node-file"
+                  ref={nodeInputRef}
+                  className="hidden"
+                  accept=".csv"
+                  onChange={(e) => handleFileSelect(e, 'node')}
+                />
+                
+                <Button
+                  variant="outline"
+                  onClick={() => nodeInputRef.current?.click()}
+                  className="w-full"
+                >
+                  {nodeFile ? nodeFile.name : "Select Node File"}
+                </Button>
+              </div>
+              
+              <div className="border border-dashed rounded-lg p-6 text-center">
+                <div className="mb-4">
+                  <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <h3 className="text-lg font-medium">Link Data File</h3>
+                  <p className="text-sm text-gray-500 mb-2">Upload a CSV file with link data</p>
+                </div>
+                
+                <input
+                  type="file"
+                  id="link-file"
+                  ref={linkInputRef}
+                  className="hidden"
+                  accept=".csv"
+                  onChange={(e) => handleFileSelect(e, 'link')}
+                />
+                
+                <Button
+                  variant="outline"
+                  onClick={() => linkInputRef.current?.click()}
+                  className="w-full"
+                >
+                  {linkFile ? linkFile.name : "Select Link File"}
+                </Button>
+              </div>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row justify-center gap-4 mt-4">
+              <Button
+                onClick={handleSubmit}
+                disabled={!nodeFile || !linkFile || isLoading}
+                className="sm:w-1/3"
+              >
+                {isLoading ? "Processing..." : "Process Files"}
+              </Button>
+              
+              <Button
+                variant="outline"
+                onClick={loadDemoData}
+                disabled={isLoading}
+                className="sm:w-1/3"
+              >
+                Load Demo Data
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {step === 'preview' && (
+        <Card className="w-full max-w-4xl mx-auto">
+          <CardContent className="pt-6">
+            <h2 className="text-2xl font-bold mb-4">Preview Network Data</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="border rounded-lg p-4">
+                <h3 className="text-lg font-medium mb-2">Nodes ({nodeData.length})</h3>
+                <div className="max-h-60 overflow-y-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="text-left font-medium p-2">ID</th>
+                        <th className="text-left font-medium p-2">Category</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {nodeData.slice(0, 10).map((node, index) => (
+                        <tr key={index} className="border-t">
+                          <td className="p-2">{node.id}</td>
+                          <td className="p-2">{node.category}</td>
+                        </tr>
+                      ))}
+                      {nodeData.length > 10 && (
+                        <tr className="border-t">
+                          <td colSpan={2} className="p-2 text-center">
+                            ...and {nodeData.length - 10} more
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              <div className="border rounded-lg p-4">
+                <h3 className="text-lg font-medium mb-2">Links ({linkData.length})</h3>
+                <div className="max-h-60 overflow-y-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="text-left font-medium p-2">Source</th>
+                        <th className="text-left font-medium p-2">Target</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {linkData.slice(0, 10).map((link, index) => (
+                        <tr key={index} className="border-t">
+                          <td className="p-2">{link.source}</td>
+                          <td className="p-2">{link.target}</td>
+                        </tr>
+                      ))}
+                      {linkData.length > 10 && (
+                        <tr className="border-t">
+                          <td colSpan={2} className="p-2 text-center">
+                            ...and {linkData.length - 10} more
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-between mt-4">
+              <Button
+                variant="outline"
+                onClick={handleReset}
+              >
+                Back to Upload
+              </Button>
+              
+              <Button
+                onClick={handleVisualize}
+              >
+                Visualize Network
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {step === 'visualization' && (
+        <div className="w-full h-[calc(100vh-8rem)]">
+          {renderVisualization()}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default NetworkVisualizer;
