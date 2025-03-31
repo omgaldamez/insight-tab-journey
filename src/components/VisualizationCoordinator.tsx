@@ -1,4 +1,3 @@
-/* eslint-disable prefer-const */
 import React, { useState, useEffect, useRef } from 'react';
 import { Node, Link, VisualizationType } from '@/types/networkTypes';
 import NetworkVisualization from './NetworkVisualization';
@@ -29,6 +28,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
   const [threeDLayout, setThreeDLayout] = useState<'3d-sphere' | '3d-network'>('3d-sphere');
   const [threeDSortMode, setThreeDSortMode] = useState<'alphabetical' | 'category' | 'connections' | 'none'>('none');
   const [threeDCenterNode, setThreeDCenterNode] = useState<string | null>(null);
+  const [nodePositioningEnabled, setNodePositioningEnabled] = useState(false);
   
   // Basic theming props that all visualization types can use
   const [colorTheme, setColorTheme] = useState('default');
@@ -63,6 +63,9 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     threeDControls: true,
     tooltipSettings: true
   });
+  const [repulsionForce, setRepulsionForce] = useState(100);
+const [threeDLinkStrength, setThreeDLinkStrength] = useState(0.5);
+const [gravity, setGravity] = useState(0.1);
 
   // Initialize dynamic color themes with categories from nodes
   useEffect(() => {
@@ -147,6 +150,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     b /= 255;
     const max = Math.max(r, g, b);
     const min = Math.min(r, g, b);
+    // eslint-disable-next-line prefer-const
     let h = 0, s = 0, l = (max + min) / 2;
 
     if (max !== min) {
@@ -195,6 +199,34 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
 
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   };
+
+
+// Handler for repulsion force change
+const handleRepulsionForceChange = (force: number) => {
+  setRepulsionForce(force);
+  toast({
+    title: "Repulsion Force Updated",
+    description: `Force strength set to ${force}`
+  });
+};
+
+// Handler for 3D link strength change
+const handleThreeDLinkStrengthChange = (strength: number) => {
+  setThreeDLinkStrength(strength);
+  toast({
+    title: "Link Strength Updated",
+    description: `Link strength set to ${strength.toFixed(2)}`
+  });
+};
+
+// Handler for gravity change
+const handleGravityChange = (value: number) => {
+  setGravity(value);
+  toast({
+    title: "Gravity Updated",
+    description: `Gravity force set to ${value.toFixed(2)}`
+  });
+};
 
   // Handler for toggling node fixing behavior
   const handleToggleFixNodes = () => {
@@ -263,7 +295,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
       title: "3D Layout Changed",
       description: layoutType === '3d-sphere'
         ? "Using spherical layout - nodes arranged in a spherical pattern"
-        : "Using network layout - force-directed graph in 3D space with right-click node positioning"
+        : "Using network layout - force-directed graph in 3D space with node positioning"
     });
   };
 
@@ -291,6 +323,18 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
       description: nodeId 
         ? `Node "${nodeId}" placed at center of sphere for centrality analysis` 
         : "Reverting to balanced sphere layout with no central node"
+    });
+  };
+  
+  // Handler for node positioning toggle
+  const handleNodePositioningToggle = () => {
+    setNodePositioningEnabled(prev => !prev);
+    
+    toast({
+      title: nodePositioningEnabled ? "Node Positioning Disabled" : "Node Positioning Enabled",
+      description: nodePositioningEnabled 
+        ? "Click and drag will rotate the view" 
+        : "Click and drag on nodes to position them. Toggle off to rotate view."
     });
   };
   
@@ -396,27 +440,6 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     });
   };
 
-  // Create common props for visualizations
-  const commonVisualizationProps = {
-    nodeData,
-    linkData,
-    onCreditsClick,
-    fixNodesOnDrag,
-    visualizationType,
-    onVisualizationTypeChange: handleVisualizationTypeChange,
-    colorTheme,
-    nodeSize,
-    linkColor,
-    backgroundColor,
-    backgroundOpacity,
-    customNodeColors,
-    dynamicColorThemes,
-    tooltipDetail,
-    tooltipTrigger,
-    onTooltipDetailChange: handleTooltipDetailChange,
-    onTooltipTriggerChange: handleTooltipTriggerChange
-  };
-
   return (
     <div ref={containerRef} className="w-full h-[calc(100vh-14rem)] rounded-lg border border-border overflow-hidden bg-card flex">
       {visualizationType === '3d' ? (
@@ -454,6 +477,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             threeDLayout={threeDLayout}
             threeDSortMode={threeDSortMode}
             threeDCenterNode={threeDCenterNode}
+            nodePositioningEnabled={nodePositioningEnabled}
             onParameterChange={onParameterChange}
             onNodeGroupChange={() => {}}
             onColorThemeChange={setColorTheme}
@@ -482,6 +506,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             onThreeDLayoutChange={handleThreeDLayoutChange}
             onThreeDSortModeChange={handleThreeDSortModeChange}
             onThreeDCenterNodeChange={handleThreeDCenterNodeChange}
+            onToggleNodePositioning={handleNodePositioningToggle}
           />
 
           {/* The actual 3D visualization */}
@@ -500,6 +525,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
               layoutType={threeDLayout}
               sortMode={threeDSortMode}
               centerNodeId={threeDCenterNode}
+              nodePositioningEnabled={nodePositioningEnabled}
             />
           </div>
         </div>
@@ -507,7 +533,23 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
         // For non-3D visualizations, use the NetworkVisualization component without a key
         // This prevents remounting when switching between network, radial, and arc types
         <NetworkVisualization
-          {...commonVisualizationProps}
+          nodeData={nodeData}
+          linkData={linkData}
+          onCreditsClick={onCreditsClick}
+          fixNodesOnDrag={fixNodesOnDrag}
+          visualizationType={visualizationType}
+          onVisualizationTypeChange={handleVisualizationTypeChange}
+          colorTheme={colorTheme}
+          nodeSize={nodeSize}
+          linkColor={linkColor}
+          backgroundColor={backgroundColor}
+          backgroundOpacity={backgroundOpacity}
+          customNodeColors={customNodeColors}
+          dynamicColorThemes={dynamicColorThemes}
+          tooltipDetail={tooltipDetail}
+          tooltipTrigger={tooltipTrigger}
+          onTooltipDetailChange={handleTooltipDetailChange}
+          onTooltipTriggerChange={handleTooltipTriggerChange}
         />
       )}
     </div>
