@@ -4,7 +4,7 @@ import { NodeData, LinkData } from '@/types/types';
 import * as d3 from 'd3';
 
 // Define VisualizationType to include '3d'
-export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav';
+export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav' | 'routeFinder';
 
 // Define 3D layout types
 export type ThreeDLayoutType = '3d-sphere' | '3d-network';

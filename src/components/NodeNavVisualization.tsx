@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable prefer-const */
 import React, { useRef, useState, useEffect } from 'react';
 import * as THREE from 'three';

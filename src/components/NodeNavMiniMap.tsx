@@ -478,6 +478,7 @@ const NodeNavMiniMap: React.FC<NodeNavMiniMapProps> = ({
     } catch (error) {
       console.error("Error initializing mini-map:", error);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeData, linkData, colorTheme, customNodeColors, dynamicColorThemes, isInitialized, onNodeSelect, visitedNodes, currentNodeId, hoveredNodeId, isDragging]);
   
   // Update on current node change and ensure minimap is working

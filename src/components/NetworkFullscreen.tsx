@@ -10,6 +10,7 @@ import ZoomControls from "./ZoomControls";
 import * as d3 from 'd3';
 import { VisualizationType } from './NetworkSidebar';
 import './visualization.css'; // Import the CSS
+import { TooltipDetail, TooltipTrigger } from "./TooltipSettings";
 
 // Helper function to generate dynamic color themes
 const generateDynamicColorThemes = (categories: string[], colorPalette: string[]) => {
@@ -73,7 +74,8 @@ const NetworkFullscreen: React.FC = () => {
     nodeControls: true,
     colorControls: false,
     networkInfo: false,
-    visualizationType: true
+    visualizationType: true,
+    tooltipSettings: false
   });
   const [nodeGroup, setNodeGroup] = useState('all');
   const [colorTheme, setColorTheme] = useState('default');
@@ -502,8 +504,11 @@ const NetworkFullscreen: React.FC = () => {
             onTitleChange={handleTitleChange}
             onToggleSidebar={toggleSidebar}
             onToggleFixNodes={handleToggleFixNodes}
-            onVisualizationTypeChange={handleVisualizationTypeChange}
-          />
+            onVisualizationTypeChange={handleVisualizationTypeChange} tooltipDetail={"simple"} tooltipTrigger={"click"} onTooltipDetailChange={function (detail: TooltipDetail): void {
+              throw new Error("Function not implemented.");
+            } } onTooltipTriggerChange={function (trigger: TooltipTrigger): void {
+              throw new Error("Function not implemented.");
+            } }          />
         </div>
 
         {/* Main visualization area */}

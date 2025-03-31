@@ -5,6 +5,7 @@ import ThreeDVisualization from './ThreeDVisualization';
 import { useToast } from "@/components/ui/use-toast";
 import NetworkSidebar from './NetworkSidebar';
 import { TooltipDetail, TooltipTrigger } from './TooltipSettings';
+import RouteFinderVisualization from './RouteFinderVisualization';
 
 interface VisualizationCoordinatorProps {
   nodeData: Node[];
@@ -64,8 +65,8 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     tooltipSettings: true
   });
   const [repulsionForce, setRepulsionForce] = useState(100);
-const [threeDLinkStrength, setThreeDLinkStrength] = useState(0.5);
-const [gravity, setGravity] = useState(0.1);
+  const [threeDLinkStrength, setThreeDLinkStrength] = useState(0.5);
+  const [gravity, setGravity] = useState(0.1);
 
   // Initialize dynamic color themes with categories from nodes
   useEffect(() => {
@@ -200,33 +201,32 @@ const [gravity, setGravity] = useState(0.1);
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   };
 
+  // Handler for repulsion force change
+  const handleRepulsionForceChange = (force: number) => {
+    setRepulsionForce(force);
+    toast({
+      title: "Repulsion Force Updated",
+      description: `Force strength set to ${force}`
+    });
+  };
 
-// Handler for repulsion force change
-const handleRepulsionForceChange = (force: number) => {
-  setRepulsionForce(force);
-  toast({
-    title: "Repulsion Force Updated",
-    description: `Force strength set to ${force}`
-  });
-};
+  // Handler for 3D link strength change
+  const handleThreeDLinkStrengthChange = (strength: number) => {
+    setThreeDLinkStrength(strength);
+    toast({
+      title: "Link Strength Updated",
+      description: `Link strength set to ${strength.toFixed(2)}`
+    });
+  };
 
-// Handler for 3D link strength change
-const handleThreeDLinkStrengthChange = (strength: number) => {
-  setThreeDLinkStrength(strength);
-  toast({
-    title: "Link Strength Updated",
-    description: `Link strength set to ${strength.toFixed(2)}`
-  });
-};
-
-// Handler for gravity change
-const handleGravityChange = (value: number) => {
-  setGravity(value);
-  toast({
-    title: "Gravity Updated",
-    description: `Gravity force set to ${value.toFixed(2)}`
-  });
-};
+  // Handler for gravity change
+  const handleGravityChange = (value: number) => {
+    setGravity(value);
+    toast({
+      title: "Gravity Updated",
+      description: `Gravity force set to ${value.toFixed(2)}`
+    });
+  };
 
   // Handler for toggling node fixing behavior
   const handleToggleFixNodes = () => {
@@ -440,9 +440,29 @@ const handleGravityChange = (value: number) => {
     });
   };
 
+  // Updated return statement with proper conditional rendering for each visualization type
   return (
     <div ref={containerRef} className="w-full h-[calc(100vh-14rem)] rounded-lg border border-border overflow-hidden bg-card flex">
-      {visualizationType === '3d' ? (
+      {/* Route Finder Visualization */}
+      {visualizationType === 'routeFinder' && (
+        <RouteFinderVisualization
+          nodeData={nodeData}
+          linkData={linkData}
+          onCreditsClick={onCreditsClick}
+          colorTheme={colorTheme}
+          nodeSize={nodeSize}
+          linkColor={linkColor}
+          backgroundColor={backgroundColor}
+          backgroundOpacity={backgroundOpacity}
+          customNodeColors={customNodeColors}
+          dynamicColorThemes={dynamicColorThemes}
+          visualizationType={visualizationType}
+          onVisualizationTypeChange={handleVisualizationTypeChange}
+        />
+      )}
+
+      {/* 3D Visualization */}
+      {visualizationType === '3d' && (
         <div className="w-full flex">
           {/* Sidebar for 3D visualization */}
           <NetworkSidebar
@@ -529,9 +549,10 @@ const handleGravityChange = (value: number) => {
             />
           </div>
         </div>
-      ) : (
-        // For non-3D visualizations, use the NetworkVisualization component without a key
-        // This prevents remounting when switching between network, radial, and arc types
+      )}
+
+      {/* Other Visualizations (network, arc, rad360, arcLineal, nodeNav) */}
+      {visualizationType !== '3d' && visualizationType !== 'routeFinder' && (
         <NetworkVisualization
           nodeData={nodeData}
           linkData={linkData}

@@ -27,7 +27,7 @@ import { getNodeColor } from '@/utils/colorThemes';
 import TooltipSettings, { TooltipDetail, TooltipTrigger } from './TooltipSettings';
 
 // Update visualization type to include 3D
-export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav';
+export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav' | 'routeFinder';
 
 interface ColorTheme {
   [key: string]: string;
@@ -374,6 +374,20 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   <Target className="w-4 h-4 mr-2" />
   <span>Node Navigator</span>
 </button>
+
+{/* Route Finder button */}
+<button
+  className={`flex items-center px-3 py-2 rounded-md ${
+    visualizationType === 'routeFinder' 
+      ? 'bg-blue-600 text-white' 
+      : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+  }`}
+  onClick={() => onVisualizationTypeChange('routeFinder')}
+>
+  <Target className="w-4 h-4 mr-2" />
+  <span>Route Finder</span>
+</button>
+
     </div>
     
     <div className="mt-3 text-xs text-gray-400">
