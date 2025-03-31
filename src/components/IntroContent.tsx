@@ -22,24 +22,21 @@ const IntroContent: React.FC = () => {
         <Card className="overflow-hidden border-none shadow-lg hover:shadow-xl transition-shadow duration-300">
           <div className="h-2 bg-primary"></div>
           <CardContent className="p-6">
-            <h3 className="text-xl font-semibold mb-3">Project Overview</h3>
-            <p className="text-muted-foreground">
-              This project demonstrates the power of network visualization for understanding complex relationships in data. 
-              Using D3.js, we transform CSV data into interactive graph networks that reveal patterns and connections
-              that might otherwise remain hidden in raw data.
-            </p>
+          <h3 className="text-xl font-semibold mb-3">Project Overview</h3>
+<p className="text-muted-foreground">
+  This project explores the potential of dynamic graph visualizations to reveal hidden patterns in complex data. Using D3.js and custom 3D rendering modes, we integrate features like path finding, node navigation, and immersive layouts to provide multiple perspectives on networked information.
+</p>
+
           </CardContent>
         </Card>
 
         <Card className="overflow-hidden border-none shadow-lg hover:shadow-xl transition-shadow duration-300">
           <div className="h-2 bg-primary"></div>
           <CardContent className="p-6">
-            <h3 className="text-xl font-semibold mb-3">University Research</h3>
-            <p className="text-muted-foreground">
-              Developed at Universidad Nacional Autónoma as part of our data visualization course,
-              this project applies graph theory and information design principles to create
-              meaningful representations of networked data structures.
-            </p>
+          <h3 className="text-xl font-semibold mb-3">Graph Theory & Visual Storytelling</h3>
+<p className="text-muted-foreground">
+  Developed at CENTRO | Diseño, Cine y Televisión by Omar Galdámez as part of the Graph Networks and Creativity course. Created with Generation 32, mainly Marketing and Advertising students, the project uses student-generated datasets to explore storytelling through graph theory and data visualization.
+</p>
           </CardContent>
         </Card>
       </div>
