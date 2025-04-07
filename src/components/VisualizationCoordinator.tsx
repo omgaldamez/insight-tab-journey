@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Node, Link, VisualizationType } from '@/types/networkTypes';
 import NetworkVisualization from './NetworkVisualization';
 import ThreeDVisualization from './ThreeDVisualization';
+import ChordVisualization from './ChordVisualization'; // Import the new component
 import { useToast } from "@/components/ui/use-toast";
 import NetworkSidebar from './NetworkSidebar';
 import { TooltipDetail, TooltipTrigger } from './TooltipSettings';
 import RouteFinderVisualization from './RouteFinderVisualization';
+import GroupableNetworkVisualization from './GroupableNetworkVisualization';
 
 interface VisualizationCoordinatorProps {
   nodeData: Node[];
@@ -245,24 +247,54 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     
     toast({
       title: `Switched to ${type} visualization`,
-      description: type === '3d' 
-        ? "Now viewing the network as a 3D graph. Click and drag to rotate, use scroll to zoom."
-        : `Now viewing the network as a ${type} graph.`
+      description: getVisualizationDescription(type)
     });
     
-    // If switching to 3D, ensure 3D controls are expanded
+    // Adjust expanded sections based on visualization type
     if (type === '3d') {
       setExpandedSections(prev => ({
         ...prev,
         threeDControls: true,
-        networkControls: false, // Hide network controls when in 3D
+        networkControls: false,
+      }));
+    } else if (type === 'chord') {
+      setExpandedSections(prev => ({
+        ...prev,
+        networkControls: false,
+        colorControls: true,
       }));
     } else {
       setExpandedSections(prev => ({
         ...prev,
         networkControls: true,
-        threeDControls: false, // Hide 3D controls when not in 3D
+        threeDControls: false,
       }));
+    }
+  };
+
+  // Helper function to get visualization descriptions
+  const getVisualizationDescription = (type: VisualizationType): string => {
+    switch (type) {
+      case '3d':
+        return "Now viewing the network as a 3D graph. Click and drag to rotate, use scroll to zoom.";
+      case 'chord':
+        return "Now viewing category relationships as a chord diagram. Hover over arcs and chords for details.";
+      case 'network':
+        return "Now viewing the network as a force-directed graph.";
+      case 'arc':
+        return "Now viewing the network as an arc diagram.";
+      case 'rad360':
+        return "Now viewing the network as a radial layout.";
+      case 'arcLineal':
+        return "Now viewing the network as an arc lineal diagram.";
+      case 'nodeNav':
+        return "Now using node navigator visualization.";
+      case 'routeFinder':
+        return "Now using route finder visualization.";
+      case 'groupable':
+        return "Now using groupable network visualization.";
+      default:
+        return `Now viewing the network as a ${type} graph.`;
     }
   };
   
@@ -461,6 +493,28 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
         />
       )}
 
+      {/* Chord Diagram Visualization */}
+      {visualizationType === 'chord' && (
+        <ChordVisualization
+          nodeData={nodeData}
+          linkData={linkData}
+          onCreditsClick={onCreditsClick}
+          colorTheme={colorTheme}
+          nodeSize={nodeSize}
+          linkColor={linkColor}
+          backgroundColor={backgroundColor}
+          backgroundOpacity={backgroundOpacity}
+          customNodeColors={customNodeColors}
+          dynamicColorThemes={dynamicColorThemes}
+          visualizationType={visualizationType}
+          onVisualizationTypeChange={handleVisualizationTypeChange}
+          tooltipDetail={tooltipDetail}
+          tooltipTrigger={tooltipTrigger}
+          onTooltipDetailChange={handleTooltipDetailChange}
+          onTooltipTriggerChange={handleTooltipTriggerChange}
+        />
+      )}
+
       {/* 3D Visualization */}
       {visualizationType === '3d' && (
         <div className="w-full flex">
@@ -551,8 +605,38 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
         </div>
       )}
 
+      {/* Groupable Network Visualization */}
+      {visualizationType === 'groupable' && (
+        <div className="w-full flex">
+          <div className="flex-1">
+            <GroupableNetworkVisualization
+              nodeData={nodeData}
+              linkData={linkData}
+              onCreditsClick={onCreditsClick}
+              fixNodesOnDrag={fixNodesOnDrag}
+              visualizationType={visualizationType}
+              onVisualizationTypeChange={handleVisualizationTypeChange}
+              colorTheme={colorTheme}
+              nodeSize={nodeSize}
+              linkColor={linkColor}
+              backgroundColor={backgroundColor}
+              backgroundOpacity={backgroundOpacity}
+              customNodeColors={customNodeColors}
+              dynamicColorThemes={dynamicColorThemes}
+              tooltipDetail={tooltipDetail}
+              tooltipTrigger={tooltipTrigger}
+              onTooltipDetailChange={handleTooltipDetailChange}
+              onTooltipTriggerChange={handleTooltipTriggerChange}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Other Visualizations (network, arc, rad360, arcLineal, nodeNav) */}
-      {visualizationType !== '3d' && visualizationType !== 'routeFinder' && (
+      {visualizationType !== '3d' && 
+        visualizationType !== 'routeFinder' && 
+        visualizationType !== 'groupable' && 
+        visualizationType !== 'chord' && (
         <NetworkVisualization
           nodeData={nodeData}
           linkData={linkData}

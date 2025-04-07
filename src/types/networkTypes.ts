@@ -1,10 +1,10 @@
-// Updated networkTypes.ts to include 3D layout types
+// Updated networkTypes.ts to include 3D layout types and chord type
 
 import { NodeData, LinkData } from '@/types/types';
 import * as d3 from 'd3';
 
-// Define VisualizationType to include '3d'
-export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav' | 'routeFinder';
+// Define VisualizationType to include 'chord'
+export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav' | 'routeFinder' | 'groupable' | 'chord';
 
 // Define 3D layout types
 export type ThreeDLayoutType = '3d-sphere' | '3d-network';
@@ -14,6 +14,22 @@ export interface Node extends d3.SimulationNodeDatum {
   id: string;
   category: string;
   customColor?: string | null;
+}
+
+// For nodes in a group
+export interface GroupedNode extends Node {
+  groupId: string;
+}
+
+// Define a node group structure
+export interface NodeGroup {
+  id: string;
+  nodes: Node[];
+  category: string;
+  x?: number;
+  y?: number;
+  fx?: number | null;
+  fy?: number | null;
 }
 
 // Define link data structure for D3
@@ -105,6 +121,8 @@ export interface SectionsState {
   networkInfo: boolean;
   visualizationType: boolean;
   threeDControls?: boolean;
+  groupingControls?: boolean; // Added for groupable network
+  tooltipSettings: boolean;
 }
 
 // 3D visualization props

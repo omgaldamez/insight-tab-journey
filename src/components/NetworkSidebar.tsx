@@ -19,7 +19,8 @@ import {
   Network, // Added Network icon for the 3D network layout
   Globe, 
   ZoomOut,
-  Target 
+  Target, 
+  Users
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import NetworkColorControls from './NetworkColorControls';
@@ -27,7 +28,8 @@ import { getNodeColor } from '@/utils/colorThemes';
 import TooltipSettings, { TooltipDetail, TooltipTrigger } from './TooltipSettings';
 
 // Update visualization type to include 3D
-export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' | 'arcLineal' | 'nodeNav' | 'routeFinder';
+export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' |
+'arcLineal' | 'nodeNav' | 'routeFinder' | 'groupable' | 'chord';
 
 interface ColorTheme {
   [key: string]: string;
@@ -387,6 +389,38 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   <Target className="w-4 h-4 mr-2" />
   <span>Route Finder</span>
 </button>
+
+{/* Groupable Network button */}
+<button
+  className={`flex items-center px-3 py-2 rounded-md ${
+    visualizationType === 'groupable' 
+      ? 'bg-blue-600 text-white' 
+      : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+  }`}
+  onClick={() => onVisualizationTypeChange('groupable')}
+>
+  <Users className="w-4 h-4 mr-2" />
+  <span>Groupable Network</span>
+</button>
+
+
+
+        {/* Chord Diagram button */}
+        <button
+          className={`flex items-center px-3 py-2 rounded-md ${
+            visualizationType === 'chord' 
+              ? 'bg-blue-600 text-white' 
+              : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+          }`}
+          onClick={() => onVisualizationTypeChange('chord')}
+        >
+          <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+            <path d="M8 16l8-8M12 12l4-4M8 8l4 4"/>
+          </svg>
+          <span>Chord Diagram</span>
+        </button>
+
 
     </div>
     
