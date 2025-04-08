@@ -45,6 +45,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import NetworkSidebar from './NetworkSidebar';
+import BaseVisualization from './BaseVisualization';
 
 interface NodeGroup {
   id: string;
@@ -147,6 +149,41 @@ const GroupableNetworkVisualization: React.FC<GroupableNetworkVisualizationProps
     visible: boolean
   }>({ startX: 0, startY: 0, width: 0, height: 0, visible: false });
   const [shouldCenterView, setShouldCenterView] = useState(true);
+
+  
+// Sidebar component state declarations
+const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+const [activeColorTab, setActiveColorTab] = useState('presets');
+const [expandedSections, setExpandedSections] = useState({
+  networkControls: true,
+  nodeControls: true,
+  colorControls: false,
+  networkInfo: false,
+  visualizationType: true,
+  threeDControls: false,
+  tooltipSettings: true,
+  groupingControls: true
+});
+
+
+const toggleSidebar = () => {
+  setIsSidebarCollapsed(!isSidebarCollapsed);
+};
+
+const handleTitleChange = (title: string) => {
+  setNetworkTitle(title);
+};
+
+const handleColorTabChange = (tab: string) => {
+  setActiveColorTab(tab);
+};
+
+const toggleSection = (section: string) => {
+  setExpandedSections(prev => ({
+    ...prev,
+    [section]: !prev[section as keyof typeof prev]
+  }));
+};
 
   // References to track values
   const visualizationInitialized = useRef(false);

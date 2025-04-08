@@ -168,27 +168,26 @@ const useFileExport = ({
       bgRect.setAttribute('fill', backgroundColor);
       bgRect.setAttribute('opacity', backgroundOpacity.toString());
       
-      // Insert background at beginning
-      if (transformGroup) {
-        transformGroup.insertBefore(bgRect, transformGroup.firstChild);
-      } else {
-        svgCopy.insertBefore(bgRect, svgCopy.firstChild);
-      }
-      
-      // Ensure all nodes and links have explicit visibility and opacity
-      svgCopy.querySelectorAll('.node, .link, .node-label').forEach(el => {
-        el.setAttribute('opacity', '1');
-        el.setAttribute('visibility', 'visible');
-      });
-      
-      // Add explicit styling
-      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-      style.textContent = `
-        .node { stroke-width: 1; stroke: ${nodeStrokeColor}; }
-        .link { stroke-width: 1.5; stroke: ${linkColor}; }
-        .node-label { font-family: sans-serif; text-anchor: middle; fill: ${textColor}; }
-      `;
-      svgCopy.insertBefore(style, svgCopy.firstChild);
+// Insert background at beginning - IMPROVED VERSION
+if (svgCopy.firstChild) {
+  svgCopy.insertBefore(bgRect, svgCopy.firstChild);
+} else {
+  svgCopy.appendChild(bgRect);
+}
+
+// Also add these CSS styles to ensure the background is preserved in export
+const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+style.textContent = `
+  svg { background-color: ${backgroundColor}; }
+  rect.background { fill: ${backgroundColor}; opacity: ${backgroundOpacity}; }
+  .node { stroke-width: 1.5; stroke: ${nodeStrokeColor}; }
+  .link { stroke-width: 1.5; stroke: ${linkColor}; }
+  .node-label { font-family: sans-serif; text-anchor: middle; fill: ${textColor}; }
+`;
+bgRect.setAttribute('class', 'background');
+
+// Insert the style element
+svgCopy.insertBefore(style, svgCopy.firstChild);
       
       // Convert SVG to string
       const serializer = new XMLSerializer();

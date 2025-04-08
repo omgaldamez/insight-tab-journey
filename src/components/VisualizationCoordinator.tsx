@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Node, Link, VisualizationType } from '@/types/networkTypes';
 import NetworkVisualization from './NetworkVisualization';
 import ThreeDVisualization from './ThreeDVisualization';
-import ChordVisualization from './ChordVisualization'; // Import the new component
+import ChordVisualization from './ChordVisualization';
 import { useToast } from "@/components/ui/use-toast";
 import NetworkSidebar from './NetworkSidebar';
 import { TooltipDetail, TooltipTrigger } from './TooltipSettings';
@@ -26,6 +26,9 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
   // Basic visualization settings
   const [fixNodesOnDrag, setFixNodesOnDrag] = useState(true);
   const [visualizationType, setVisualizationType] = useState<VisualizationType>('network');
+  
+  // Add this line to ensure all visualizations share the same sidebar collapsed state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   // 3D specific settings
   const [threeDLayout, setThreeDLayout] = useState<'3d-sphere' | '3d-network'>('3d-sphere');
@@ -69,6 +72,9 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
   const [repulsionForce, setRepulsionForce] = useState(100);
   const [threeDLinkStrength, setThreeDLinkStrength] = useState(0.5);
   const [gravity, setGravity] = useState(0.1);
+
+  // Add consistent network title state across all visualizations
+  const [networkTitle, setNetworkTitle] = useState("Network Visualization");
 
   // Initialize dynamic color themes with categories from nodes
   useEffect(() => {
@@ -132,6 +138,24 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
       setDynamicColorThemes(themes);
     }
   }, [nodeData, dynamicColorThemes]);
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+    // You might want to add a toast notification here
+    toast({
+      title: isSidebarCollapsed ? "Sidebar Expanded" : "Sidebar Collapsed",
+      description: isSidebarCollapsed ? "Showing detailed controls" : "Hiding sidebar for more view space"
+    });
+  };
+
+  // Handle title change - this should be consistent across visualizations
+  const handleTitleChange = (newTitle: string) => {
+    setNetworkTitle(newTitle);
+    toast({
+      title: "Title Updated",
+      description: `Visualization title changed to "${newTitle}"`
+    });
+  };
 
   // Helper for color generation
   const hexToHSL = (hex: string) => {
@@ -472,26 +496,96 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
     });
   };
 
+  function handleColorTabChange(tab: string): void {
+    throw new Error('Function not implemented.');
+  }
+
+  function setActiveColorTab(tab: string): void {
+    throw new Error('Function not implemented.');
+  }
+
+  function handleResetZoom(): void {
+    throw new Error('Function not implemented.');
+  }
+
   // Updated return statement with proper conditional rendering for each visualization type
   return (
     <div ref={containerRef} className="w-full h-[calc(100vh-14rem)] rounded-lg border border-border overflow-hidden bg-card flex">
-      {/* Route Finder Visualization */}
-      {visualizationType === 'routeFinder' && (
-        <RouteFinderVisualization
-          nodeData={nodeData}
-          linkData={linkData}
-          onCreditsClick={onCreditsClick}
-          colorTheme={colorTheme}
-          nodeSize={nodeSize}
-          linkColor={linkColor}
-          backgroundColor={backgroundColor}
-          backgroundOpacity={backgroundOpacity}
-          customNodeColors={customNodeColors}
-          dynamicColorThemes={dynamicColorThemes}
-          visualizationType={visualizationType}
-          onVisualizationTypeChange={handleVisualizationTypeChange}
-        />
-      )}
+{/* Route Finder Visualization */}
+{visualizationType === 'routeFinder' && (
+  <div className="w-full flex">
+    {/* Add NetworkSidebar component here */}
+    <NetworkSidebar
+      linkDistance={75}
+      linkStrength={1.0}
+      nodeCharge={-300}
+      nodeSize={nodeSize}
+      nodeGroup="all"
+      colorTheme={colorTheme}
+      activeColorTab="presets"
+      expandedSections={expandedSections}
+      selectedNode={null}
+      selectedNodeConnections={{ to: [], from: [] }}
+      nodeCounts={{ total: nodeData.length }}
+      colorThemes={dynamicColorThemes[colorTheme] || {}}
+      nodes={nodeData}
+      customNodeColors={customNodeColors}
+      backgroundColor={backgroundColor}
+      textColor="#ffffff"
+      linkColor={linkColor}
+      nodeStrokeColor="#000000"
+      backgroundOpacity={backgroundOpacity}
+      title="Route Finder"
+      isCollapsed={isSidebarCollapsed}
+      uniqueCategories={Array.from(new Set(nodeData.map(node => node.category)))}
+      fixNodesOnDrag={fixNodesOnDrag}
+      visualizationType={visualizationType}
+      tooltipDetail={tooltipDetail}
+      tooltipTrigger={tooltipTrigger}
+      onParameterChange={onParameterChange}
+      onNodeGroupChange={() => {}}
+      onColorThemeChange={setColorTheme}
+      onApplyGroupColors={() => {}}
+      onApplyIndividualColor={onApplyIndividualColor}
+      onResetIndividualColor={onResetIndividualColor}
+      onApplyBackgroundColors={onApplyBackgroundColors}
+      onResetBackgroundColors={onResetBackgroundColors}
+      onResetSimulation={() => {}}
+      onDownloadData={() => {}}
+      onDownloadGraph={() => {}}
+      onResetGraph={onResetGraph}
+      onToggleSection={handleToggleSection}
+      onColorTabChange={setActiveColorTab}
+      onTitleChange={handleTitleChange}
+      onToggleSidebar={handleToggleSidebar}
+      onToggleFixNodes={handleToggleFixNodes}
+      onVisualizationTypeChange={handleVisualizationTypeChange}
+      onTooltipDetailChange={handleTooltipDetailChange}
+      onTooltipTriggerChange={handleTooltipTriggerChange}
+      onZoomToFit={() => {}}
+      onZoomIn={handleZoomIn}
+      onZoomOut={handleZoomOut}
+      onResetView={handleResetZoom}
+    />
+
+    <div className="flex-1">
+      <RouteFinderVisualization
+        nodeData={nodeData}
+        linkData={linkData}
+        onCreditsClick={onCreditsClick}
+        colorTheme={colorTheme}
+        nodeSize={nodeSize}
+        linkColor={linkColor}
+        backgroundColor={backgroundColor}
+        backgroundOpacity={backgroundOpacity}
+        customNodeColors={customNodeColors}
+        dynamicColorThemes={dynamicColorThemes}
+        visualizationType={visualizationType}
+        onVisualizationTypeChange={handleVisualizationTypeChange}
+      />
+    </div>
+  </div>
+)}
 
       {/* Chord Diagram Visualization */}
       {visualizationType === 'chord' && (
@@ -540,7 +634,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             nodeStrokeColor="#000000"
             backgroundOpacity={backgroundOpacity}
             title="3D Network Visualization"
-            isCollapsed={false}
+            isCollapsed={isSidebarCollapsed}
             uniqueCategories={Array.from(new Set(nodeData.map(node => node.category)))}
             fixNodesOnDrag={fixNodesOnDrag}
             visualizationType={visualizationType}
@@ -567,7 +661,7 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
             onToggleSection={handleToggleSection}
             onColorTabChange={() => {}}
             onTitleChange={() => {}}
-            onToggleSidebar={() => {}}
+            onToggleSidebar={handleToggleSidebar}
             onToggleFixNodes={handleToggleFixNodes}
             onVisualizationTypeChange={handleVisualizationTypeChange}
             onTooltipDetailChange={handleTooltipDetailChange}
@@ -605,32 +699,86 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
         </div>
       )}
 
-      {/* Groupable Network Visualization */}
-      {visualizationType === 'groupable' && (
-        <div className="w-full flex">
-          <div className="flex-1">
-            <GroupableNetworkVisualization
-              nodeData={nodeData}
-              linkData={linkData}
-              onCreditsClick={onCreditsClick}
-              fixNodesOnDrag={fixNodesOnDrag}
-              visualizationType={visualizationType}
-              onVisualizationTypeChange={handleVisualizationTypeChange}
-              colorTheme={colorTheme}
-              nodeSize={nodeSize}
-              linkColor={linkColor}
-              backgroundColor={backgroundColor}
-              backgroundOpacity={backgroundOpacity}
-              customNodeColors={customNodeColors}
-              dynamicColorThemes={dynamicColorThemes}
-              tooltipDetail={tooltipDetail}
-              tooltipTrigger={tooltipTrigger}
-              onTooltipDetailChange={handleTooltipDetailChange}
-              onTooltipTriggerChange={handleTooltipTriggerChange}
-            />
-          </div>
-        </div>
-      )}
+{/* Groupable Network Visualization */}
+{visualizationType === 'groupable' && (
+  <div className="w-full flex">
+    {/* Add NetworkSidebar component here */}
+    <NetworkSidebar
+      linkDistance={75}
+      linkStrength={1.0}
+      nodeCharge={-300}
+      nodeSize={nodeSize}
+      nodeGroup="all"
+      colorTheme={colorTheme}
+      activeColorTab="presets"
+      expandedSections={expandedSections}
+      selectedNode={null}
+      selectedNodeConnections={{ to: [], from: [] }}
+      nodeCounts={{ total: nodeData.length }}
+      colorThemes={dynamicColorThemes[colorTheme] || {}}
+      nodes={nodeData}
+      customNodeColors={customNodeColors}
+      backgroundColor={backgroundColor}
+      textColor="#ffffff"
+      linkColor={linkColor}
+      nodeStrokeColor="#000000"
+      backgroundOpacity={backgroundOpacity}
+      title="Groupable Network"
+      isCollapsed={isSidebarCollapsed}
+      uniqueCategories={Array.from(new Set(nodeData.map(node => node.category)))}
+      fixNodesOnDrag={fixNodesOnDrag}
+      visualizationType={visualizationType}
+      tooltipDetail={tooltipDetail}
+      tooltipTrigger={tooltipTrigger}
+      onParameterChange={onParameterChange}
+      onNodeGroupChange={() => {}}
+      onColorThemeChange={setColorTheme}
+      onApplyGroupColors={() => {}}
+      onApplyIndividualColor={onApplyIndividualColor}
+      onResetIndividualColor={onResetIndividualColor}
+      onApplyBackgroundColors={onApplyBackgroundColors}
+      onResetBackgroundColors={onResetBackgroundColors}
+      onResetSimulation={() => {}}
+      onDownloadData={() => {}}
+      onDownloadGraph={() => {}}
+      onResetGraph={onResetGraph}
+      onToggleSection={handleToggleSection}
+      onColorTabChange={handleColorTabChange}
+      onTitleChange={handleTitleChange}
+      onToggleSidebar={handleToggleSidebar}
+      onToggleFixNodes={handleToggleFixNodes}
+      onVisualizationTypeChange={handleVisualizationTypeChange}
+      onTooltipDetailChange={handleTooltipDetailChange}
+      onTooltipTriggerChange={handleTooltipTriggerChange}
+      onZoomToFit={() => {}}
+      onZoomIn={handleZoomIn}
+      onZoomOut={handleZoomOut}
+      onResetView={handleResetView}
+    />
+
+    <div className="flex-1">
+      <GroupableNetworkVisualization
+        nodeData={nodeData}
+        linkData={linkData}
+        onCreditsClick={onCreditsClick}
+        fixNodesOnDrag={fixNodesOnDrag}
+        visualizationType={visualizationType}
+        onVisualizationTypeChange={handleVisualizationTypeChange}
+        colorTheme={colorTheme}
+        nodeSize={nodeSize}
+        linkColor={linkColor}
+        backgroundColor={backgroundColor}
+        backgroundOpacity={backgroundOpacity}
+        customNodeColors={customNodeColors}
+        dynamicColorThemes={dynamicColorThemes}
+        tooltipDetail={tooltipDetail}
+        tooltipTrigger={tooltipTrigger}
+        onTooltipDetailChange={handleTooltipDetailChange}
+        onTooltipTriggerChange={handleTooltipTriggerChange}
+      />
+    </div>
+  </div>
+)}
 
       {/* Other Visualizations (network, arc, rad360, arcLineal, nodeNav) */}
       {visualizationType !== '3d' && 

@@ -38,6 +38,8 @@ import {
   getNodeJsonRepresentation
 } from './TooltipUtils';
 import NodeNavVisualization from './NodeNavVisualization';
+import FullscreenButton from './FullscreenButton';
+import useFullscreenStyles from '@/hooks/useFullscreenStyles';
 
 
 // Define interfaces for handling both raw data and processed nodes/links
@@ -188,6 +190,9 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     isReady: !isLoading && processedData.nodes.length > 0,
     nodesDraggable: true  // Allow dragging nodes
   });
+
+  useFullscreenStyles();
+
 
   // Setup the file export hook
   const { downloadData, downloadGraph } = useFileExport({
@@ -2052,48 +2057,51 @@ const handleExportNodeData = (format: 'text' | 'json') => {
         <div className="w-full h-full">
           {/* Network Graph Container - fully unmounted when not active */}
           {isNetwork && (
-            <div className="w-full h-full">
-              <div 
-                ref={containerRef} 
-                className="w-full h-full relative" 
-                id="network-visualization-container" 
-                data-fix-nodes={localFixNodesOnDrag ? 'true' : 'false'}
-                style={{
-                  backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
-                  touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
-                }}
-              >
-                <svg 
-                  ref={svgRef} 
-                  className="w-full h-full"
-                  style={{ pointerEvents: "all" }} // Explicit pointer events to fix zoom
-                />
-                
-                {/* File Buttons */}
-                <FileButtons 
-                  onDownloadData={downloadData}
-                  onDownloadGraph={downloadGraph}
-                  onResetSelection={handleResetSelection}
-                  nodeData={nodeData.map(node => ({
-                    id: node.id || '',
-                    name: node.name || '',
-                    category: node.category || '',
-                    type: node.type || ''
-                  }))}
-                  linkData={linkData.map(link => ({
-                    ...link,
-                    source: typeof link.source === 'object' ? String(link.source.id) : String(link.source),
-                    target: typeof link.target === 'object' ? String(link.target.id) : String(link.target),
-                  }))}
-                />
-                
-                {/* Zoom Controls */}
-                <ZoomControls
-                  onZoomIn={zoomIn}
-                  onZoomOut={zoomOut}
-                  onReset={zoomToFit}
-                  isZoomInitialized={isZoomInitialized}
-                />
+  <div className="w-full h-full">
+    <div 
+      ref={containerRef} 
+      className="w-full h-full relative" 
+      id="network-visualization-container" 
+      data-fix-nodes={localFixNodesOnDrag ? 'true' : 'false'}
+      style={{
+        backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
+        touchAction: "none" // Important to prevent zoom/pan conflicts with touch events
+      }}
+    >
+      <svg 
+        ref={svgRef} 
+        className="w-full h-full"
+        style={{ pointerEvents: "all" }} // Explicit pointer events to fix zoom
+      />
+      
+      {/* Add Fullscreen Button */}
+      <FullscreenButton containerRef={containerRef} />
+      
+      {/* File Buttons - already present but uses modified component */}
+      <FileButtons 
+        onDownloadData={downloadData}
+        onDownloadGraph={downloadGraph}
+        onResetSelection={handleResetSelection}
+        nodeData={nodeData.map(node => ({
+          id: node.id || '',
+          name: node.name || '',
+          category: node.category || '',
+          type: node.type || ''
+        }))}
+        linkData={linkData.map(link => ({
+          ...link,
+          source: typeof link.source === 'object' ? String(link.source.id) : String(link.source),
+          target: typeof link.target === 'object' ? String(link.target.id) : String(link.target),
+        }))}
+      />
+      
+      {/* Zoom Controls */}
+      <ZoomControls
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onReset={zoomToFit}
+        isZoomInitialized={isZoomInitialized}
+      />
                 
                 {/* Tooltip */}
                 <div 

@@ -86,7 +86,7 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
   customNodeColorsState,
   dynamicColorThemesState,
   onZoomToFit,
-  renderSidebar = false // Default to false, only render sidebar if explicitly set to true
+  renderSidebar = true // Changed default to true so sidebar is always shown by default
 }) => {
   // If loading, show loading indicator
   if (isLoading) {
@@ -112,10 +112,10 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
     console.log('Tooltip trigger change not implemented', trigger);
   };
 
-  // Otherwise, show visualization with or without sidebar based on renderSidebar prop
+  // Otherwise, show visualization with sidebar
   return (
     <div className="flex w-full h-full">
-      {/* FIXED CONDITION: Always render sidebar if renderSidebar is true */}
+      {/* Always render sidebar unless explicitly disabled */}
       {renderSidebar && (
         <NetworkSidebar
           linkDistance={sidebar.linkDistance}
@@ -179,4 +179,3 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
 };
 
 export default BaseVisualization;
-

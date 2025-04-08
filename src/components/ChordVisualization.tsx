@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 import { Node, Link, VisualizationType } from '@/types/networkTypes';
 import { useToast } from "@/components/ui/use-toast";
@@ -85,6 +85,7 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
   const [detailedNodeData, setDetailedNodeData] = useState<DetailedNode[]>([]);
   const [detailedMatrix, setDetailedMatrix] = useState<number[][]>([]);
   const [nodesByCategory, setNodesByCategory] = useState<Record<string, Node[]>>({});
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // Add state for sidebar
 
   // Use the color hooks
   const colors = useNetworkColors({
@@ -657,6 +658,11 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     });
   };
 
+  // Toggle sidebar state handler - Fix: Now this actually updates the state
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed(prev => !prev);
+  };
+
   // Sidebar state and handlers
   const sidebarState = {
     linkDistance: 75,
@@ -671,7 +677,7 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     localLinkColor: colors.linkColor,
     nodeStrokeColor: colors.nodeStrokeColor,
     localBackgroundOpacity: colors.backgroundOpacity,
-    isSidebarCollapsed: false,
+    isSidebarCollapsed: isSidebarCollapsed, // Fix: Pass the actual state
     networkTitle: "Chord Diagram",
     localFixNodesOnDrag: false,
     localVisualizationType: visualizationType,
@@ -729,7 +735,7 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
       colors.setActiveColorTab(tab);
     },
     handleTitleChange: () => {},
-    toggleSidebar: () => {},
+    toggleSidebar: handleToggleSidebar, // Fix: Use the proper toggle handler
     handleToggleFixNodes: () => {},
     handleVisualizationTypeChange: (type: VisualizationType) => {
       if (onVisualizationTypeChange && type !== visualizationType) {

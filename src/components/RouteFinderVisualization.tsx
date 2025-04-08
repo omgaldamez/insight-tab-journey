@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
+import NetworkSidebar from './NetworkSidebar';
+import BaseVisualization from './BaseVisualization';
 
 interface RouteFinderProps {
   nodeData: Node[];
@@ -23,6 +25,13 @@ interface RouteFinderProps {
   dynamicColorThemes?: Record<string, Record<string, string>>;
   visualizationType?: VisualizationType;
   onVisualizationTypeChange?: (type: VisualizationType) => void;
+
+  
+  // No need to add these props as they aren't used in this component
+  // networkTitle?: string;
+  // onTitleChange?: (title: string) => void;
+  // isCollapsed?: boolean;
+  // onToggleSidebar?: () => void;
 }
 
 // Define a path type to hold route information
@@ -50,7 +59,9 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
   nodeData,
   linkData,
   colorTheme = 'default',
-  customNodeColors = {}
+  customNodeColors = {},
+  visualizationType,
+  onVisualizationTypeChange,
 }) => {
   // Performance monitoring
   const perfRef = useRef({
@@ -83,6 +94,24 @@ const RouteFinderVisualization: React.FC<RouteFinderProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [adjacencyList, setAdjacencyList] = useState<Map<string, string[]>>(new Map());
   const [error, setError] = useState<string | null>(null);
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+const [networkTitle, setNetworkTitle] = useState("Route Finder");
+const [activeColorTab, setActiveColorTab] = useState('presets');
+const [expandedSections, setExpandedSections] = useState({
+  networkControls: true,
+  nodeControls: true,
+  colorControls: false,
+  networkInfo: false,
+  visualizationType: true,
+  threeDControls: false,
+  tooltipSettings: true,
+  routeControls: true
+});
+const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+const [selectedNodeConnections, setSelectedNodeConnections] = useState<{ to: string[]; from: string[] }>({ to: [], from: [] });
+const [nodeGroup, setNodeGroup] = useState('all');
+const [nodeCounts, setNodeCounts] = useState<{ total: number }>({ total: 0 });
   
   // Prepare adjacency list once when link data changes
   useEffect(() => {
