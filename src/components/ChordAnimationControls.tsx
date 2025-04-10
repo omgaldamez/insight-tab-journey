@@ -89,7 +89,7 @@ const ChordAnimationControls: React.FC<ChordAnimationControlsProps> = ({
           
           {/* Speed up button */}
           <button 
-            onClick={() => onSpeedChange(Math.min(5, speed + 0.5))}
+            onClick={() => onSpeedChange(Math.min(10, speed + 2))}
             className="p-1.5 rounded-md hover:bg-white/20 transition-colors"
             title="Increase speed"
           >
