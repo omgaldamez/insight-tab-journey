@@ -1,14 +1,4 @@
-const handleToggleColoredRibbons = () => {
-  setUseColoredRibbons(prev => !prev);
-  
-  // Notify user of mode change
-  toast({
-    title: setUseColoredRibbons ? "Monochrome Ribbons" : "Colored Ribbons",
-    description: setUseColoredRibbons 
-      ? "Using neutral gray for all connection ribbons" 
-      : "Using category colors for connection ribbons",
-  });
-};/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable prefer-const */
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -18,7 +8,7 @@ import { Node as NetworkNode, Link, VisualizationType } from '@/types/networkTyp
 interface Node extends NetworkNode {
 category: string;
 }
-import { toast, useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import BaseVisualization from './BaseVisualization';
 import { NetworkLegend } from './NetworkComponents';
 import useNetworkColors from '@/hooks/useNetworkColors';
@@ -32,6 +22,8 @@ import useFullscreenStyles from '@/hooks/useFullscreenStyles';
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
 import { dataURItoBlob } from '@/utils/visualizationUtils';
+import ChordAnimationControls from './ChordAnimationControls';
+import ConnectionInfoBox from './ConnectionInfoBox';
 
 interface ChordVisualizationProps {
 onCreditsClick: () => void;
@@ -116,6 +108,24 @@ const [useColoredRibbons, setUseColoredRibbons] = useState(true);
 // Toggle for filled or stroke-only ribbons
 const [ribbonFillEnabled, setRibbonFillEnabled] = useState(true);
 
+// Animation state
+const [isAnimating, setIsAnimating] = useState(false);
+const [animationSpeed, setAnimationSpeed] = useState(1.0);
+const [currentAnimatedIndex, setCurrentAnimatedIndex] = useState(0);
+const [totalRibbonCount, setTotalRibbonCount] = useState(0);
+// Use the correct type for chord data
+const [chordData, setChordData] = useState<d3.Chord[]>([]);
+const animationRef = useRef<number | null>(null);
+
+// Current connection info for the info box
+const [currentConnectionInfo, setCurrentConnectionInfo] = useState<{
+  sourceId: string;
+  sourceCategory: string;
+  targetId: string;
+  targetCategory: string;
+  value?: number | string;
+} | null>(null);
+
 // New state variables for chord diagram visualization settings
 const [chordStrokeWidth, setChordStrokeWidth] = useState(0.5);
 const [chordOpacity, setChordOpacity] = useState(0.75);
@@ -141,6 +151,49 @@ const colors = useNetworkColors({
 
 // Apply fullscreen styles
 useFullscreenStyles();
+
+// Animation functions for chord diagram
+const startAnimation = useCallback(() => {
+  setIsAnimating(true);
+  // If we're at the end, reset to the beginning
+  if (currentAnimatedIndex >= totalRibbonCount) {
+    setCurrentAnimatedIndex(0);
+  }
+  
+  // Start the animation loop
+  const animate = () => {
+    setCurrentAnimatedIndex(prevIndex => {
+      // If we've reached the end, stop the animation
+      if (prevIndex >= totalRibbonCount) {
+        setIsAnimating(false);
+        return prevIndex;
+      }
+      // Otherwise, advance to the next ribbon
+      return prevIndex + 1;
+    });
+    
+    // Schedule the next frame based on speed
+    const frameDelay = 1000 / animationSpeed;
+    animationRef.current = window.setTimeout(animate, frameDelay);
+  };
+  
+  // Start the animation with initial delay
+  animationRef.current = window.setTimeout(animate, 1000 / animationSpeed);
+}, [currentAnimatedIndex, totalRibbonCount, animationSpeed]);  // Handle chord stroke opacity change
+const handleChordStrokeOpacityChange = (opacity: number) => {
+  setChordStrokeOpacity(opacity);
+  setNeedsRedraw(true);
+};  const handleToggleColoredRibbons = () => {
+  setUseColoredRibbons(prev => !prev);
+  
+  // Notify user of mode change
+  toast({
+    title: useColoredRibbons ? "Monochrome Ribbons" : "Colored Ribbons",
+    description: useColoredRibbons 
+      ? "Using neutral gray for all connection ribbons" 
+      : "Using category colors for connection ribbons",
+  });
+};
 
 // Create zoom functionality specifically for chord visualization
 const setupChordZoom = useCallback(() => {
@@ -775,13 +828,16 @@ useEffect(() => {
       .padAngle(0.03) // Smaller pad angle
       .sortSubgroups(d3.descending);
 
-    const chords = chord(matrixToUse);
+    const chordResult = chord(matrixToUse);
+    
+    // Store chord data in state for use in other effects - using the actual chord objects
+    setChordData(chordResult);
     
     // Debug info
-    console.log(`Generated ${chords.groups.length} chord groups out of ${uniqueCategories.length} categories`);
+    console.log(`Generated ${chordResult.groups.length} chord groups out of ${uniqueCategories.length} categories`);
     
     // Create explicit group data to ensure all categories are represented
-    let groupData = [...chords.groups]; // Start with the existing chord groups
+    let groupData = [...chordResult.groups]; // Start with the existing chord groups
     
     // Check for missing categories
     const existingIndices = new Set(groupData.map(g => g.index));
@@ -822,8 +878,58 @@ useEffect(() => {
     // Store reference to the content group
     contentRef.current = g.node() as SVGGElement;
 
+    // Store total ribbon count for animation
+    setTotalRibbonCount(chordResult.length);
+    
+    // Update connection info if we're at a valid index
+    if (currentAnimatedIndex > 0 && currentAnimatedIndex <= chordResult.length) {
+      const currentChord = chordResult[currentAnimatedIndex - 1];
+      
+      if (showDetailedView) {
+        // For detailed view - get node-to-node info
+        if (currentChord.source.index < detailedNodeData.length && 
+            currentChord.target.index < detailedNodeData.length) {
+          const sourceNode = detailedNodeData[currentChord.source.index];
+          const targetNode = detailedNodeData[currentChord.target.index];
+          const value = detailedMatrix[currentChord.source.index][currentChord.target.index];
+          
+          setCurrentConnectionInfo({
+            sourceId: sourceNode.id,
+            sourceCategory: sourceNode.category,
+            targetId: targetNode.id,
+            targetCategory: targetNode.category,
+            value: value
+          });
+        }
+      } else {
+        // For category view - get category-to-category info
+        const sourceCategory = uniqueCategories[currentChord.source.index];
+        const targetCategory = uniqueCategories[currentChord.target.index];
+        
+        // Get connection count or value
+        let value: string | number = "Minimal";
+        if (currentChord.source.index < categoryMatrix.length && 
+            currentChord.target.index < categoryMatrix[0].length) {
+          const actualValue = categoryMatrix[currentChord.source.index][currentChord.target.index];
+          if (actualValue > 0.2) value = Math.round(actualValue);
+        }
+        
+        setCurrentConnectionInfo({
+          sourceId: sourceCategory,
+          sourceCategory: `${categoryNodeCounts[sourceCategory] || 0} nodes`,
+          targetId: targetCategory,
+          targetCategory: `${categoryNodeCounts[targetCategory] || 0} nodes`,
+          value: value
+        });
+      }
+    } else if (currentAnimatedIndex === 0) {
+      // Reset connection info when at the beginning
+      setCurrentConnectionInfo(null);
+    }
+    
     // Add the groups (arcs) - using our potentially modified groupData
     const groups = g.append("g")
+      .attr("class", "chord-arcs")
       .selectAll("g")
       .data(groupData)
       .join("g");
@@ -880,139 +986,195 @@ useEffect(() => {
       .style("text-shadow", "0 1px 2px rgba(0,0,0,0.4)"); // Add text shadow for better contrast
 
     // Add the chords (ribbons) with enhanced visual styling and dynamic opacity/stroke
-    g.append("g")
-      .attr("fill-opacity", ribbonFillEnabled ? chordOpacity : 0) // Use 0 opacity for stroke-only mode
-      .selectAll("path")
-      .data(chords)
-      .join("path")
-      .attr("d", ribbon as any)
-      .attr("fill", d => {
-        // If using monochrome ribbons, return a neutral color
-        if (!useColoredRibbons) {
-          return "#999999"; // Neutral gray for monochrome mode
-        }
-        
-        // Otherwise use category colors
-        if (showDetailedView) {
-          // For detailed view, use source node's category
-          if (d.source.index < detailedNodeData.length) {
+    const ribbonGroup = g.append("g")
+      .attr("class", "chord-ribbons")
+      .attr("fill-opacity", ribbonFillEnabled ? chordOpacity : 0); // Use 0 opacity for stroke-only mode
+    
+    if (!isAnimating) {
+      // If not animating, add all chords at once
+      ribbonGroup.selectAll("path")
+        .data(chordResult)
+        .join("path")
+        .attr("d", ribbon as any)
+        .attr("fill", d => {
+          // If using monochrome ribbons, return a neutral color
+          if (!useColoredRibbons) {
+            return "#999999"; // Neutral gray for monochrome mode
+          }
+          
+          // Otherwise use category colors
+          if (showDetailedView) {
+            // For detailed view, use source node's category
+            if (d.source.index < detailedNodeData.length) {
+              const sourceNode = detailedNodeData[d.source.index];
+              return getCategoryColor(sourceNode.category);
+            }
+            return "#999"; // Fallback
+          } else {
+            // For category view, use source category color
+            const sourceCategory = uniqueCategories[d.source.index];
+            return getCategoryColor(sourceCategory);
+          }
+        })
+        .attr("stroke", d => {
+          // For monochrome mode, use a darker gray for stroke
+          if (!useColoredRibbons) {
+            return d3.rgb("#777777").toString();
+          }
+          
+          // Otherwise, apply a slightly darker stroke color based on the fill
+          if (showDetailedView && d.source.index < detailedNodeData.length) {
             const sourceNode = detailedNodeData[d.source.index];
-            return getCategoryColor(sourceNode.category);
+            const baseColor = getCategoryColor(sourceNode.category);
+            // Darken the color for stroke - simple approach
+            return d3.rgb(baseColor).darker(0.8).toString();
+          } else {
+            const baseColor = getCategoryColor(uniqueCategories[d.source.index]);
+            return d3.rgb(baseColor).darker(0.8).toString();
           }
-          return "#999"; // Fallback
-        } else {
-          // For category view, use source category color
-          const sourceCategory = uniqueCategories[d.source.index];
-          return getCategoryColor(sourceCategory);
-        }
-      })
-      .attr("stroke", d => {
-        // For monochrome mode, use a darker gray for stroke
-        if (!useColoredRibbons) {
-          return d3.rgb("#777777").toString();
-        }
-        
-        // Otherwise, apply a slightly darker stroke color based on the fill
-        if (showDetailedView && d.source.index < detailedNodeData.length) {
-          const sourceNode = detailedNodeData[d.source.index];
-          const baseColor = getCategoryColor(sourceNode.category);
-          // Darken the color for stroke - simple approach
-          return d3.rgb(baseColor).darker(0.8).toString();
-        } else {
-          const baseColor = getCategoryColor(uniqueCategories[d.source.index]);
-          return d3.rgb(baseColor).darker(0.8).toString();
-        }
-      })
-      .attr("stroke-width", chordStrokeWidth) // Use dynamic stroke width
-      .attr("stroke-opacity", chordStrokeOpacity) // Use dynamic stroke opacity
-      .style("opacity", d => {
-        // In stroke-only mode, ensure better visibility by using a higher opacity
-        if (!ribbonFillEnabled) {
-          return 1.0;
-        }
-        
-        // Vary opacity based on connection strength for visual interest
-        if (showDetailedView) {
-          if (d.source.index < detailedNodeData.length && d.target.index < detailedNodeData.length) {
-            const value = detailedMatrix[d.source.index][d.target.index];
-            // Scale opacity between 0.5 and 0.9 based on value
-            return Math.max(0.5, Math.min(0.9, 0.5 + value / 10));
+        })
+        .attr("stroke-width", chordStrokeWidth) // Use dynamic stroke width
+        .attr("stroke-opacity", chordStrokeOpacity) // Use dynamic stroke opacity
+        .style("opacity", d => {
+          // In stroke-only mode, ensure better visibility by using a higher opacity
+          if (!ribbonFillEnabled) {
+            return 1.0;
           }
-        } else {
-          // For category matrix, scale opacity based on connection strength
-          if (d.source.index < categoryMatrix.length && d.target.index < categoryMatrix[0].length) {
-            const value = categoryMatrix[d.source.index][d.target.index];
-            if (value <= 0.2) return 0.5; // Minimal connections get base opacity
-            // Scale between 0.6 and 0.9 for actual connections
-            return Math.max(0.6, Math.min(0.9, 0.6 + value / 20));
+          
+          // Vary opacity based on connection strength for visual interest
+          if (showDetailedView) {
+            if (d.source.index < detailedNodeData.length && d.target.index < detailedNodeData.length) {
+              const value = detailedMatrix[d.source.index][d.target.index];
+              // Scale opacity between 0.5 and 0.9 based on value
+              return Math.max(0.5, Math.min(0.9, 0.5 + value / 10));
+            }
+          } else {
+            // For category matrix, scale opacity based on connection strength
+            if (d.source.index < categoryMatrix.length && d.target.index < categoryMatrix[0].length) {
+              const value = categoryMatrix[d.source.index][d.target.index];
+              if (value <= 0.2) return 0.5; // Minimal connections get base opacity
+              // Scale between 0.6 and 0.9 for actual connections
+              return Math.max(0.6, Math.min(0.9, 0.6 + value / 20));
+            }
           }
-        }
-        return 0.6; // Default opacity
-      })
-      .on("click", function(event, d) {
-        event.stopPropagation(); // Stop event propagation
+          return 0.6; // Default opacity
+        })
+        .on("click", function(event, d) {
+          event.stopPropagation(); // Stop event propagation
+          
+          // Highlight this chord
+          d3.select(this)
+            .style("opacity", 1)
+            .attr("stroke-width", chordStrokeWidth * 1.5)
+            .attr("stroke", "#ffffff");
         
-        // Highlight this chord
-        d3.select(this)
-          .style("opacity", 1)
-          .attr("stroke-width", chordStrokeWidth * 1.5)
-          .attr("stroke", "#ffffff");
-      
-        // Get tooltip details based on view mode
-        let tooltipContent = "";
-        
-        if (showDetailedView) {
-          // Detailed node-to-node connection info
-          if (d.source.index < detailedNodeData.length && d.target.index < detailedNodeData.length) {
-            const sourceNode = detailedNodeData[d.source.index];
-            const targetNode = detailedNodeData[d.target.index];
-            const value = detailedMatrix[d.source.index][d.target.index];
+          // Get tooltip details based on view mode
+          let tooltipContent = "";
+          
+          if (showDetailedView) {
+            // Detailed node-to-node connection info
+            if (d.source.index < detailedNodeData.length && d.target.index < detailedNodeData.length) {
+              const sourceNode = detailedNodeData[d.source.index];
+              const targetNode = detailedNodeData[d.target.index];
+              const value = detailedMatrix[d.source.index][d.target.index];
+              
+              tooltipContent = `
+                <div class="font-medium text-base">${sourceNode.id} → ${targetNode.id}</div>
+                <div class="text-sm mt-1">${sourceNode.category} → ${targetNode.category}</div>
+                <div class="mt-1 border-t pt-1 border-white/20">Connections: <span class="font-bold">${value}</span></div>
+                <div class="text-xs mt-2 text-blue-300">Click elsewhere to dismiss</div>
+              `;
+            } else {
+              tooltipContent = "<div class='text-center py-1'>No detailed data available</div>";
+            }
+          } else {
+            // Category-to-category connection info
+            const sourceCategory = uniqueCategories[d.source.index];
+            const targetCategory = uniqueCategories[d.target.index];
+            
+            // Get the actual value from our matrix
+            let value = "Minimal";
+            if (d.source.index < categoryMatrix.length && d.target.index < categoryMatrix[0].length) {
+              const actualValue = categoryMatrix[d.source.index][d.target.index];
+              if (actualValue > 0.2) value = actualValue.toString();
+            }
             
             tooltipContent = `
-              <div class="font-medium text-base">${sourceNode.id} → ${targetNode.id}</div>
-              <div class="text-sm mt-1">${sourceNode.category} → ${targetNode.category}</div>
+              <div class="font-medium text-base">${sourceCategory} → ${targetCategory}</div>
               <div class="mt-1 border-t pt-1 border-white/20">Connections: <span class="font-bold">${value}</span></div>
               <div class="text-xs mt-2 text-blue-300">Click elsewhere to dismiss</div>
             `;
+          }
+          
+          // Show tooltip - using container relative positioning
+          const tooltip = d3.select(tooltipRef.current);
+          const containerRect = containerRef.current?.getBoundingClientRect();
+          if (!containerRect) return;
+          
+          // Calculate position relative to the container
+          const xPos = event.clientX - containerRect.left + 15;
+          const yPos = event.clientY - containerRect.top - 10;
+          
+          tooltip
+            .style("visibility", "visible")
+            .style("opacity", "1")
+            .style("left", `${xPos}px`)
+            .style("top", `${yPos}px`)
+            .style("pointer-events", "auto") // Make tooltip clickable
+            .html(tooltipContent);
+        })
+        .attr("cursor", "pointer"); // Just add a pointer cursor instead
+    } else {
+      // For animation mode, we'll add chords dynamically from the animation handlers
+      // First, create empty selection to be populated
+      ribbonGroup.selectAll("path").remove();
+      
+      // Add ribbons up to the current index only
+      ribbonGroup.selectAll("path")
+        .data(chordResult.slice(0, Math.max(0, currentAnimatedIndex)))
+        .join("path")
+        .attr("d", ribbon as any)
+        .attr("fill", d => {
+          // If using monochrome ribbons, return a neutral color
+          if (!useColoredRibbons) {
+            return "#999999"; // Neutral gray for monochrome mode
+          }
+          
+          // Otherwise use category colors
+          if (showDetailedView) {
+            // For detailed view, use source node's category
+            if (d.source.index < detailedNodeData.length) {
+              const sourceNode = detailedNodeData[d.source.index];
+              return getCategoryColor(sourceNode.category);
+            }
+            return "#999"; // Fallback
           } else {
-            tooltipContent = "<div class='text-center py-1'>No detailed data available</div>";
+            // For category view, use source category color
+            const sourceCategory = uniqueCategories[d.source.index];
+            return getCategoryColor(sourceCategory);
           }
-        } else {
-          // Category-to-category connection info
-          const sourceCategory = uniqueCategories[d.source.index];
-          const targetCategory = uniqueCategories[d.target.index];
-          
-          // Get the actual value from our matrix
-          let value = "Minimal";
-          if (d.source.index < categoryMatrix.length && d.target.index < categoryMatrix[0].length) {
-            const actualValue = categoryMatrix[d.source.index][d.target.index];
-            if (actualValue > 0.2) value = actualValue.toString();
+        })
+        .attr("stroke", d => {
+          // For monochrome mode, use a darker gray for stroke
+          if (!useColoredRibbons) {
+            return d3.rgb("#777777").toString();
           }
           
-          tooltipContent = `
-            <div class="font-medium text-base">${sourceCategory} → ${targetCategory}</div>
-            <div class="mt-1 border-t pt-1 border-white/20">Connections: <span class="font-bold">${value}</span></div>
-            <div class="text-xs mt-2 text-blue-300">Click elsewhere to dismiss</div>
-          `;
-        }
-        
-        // Show tooltip - using container relative positioning
-        const tooltip = d3.select(tooltipRef.current);
-        const containerRect = containerRef.current.getBoundingClientRect();
-        
-        // Calculate position relative to the container
-        const xPos = event.clientX - containerRect.left + 15;
-        const yPos = event.clientY - containerRect.top - 10;
-        
-        tooltip
-          .style("visibility", "visible")
-          .style("opacity", "1")
-          .style("left", `${xPos}px`)
-          .style("top", `${yPos}px`)
-          .style("pointer-events", "auto") // Make tooltip clickable
-          .html(tooltipContent);
-      })
-      .attr("cursor", "pointer"); // Just add a pointer cursor instead
+          // Otherwise, apply a slightly darker stroke color based on the fill
+          if (showDetailedView && d.source.index < detailedNodeData.length) {
+            const sourceNode = detailedNodeData[d.source.index];
+            const baseColor = getCategoryColor(sourceNode.category);
+            // Darken the color for stroke - simple approach
+            return d3.rgb(baseColor).darker(0.8).toString();
+          } else {
+            const baseColor = getCategoryColor(uniqueCategories[d.source.index]);
+            return d3.rgb(baseColor).darker(0.8).toString();
+          }
+        })
+        .attr("stroke-width", chordStrokeWidth)
+        .attr("stroke-opacity", chordStrokeOpacity)
+        .style("opacity", 1);
+    }
 
     // Add a title showing relationship info on hover
     groups
@@ -1168,7 +1330,8 @@ useEffect(() => {
   chordStrokeOpacity, 
   arcOpacity,
   useColoredRibbons,
-  ribbonFillEnabled
+  ribbonFillEnabled,
+  // Exclude animation states to prevent unnecessary redraws
 ]);
 
 useEffect(() => {
@@ -1269,10 +1432,160 @@ const handleToggleRibbonFill = () => {
   });
 };
 
-// Handle chord stroke opacity change
-const handleChordStrokeOpacityChange = (opacity: number) => {
-  setChordStrokeOpacity(opacity);
+// Effect to update connection info when animation index changes
+useEffect(() => {
+  if (!isLoading && chordData.length > 0) {
+    if (currentAnimatedIndex > 0 && currentAnimatedIndex <= chordData.length) {
+      try {
+        // The Chord object has the correct structure with source and target
+        const currentChord = chordData[currentAnimatedIndex - 1];
+        if (!currentChord) return;
+        
+        // Update connection info based on view type
+        if (showDetailedView) {
+          // For detailed view - get node-to-node info
+          if (currentChord.source.index < detailedNodeData.length && 
+              currentChord.target.index < detailedNodeData.length) {
+            const sourceNode = detailedNodeData[currentChord.source.index];
+            const targetNode = detailedNodeData[currentChord.target.index];
+            const value = detailedMatrix[currentChord.source.index][currentChord.target.index];
+            
+            setCurrentConnectionInfo({
+              sourceId: sourceNode.id,
+              sourceCategory: sourceNode.category,
+              targetId: targetNode.id,
+              targetCategory: targetNode.category,
+              value: value
+            });
+          }
+        } else {
+          // For category view - get category-to-category info
+          const sourceCategory = uniqueCategories[currentChord.source.index];
+          const targetCategory = uniqueCategories[currentChord.target.index];
+          
+          // Get connection count or value
+          let value: string | number = "Minimal";
+          if (currentChord.source.index < categoryMatrix.length && 
+              currentChord.target.index < categoryMatrix[0].length) {
+            const actualValue = categoryMatrix[currentChord.source.index][currentChord.target.index];
+            if (actualValue > 0.2) value = Math.round(actualValue);
+          }
+          
+          setCurrentConnectionInfo({
+            sourceId: sourceCategory,
+            sourceCategory: `${categoryNodeCounts[sourceCategory] || 0} nodes`,
+            targetId: targetCategory,
+            targetCategory: `${categoryNodeCounts[targetCategory] || 0} nodes`,
+            value: value
+          });
+        }
+      } catch (error) {
+        console.error("Error updating connection info:", error);
+      }
+    } else if (currentAnimatedIndex === 0) {
+      // Reset connection info when at the beginning
+      setCurrentConnectionInfo(null);
+    }
+  }
+}, [
+  currentAnimatedIndex, 
+  showDetailedView, 
+  isLoading,
+  detailedNodeData,
+  detailedMatrix,
+  uniqueCategories,
+  categoryMatrix,
+  categoryNodeCounts,
+  chordData // Add chordData to dependency array
+]);
+
+// Stop animation
+const stopAnimation = useCallback(() => {
+  if (animationRef.current) {
+    clearTimeout(animationRef.current);
+    animationRef.current = null;
+  }
+  setIsAnimating(false);
+}, []);
+
+// Toggle animation
+const toggleAnimation = useCallback(() => {
+  if (isAnimating) {
+    stopAnimation();
+  } else {
+    startAnimation();
+  }
+}, [isAnimating, startAnimation, stopAnimation]);
+
+// Go to previous ribbon
+const goToPreviousRibbon = useCallback(() => {
+  // Stop any running animation
+  stopAnimation();
+  
+  // Decrement index, but don't go below 0
+  setCurrentAnimatedIndex(prevIndex => Math.max(0, prevIndex - 1));
+  
+  // Force redraw
   setNeedsRedraw(true);
+}, [stopAnimation]);
+
+// Go to next ribbon
+const goToNextRibbon = useCallback(() => {
+  // Stop any running animation
+  stopAnimation();
+  
+  // Increment index, but don't exceed total count
+  setCurrentAnimatedIndex(prevIndex => Math.min(totalRibbonCount, prevIndex + 1));
+  
+  // Force redraw
+  setNeedsRedraw(true);
+}, [stopAnimation, totalRibbonCount]);
+
+// Reset animation
+const resetAnimation = useCallback(() => {
+  stopAnimation();
+  setCurrentAnimatedIndex(0);
+  setNeedsRedraw(true);
+}, [stopAnimation]);
+
+// Change animation speed
+const changeAnimationSpeed = useCallback((speed: number) => {
+  setAnimationSpeed(speed);
+  
+  // If animation is running, restart it with new speed
+  if (isAnimating && animationRef.current) {
+    clearTimeout(animationRef.current);
+    startAnimation();
+  }
+}, [isAnimating, startAnimation]);
+
+// Clean up animation on unmount
+useEffect(() => {
+  return () => {
+    if (animationRef.current) {
+      clearTimeout(animationRef.current);
+    }
+  };
+}, []);
+
+// Effect to redraw when animation state changes
+useEffect(() => {
+  if (!isLoading) {
+    setNeedsRedraw(true);
+  }
+}, [isAnimating, currentAnimatedIndex]);
+
+// Handle animation controls
+const animationControlsProps = {
+  isPlaying: isAnimating,
+  currentIndex: currentAnimatedIndex,
+  totalCount: totalRibbonCount,
+  speed: animationSpeed,
+  onTogglePlay: toggleAnimation,
+  onPrevious: goToPreviousRibbon,
+  onNext: goToNextRibbon,
+  onReset: resetAnimation,
+  onSpeedChange: changeAnimationSpeed
 };
 
 // Toggle sidebar state handler
@@ -1468,6 +1781,92 @@ return (
             dynamicColorThemes={colors.dynamicColorThemes}
             colorPalette={Object.values(colors.dynamicColorThemes.default || {})}
           />
+          
+          {/* Animation Controls - at top-left */}
+          <div className="absolute top-4 left-4 z-50 transition-opacity cursor-move"
+               onMouseDown={(e) => {
+                 // Make the control panel draggable
+                 if (e.currentTarget) {
+                   const el = e.currentTarget;
+                   const rect = el.getBoundingClientRect();
+                   const offsetX = e.clientX - rect.left;
+                   const offsetY = e.clientY - rect.top;
+                   
+                   const onMouseMove = (e: MouseEvent) => {
+                     if (containerRef.current) {
+                       const containerRect = containerRef.current.getBoundingClientRect();
+                       const x = e.clientX - offsetX - containerRect.left;
+                       const y = e.clientY - offsetY - containerRect.top;
+                       
+                       // Keep within container bounds
+                       const maxX = containerRect.width - rect.width;
+                       const maxY = containerRect.height - rect.height;
+                       
+                       el.style.left = `${Math.max(0, Math.min(maxX, x))}px`;
+                       el.style.top = `${Math.max(0, Math.min(maxY, y))}px`;
+                       el.style.right = 'auto';
+                       el.style.bottom = 'auto';
+                       el.style.transform = 'none';
+                     }
+                   };
+                   
+                   const onMouseUp = () => {
+                     document.removeEventListener('mousemove', onMouseMove);
+                     document.removeEventListener('mouseup', onMouseUp);
+                   };
+                   
+                   document.addEventListener('mousemove', onMouseMove);
+                   document.addEventListener('mouseup', onMouseUp);
+                 }
+               }}
+          >
+            <ChordAnimationControls {...animationControlsProps} />
+          </div>
+          
+          {/* Connection Info Box - at top-right */}
+          <div className="absolute top-4 right-20 z-50 transition-opacity"
+               onMouseDown={(e) => {
+                 // Make the info box draggable
+                 if (e.currentTarget) {
+                   const el = e.currentTarget;
+                   const rect = el.getBoundingClientRect();
+                   const offsetX = e.clientX - rect.left;
+                   const offsetY = e.clientY - rect.top;
+                   
+                   const onMouseMove = (e: MouseEvent) => {
+                     if (containerRef.current) {
+                       const containerRect = containerRef.current.getBoundingClientRect();
+                       const x = e.clientX - offsetX - containerRect.left;
+                       const y = e.clientY - offsetY - containerRect.top;
+                       
+                       // Keep within container bounds
+                       const maxX = containerRect.width - rect.width;
+                       const maxY = containerRect.height - rect.height;
+                       
+                       el.style.left = `${Math.max(0, Math.min(maxX, x))}px`;
+                       el.style.top = `${Math.max(0, Math.min(maxY, y))}px`;
+                       el.style.right = 'auto';
+                       el.style.bottom = 'auto';
+                       el.style.transform = 'none';
+                     }
+                   };
+                   
+                   const onMouseUp = () => {
+                     document.removeEventListener('mousemove', onMouseMove);
+                     document.removeEventListener('mouseup', onMouseUp);
+                   };
+                   
+                   document.addEventListener('mousemove', onMouseMove);
+                   document.addEventListener('mouseup', onMouseUp);
+                 }
+               }}
+          >
+            <ConnectionInfoBox 
+              isVisible={currentAnimatedIndex > 0}
+              connectionInfo={currentConnectionInfo}
+              showCategories={true}
+            />
+          </div>
           
           {/* Control Panel with all toggles */}
           <div className="absolute bottom-4 left-4 z-10">
@@ -1697,7 +2096,3 @@ return (
 };
 
 export default ChordVisualization;
-
-function setUseColoredRibbons(arg0: (prev: any) => boolean) {
-  throw new Error('Function not implemented.');
-}
