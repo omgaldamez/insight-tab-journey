@@ -6,6 +6,11 @@ import { AlertCircle } from "lucide-react";
 import { VisualizationType } from "./NetworkSidebar";
 import VisualizationControls from "./VisualizationControls";
 import useNetworkColors from "@/hooks/useNetworkColors";
+import useZoomPan from "@/hooks/useZoomPan";
+import useFullscreenStyles from "@/hooks/useFullscreenStyles";
+import { saveAs } from 'file-saver';
+import { jsPDF } from "jspdf";
+import { dataURItoBlob } from '@/utils/visualizationUtils';
 
 interface ArcVisualizationProps {
   onCreditsClick?: () => void;
@@ -80,6 +85,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
   const { toast } = useToast();
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<SVGGElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [visualizationError, setVisualizationError] = useState<string | null>(null);
@@ -103,6 +109,26 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
     initialCustomNodeColors: customNodeColors,
     initialDynamicColorThemes: dynamicColorThemes
   });
+
+  // Use zoom and pan functionality
+  const { 
+    zoomToFit, 
+    zoomIn, 
+    zoomOut, 
+    resetZoom, 
+    getTransform,
+    isZoomInitialized,
+    reinitializeZoom
+  } = useZoomPan({
+    svgRef, 
+    contentRef,
+    containerRef,
+    isReady: !isLoading && processedData.nodes.length > 0,
+    nodesDraggable: true
+  });
+
+  // Apply fullscreen styles
+  useFullscreenStyles();
 
   // Simple hexToRgb utility
   const hexToRgb = useCallback((hex: string): {r: number, g: number, b: number} => {
@@ -209,6 +235,184 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
     return () => clearTimeout(timer);
   }, []);
 
+  // Special function to fix SVG for export in Arc visualization
+  const fixSvgForExport = () => {
+    if (!svgRef.current) return null;
+    
+    // Create a deep clone of the SVG element
+    const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
+    
+    // Get dimensions
+    const containerWidth = containerRef.current?.clientWidth || 800;
+    const containerHeight = containerRef.current?.clientHeight || 600;
+    
+    // Explicitly set width and height
+    svgClone.setAttribute('width', containerWidth.toString());
+    svgClone.setAttribute('height', containerHeight.toString());
+    
+    // This is critical for fixing the viewBox issue
+    // Reset any existing viewBox and preserve the entire content
+    svgClone.setAttribute('viewBox', `0 0 ${containerWidth} ${containerHeight}`);
+    
+    // Reset any transform on the main group to capture everything
+    const mainGroup = svgClone.querySelector('g');
+    if (mainGroup) {
+      // Store original transform to apply later if needed
+      const originalTransform = mainGroup.getAttribute('transform');
+      
+      // If the main group has a transform to center content, keep it
+      if (originalTransform && originalTransform.includes('translate')) {
+        // Keep the transform
+      } else {
+        // Otherwise reset transform
+        mainGroup.setAttribute('transform', `translate(${containerWidth/2}, ${containerHeight/2})`);
+      }
+    }
+    
+    // Add a background rectangle
+    const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bgRect.setAttribute('width', containerWidth.toString());
+    bgRect.setAttribute('height', containerHeight.toString());
+    bgRect.setAttribute('fill', colors.backgroundColor);
+    bgRect.setAttribute('opacity', colors.backgroundOpacity.toString());
+    bgRect.setAttribute('x', '0');
+    bgRect.setAttribute('y', '0');
+    
+    // Insert background at beginning
+    if (svgClone.firstChild) {
+      svgClone.insertBefore(bgRect, svgClone.firstChild);
+    } else {
+      svgClone.appendChild(bgRect);
+    }
+    
+    // Add CSS to ensure elements are visible in export
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    style.textContent = `
+      .link { stroke: ${colors.linkColor}; stroke-opacity: 0.85; }
+      .node { fill-opacity: 1; stroke: ${colors.nodeStrokeColor || '#fff'}; }
+      .node-label { fill: ${colors.textColor}; }
+      text { font-family: Arial, sans-serif; }
+    `;
+    svgClone.insertBefore(style, svgClone.firstChild);
+    
+    return svgClone;
+  };
+
+  // Custom download function for Arc visualization
+  const handleDownloadGraph = (format: string) => {
+    if (!svgRef.current || !containerRef.current) {
+      toast({
+        title: "Export Error",
+        description: "Cannot download visualization - SVG not ready",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    try {
+      // Create a custom SVG for export that captures the entire visualization
+      const exportSvg = fixSvgForExport();
+      if (!exportSvg) return;
+      
+      // Get dimensions
+      const width = containerRef.current.clientWidth;
+      const height = containerRef.current.clientHeight;
+      
+      // Serialize SVG for export
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(exportSvg);
+      
+      // Generate filename
+      const fileName = `arc-diagram`;
+      
+      if (format === 'svg') {
+        // Download as SVG
+        const blob = new Blob([svgString], { type: 'image/svg+xml' });
+        saveAs(blob, `${fileName}.svg`);
+        
+        toast({
+          title: "Download Started",
+          description: "Visualization downloading as SVG"
+        });
+      } else {
+        // For other formats, convert to image
+        const svgBase64 = btoa(unescape(encodeURIComponent(svgString)));
+        const imgSrc = `data:image/svg+xml;base64,${svgBase64}`;
+        
+        // Create canvas for rendering
+        const canvas = document.createElement('canvas');
+        // Use a larger scale for better quality
+        const scale = 2;
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          throw new Error("Could not get canvas context");
+        }
+        
+        // Fill background
+        ctx.fillStyle = colors.backgroundColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Load SVG into image
+        const img = new Image();
+        img.onload = () => {
+          // Draw SVG on canvas
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // Handle different export formats
+          if (format === 'png') {
+            const dataUrl = canvas.toDataURL('image/png');
+            saveAs(dataURItoBlob(dataUrl), `${fileName}.png`);
+          } else if (format === 'jpg' || format === 'jpeg') {
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            saveAs(dataURItoBlob(dataUrl), `${fileName}.jpg`);
+          } else if (format === 'pdf') {
+            try {
+              const imgData = canvas.toDataURL('image/png');
+              const pdf = new jsPDF({
+                orientation: width > height ? 'landscape' : 'portrait',
+                unit: 'px',
+                format: [width, height]
+              });
+              pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+              pdf.save(`${fileName}.pdf`);
+            } catch (pdfError) {
+              console.error("PDF creation error:", pdfError);
+              toast({
+                title: "PDF Export Failed",
+                description: "Could not create PDF file"
+              });
+              return;
+            }
+          }
+          
+          toast({
+            title: "Download Started",
+            description: `Visualization downloading as ${format.toUpperCase()}`
+          });
+        };
+        
+        img.onerror = (error) => {
+          console.error("Error loading SVG for export:", error);
+          toast({
+            title: "Export Failed",
+            description: "Could not render visualization for download"
+          });
+        };
+        
+        img.src = imgSrc;
+      }
+    } catch (error) {
+      console.error("Error exporting visualization:", error);
+      toast({
+        title: "Export Error",
+        description: `Failed to export: ${error instanceof Error ? error.message : String(error)}`
+      });
+    }
+  };
+
   // Create D3 visualization
   useEffect(() => {
     if (isLoading || !svgRef.current || !containerRef.current || processedData.nodes.length === 0) {
@@ -238,6 +442,8 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       const g = svg.append("g")
         .attr("transform", `translate(${containerWidth/2}, ${containerHeight/2})`)
         .attr("class", "main-container");
+      
+      contentRef.current = g.node() as SVGGElement;
       
       // Add a background for the visualization area
       g.append("rect")
@@ -735,7 +941,8 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
       ref={containerRef} 
       className="w-full h-full relative"
       style={{ 
-        backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`
+        backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
+        touchAction: "none" // Prevent default touch actions
       }}
     >
       <svg 
@@ -743,7 +950,7 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         className="w-full h-full"
       />
       
-      {/* Shared UI Controls */}
+      {/* Visualization Controls */}
       <VisualizationControls
         containerRef={containerRef}
         nodeData={nodeData}
@@ -751,9 +958,9 @@ const ArcVisualization: React.FC<ArcVisualizationProps> = ({
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onResetZoom={handleResetZoom}
-        onDownloadData={onDownloadData}
-        onDownloadGraph={onDownloadGraph}
-        onResetSelection={onResetSelection}
+        onDownloadData={onDownloadData || (() => {})}
+        onDownloadGraph={handleDownloadGraph}
+        onResetSelection={onResetSelection || (() => {})}
         isZoomInitialized={true}
       />
       
