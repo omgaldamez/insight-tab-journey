@@ -163,7 +163,7 @@ const generateDetailedTooltip = (
 };
 
 // Calculate proper tooltip position relative to SVG - FIXED
-const calculateTooltipPosition = (
+export const calculateTooltipPosition = (
   event: MouseEvent,
   tooltipRef: RefObject<HTMLDivElement>,
   svgRef: RefObject<SVGSVGElement>
