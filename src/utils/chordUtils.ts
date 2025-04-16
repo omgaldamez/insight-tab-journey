@@ -16,13 +16,67 @@ export const fixSvgForExport = (
   backgroundOpacity: number,
   textColor: string,
   chordStrokeWidth: number,
-  chordOpacity: number
+  chordOpacity: number,
+  exportMode: 'current' | 'clean' = 'current'
 ): SVGSVGElement | null => {
   if (!svgRef) return null;
   
   // Create a deep clone of the SVG element
   const svgClone = svgRef.cloneNode(true) as SVGSVGElement;
   
+  // Explicitly preserve styles for arcs and text
+  const arcPaths = svgClone.querySelectorAll('.chord-arcs path');
+  arcPaths.forEach(arcPath => {
+    // Ensure the original fill color is preserved
+    const fillColor = arcPath.getAttribute('fill');
+    if (fillColor) {
+      (arcPath as SVGElement).setAttribute('fill', fillColor);
+    }
+    
+    // Make sure stroke is visible
+    (arcPath as SVGElement).setAttribute('stroke-width', `${chordStrokeWidth}`);
+    (arcPath as SVGElement).setAttribute('stroke', '#ffffff');
+  });
+  
+  // Preserve text positioning and styles
+  const textElements = svgClone.querySelectorAll('text');
+  textElements.forEach(textElem => {
+    // Preserve text-anchor attribute
+    const textAnchor = textElem.getAttribute('text-anchor');
+    if (textAnchor) {
+      (textElem as SVGTextElement).setAttribute('text-anchor', textAnchor);
+    }
+    
+    // Ensure text color and other properties are preserved
+    (textElem as SVGTextElement).setAttribute('fill', textColor);
+    (textElem as SVGTextElement).setAttribute('font-family', 'Arial, sans-serif');
+    const fontSize = textElem.getAttribute('data-is-detailed') === 'true' ? '8px' : '11px';
+    (textElem as SVGTextElement).setAttribute('font-size', fontSize);
+  });
+
+  if (exportMode === 'clean') {
+    // For clean export, we'll remove any transform and recreate a fresh diagram
+    // Find the main group and reset its transform
+    const mainGroup = svgClone.querySelector('g');
+    if (mainGroup) {
+      mainGroup.removeAttribute('transform');
+    }
+    
+    // Remove any dynamic elements that might interfere with clean export
+    const particleGroups = svgClone.querySelectorAll('.chord-particles, .chord-shapes');
+    particleGroups.forEach(group => group.remove());
+    
+    // For clean mode, we'll position in the center
+    const containerWidth = containerRef?.clientWidth || 800;
+    const containerHeight = containerRef?.clientHeight || 600;
+    if (mainGroup) {
+      mainGroup.setAttribute('transform', `translate(${containerWidth/2}, ${containerHeight/2})`);
+    }
+  } else {
+    // For current view, preserve the existing transform
+    // This is already handled by the existing code that captures transforms
+  }
+
   // Get dimensions
   const containerWidth = containerRef?.clientWidth || 800;
   const containerHeight = containerRef?.clientHeight || 600;
@@ -70,8 +124,13 @@ export const fixSvgForExport = (
   // Add CSS to ensure elements are visible in export
   const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
   style.textContent = `
-    path { fill-opacity: ${chordOpacity}; stroke: white; stroke-width: ${chordStrokeWidth}; }
-    text { font-family: Arial, sans-serif; fill: ${textColor}; text-anchor: middle; }
+    .chord-arcs path { fill-opacity: 1; stroke: white; stroke-width: ${chordStrokeWidth}px; }
+    .chord-ribbons path { fill-opacity: ${chordOpacity}; stroke: white; stroke-width: ${chordStrokeWidth}px; }
+    text { font-family: Arial, sans-serif; fill: ${textColor}; }
+    text[text-anchor="start"] { text-anchor: start; }
+    text[text-anchor="end"] { text-anchor: end; }
+    text[text-anchor="middle"] { text-anchor: middle; }
+    .chord-particles circle { opacity: ${chordOpacity * 0.7}; }
   `;
   svgClone.insertBefore(style, svgClone.firstChild);
   
@@ -99,6 +158,9 @@ export const downloadChordDiagram = (
   }
   
   try {
+    // Parse format string to get format type and export mode
+    const [formatType, exportMode = 'current'] = format.split(':');
+    
     // Create a custom SVG for export that captures the entire visualization
     const exportSvg = fixSvgForExport(
       svgRef, 
@@ -107,7 +169,8 @@ export const downloadChordDiagram = (
       backgroundOpacity, 
       textColor, 
       chordStrokeWidth, 
-      chordOpacity
+      chordOpacity,
+      exportMode as 'current' | 'clean'
     );
     
     if (!exportSvg) return;
@@ -120,15 +183,15 @@ export const downloadChordDiagram = (
     const serializer = new XMLSerializer();
     const svgString = serializer.serializeToString(exportSvg);
     
-    // Generate filename
-    const fileName = `chord-diagram`;
+// Generate filename with export mode included
+const fileName = `chord-diagram-${exportMode}`;
     
-    if (format === 'svg') {
+    if (formatType === 'svg') {
       // Download as SVG
       const blob = new Blob([svgString], { type: 'image/svg+xml' });
       saveAs(blob, `${fileName}.svg`);
       
-      onSuccess("Visualization downloading as SVG");
+      onSuccess(`Visualization downloading as ${formatType.toUpperCase()} (${exportMode} view)`);
     } else {
       // For other formats, convert to image
       const svgBase64 = btoa(unescape(encodeURIComponent(svgString)));
@@ -157,13 +220,13 @@ export const downloadChordDiagram = (
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
         // Handle different export formats
-        if (format === 'png') {
+        if (formatType  === 'png') {
           const dataUrl = canvas.toDataURL('image/png');
           saveAs(dataURItoBlob(dataUrl), `${fileName}.png`);
-        } else if (format === 'jpg' || format === 'jpeg') {
+        } else if (formatType  === 'jpg' || format === 'jpeg') {
           const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
           saveAs(dataURItoBlob(dataUrl), `${fileName}.jpg`);
-        } else if (format === 'pdf') {
+        } else if (formatType  === 'pdf') {
           try {
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF({
@@ -180,7 +243,7 @@ export const downloadChordDiagram = (
           }
         }
         
-        onSuccess(`Visualization downloading as ${format.toUpperCase()}`);
+        onSuccess(`Visualization downloading as ${formatType.toUpperCase()}`);
       };
       
       img.onerror = (error) => {

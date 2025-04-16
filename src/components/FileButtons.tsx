@@ -93,44 +93,77 @@ const FileButtons: React.FC<FileButtonsProps> = ({
           <Download className="h-4 w-4" />
           <span>Image</span>
         </Button>
-        <div className={`absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg overflow-hidden min-w-32 z-50 ${imageDropdownOpen ? 'block' : 'hidden'}`}>
-          <button 
-            className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
-            onClick={() => {
-              onDownloadGraph('svg');
-              setImageDropdownOpen(false);
-            }}
-          >
-            SVG
-          </button>
-          <button 
-            className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
-            onClick={() => {
-              onDownloadGraph('png');
-              setImageDropdownOpen(false);
-            }}
-          >
-            PNG
-          </button>
-          <button 
-            className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
-            onClick={() => {
-              onDownloadGraph('jpg');
-              setImageDropdownOpen(false);
-            }}
-          >
-            JPG
-          </button>
-          <button 
-            className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
-            onClick={() => {
-              onDownloadGraph('pdf');
-              setImageDropdownOpen(false);
-            }}
-          >
-            PDF
-          </button>
-        </div>
+        <div className={`absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg overflow-hidden min-w-48 z-50 ${imageDropdownOpen ? 'block' : 'hidden'}`}>
+  <div className="py-1 border-b border-gray-200">
+    <div className="px-3 py-1 text-xs font-medium text-gray-500">Current View</div>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => {
+        onDownloadGraph('svg:current');
+        setImageDropdownOpen(false);
+      }}
+    >
+      SVG
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => {
+        onDownloadGraph('png:current');
+        setImageDropdownOpen(false);
+      }}
+    >
+      PNG
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => {
+        onDownloadGraph('jpg:current');
+        setImageDropdownOpen(false);
+      }}
+    >
+      JPG
+    </button>
+  </div>
+  <div className="py-1">
+    <div className="px-3 py-1 text-xs font-medium text-gray-500">Clean Diagram</div>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => {
+        onDownloadGraph('svg:clean');
+        setImageDropdownOpen(false);
+      }}
+    >
+      SVG
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => {
+        onDownloadGraph('png:clean');
+        setImageDropdownOpen(false);
+      }}
+    >
+      PNG
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => {
+        onDownloadGraph('jpg:clean');
+        setImageDropdownOpen(false);
+      }}
+    >
+      JPG
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => {
+        onDownloadGraph('pdf:clean');
+        setImageDropdownOpen(false);
+      }}
+    >
+      PDF
+    </button>
+  </div>
+</div>
       </div>
       
       <Button
