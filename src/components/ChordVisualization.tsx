@@ -125,6 +125,22 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     setIsSidebarCollapsed(prev => !prev);
   };
 
+  const handleLayerToggle = (layerName: string, value: boolean) => {
+    if (layerName === 'showParticlesLayer') {
+      chord.updateConfig({ 
+        showParticlesLayer: value,
+        particleMode: value // Keep particle mode in sync with layer visibility
+      });
+    } else if (layerName === 'showGeometricShapesLayer') {
+      chord.updateConfig({ 
+        showGeometricShapesLayer: value,
+        useGeometricShapes: value // Keep geometric shapes in sync with layer visibility
+      });
+    } else {
+      chord.updateConfig({ [layerName]: value });
+    }
+  };
+
   // Custom download function for Chord visualization
   const handleDownloadGraph = (format: string) => {
     if (!svgRef.current || !containerRef.current) {
@@ -613,6 +629,7 @@ handleApplyBackgroundColors: (
 <ChordDiagramControls
   config={chord.chordConfig}
   onConfigChange={chord.updateConfig}
+  onLayerToggle={handleLayerToggle}
   controlsPanelVisible={controlsPanelVisible}
   onToggleControlPanel={() => setControlsPanelVisible(prev => !prev)}
   particlesInitialized={chord.particlesInitialized}

@@ -42,8 +42,12 @@ export class WebGLParticleSystem {
   private pathData: PathData[] = [];
   private options: WebGLParticleSystemOptions;
   private initialized = false;
-  private container: HTMLDivElement;
+  private container: HTMLElement;
   private canvas: HTMLCanvasElement | null = null;
+  private gl: WebGLRenderingContext | null = null;
+  private transformMatrix: number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; // Identity matrix
+  private paths: SVGPathElement[] = [];
+  private animationId: number | null = null;
   private timeStart = 0;
   private resizeObserver: ResizeObserver | null = null;
   private particlePositions: Float32Array | null = null;
@@ -51,7 +55,9 @@ export class WebGLParticleSystem {
   private particleColors: Float32Array | null = null;
   private particleOpacities: Float32Array | null = null;
   private originalPositions: Float32Array | null = null;
-  
+  public getCanvas(): HTMLCanvasElement | null {
+    return this.canvas;
+  }
   // Quality settings map
   private qualitySettings = {
     low: { densityMultiplier: 0.5, maxParticles: 5000 },
@@ -488,6 +494,8 @@ export class WebGLParticleSystem {
     this.renderer.render(this.scene, this.camera);
   }
 
+
+  
   /**
    * Update material properties based on new options
    */

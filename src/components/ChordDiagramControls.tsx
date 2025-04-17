@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState } from 'react';
 import { ChordDiagramConfig } from '@/hooks/useChordDiagram';
-import { Eye, EyeOff, ChevronDown, ChevronUp, LayoutDashboard, Circle, Waves, Play, Cpu, Zap, Square, RefreshCw, ZapOff, BarChart } from 'lucide-react';
+import { Eye, EyeOff, ChevronDown, ChevronUp, LayoutDashboard, Circle, Waves, Play, Cpu, Zap, Square, RefreshCw, ZapOff, BarChart, AlertTriangle } from 'lucide-react';
 import ParticleControlsWithApply from './ParticleControlsWithApply';
 import WebGLParticleControls from './WebGLParticleControls';
 
@@ -9,6 +9,7 @@ interface ChordDiagramControlsProps {
   config: ChordDiagramConfig;
   onConfigChange: (updates: Partial<ChordDiagramConfig>) => void;
   onToggleControlPanel: () => void;
+  onLayerToggle?: (layerName: string, value: boolean) => void;
   controlsPanelVisible: boolean;
   particlesInitialized: boolean;
   isGeneratingParticles: boolean;
@@ -35,6 +36,7 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
   config,
   onConfigChange,
   onToggleControlPanel,
+  onLayerToggle,
   controlsPanelVisible,
   particlesInitialized,
   isGeneratingParticles,
@@ -90,13 +92,15 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
 
   // State for active tab
   const [activeTab, setActiveTab] = useState<ControlTab>('display');
-  // State for showing WebGL controls
-  const [showWebGLControls, setShowWebGLControls] = useState(false);
 
-  // Create a handler for toggle type inputs
-  const handleToggleChange = (field: keyof ChordDiagramConfig) => {
+// In the ChordDiagramControls component
+const handleToggleChange = (field: keyof ChordDiagramConfig) => {
+  if ((field === 'showParticlesLayer' || field === 'showGeometricShapesLayer') && onLayerToggle) {
+    onLayerToggle(field, !config[field]);
+  } else {
     onConfigChange({ [field]: !config[field] });
-  };
+  }
+};
 
   // Create handlers for range inputs
   const handleRangeChange = (field: keyof ChordDiagramConfig, value: number) => {
@@ -137,6 +141,9 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
     }
   };
 
+  // Show WebGL recommendation based on particle count
+  const showWebGLRecommendation = particleMode && !useWebGLRenderer && particleMetrics.totalParticles > 2000;
+
   return (
     <div className="absolute bottom-4 left-4 z-10 max-w-xs">
       {/* Collapsible panel */}
@@ -161,6 +168,31 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
         
         {/* Panel content - only visible when expanded */}
         <div className={`${controlsPanelVisible ? 'block' : 'hidden'}`}>
+          {/* WebGL recommendation alert - shown at the top for better visibility */}
+          {showWebGLRecommendation && (
+            <div className="m-3 p-2 bg-yellow-500/20 rounded-md border border-yellow-500/30">
+              <div className="flex items-start">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 mr-2 flex-shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-yellow-300">
+                    Performance Alert
+                  </p>
+                  <p className="text-xs mt-1 text-yellow-200/80">
+                    You have {particleMetrics.totalParticles.toLocaleString()} particles. 
+                    Switch to the 3D/WebGL tab and enable hardware acceleration for better performance.
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('3d')}
+                    className="mt-2 text-xs px-2 py-1 bg-yellow-600/50 hover:bg-yellow-500/50 rounded-sm flex items-center"
+                  >
+                    <Cpu className="w-3 h-3 mr-1" />
+                    Go to WebGL Settings
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Tabs navigation */}
           <div className="flex border-b border-white/10">
             <button 
@@ -185,7 +217,10 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
               Particles
             </button>
             <button 
-              className={`flex-1 py-2 px-1 text-xs font-medium flex items-center justify-center ${activeTab === '3d' ? 'bg-cyan-500/20 text-cyan-300' : 'hover:bg-white/10'}`}
+              className={`flex-1 py-2 px-1 text-xs font-medium flex items-center justify-center ${activeTab === '3d' ? 'bg-cyan-500/20 text-cyan-300' : 'hover:bg-white/10'} ${
+                // Highlight tab if WebGL recommendation is active
+                showWebGLRecommendation ? 'animate-pulse ring-1 ring-yellow-400' : ''
+              }`}
               onClick={() => setActiveTab('3d')}
             >
               <Cpu className="w-3 h-3 mr-1" />
@@ -515,53 +550,91 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
                   </button>
                 </div>
                 
-                {/* Toggle controls area - for enabling/disabling modes */}
-                <div className="flex items-center justify-between mt-2">
-                  {/* Particle Mode Button */}
-                  <button
-                    onClick={() => {
-                      if (config.particleMode && particlesInitialized) {
-                        if (window.confirm("Disabling particle mode will remove all particles. Continue?")) {
-                          onConfigChange({ particleMode: false });
+                {/* Enhanced visualization mode selector */}
+                <div className="bg-gray-800/70 p-2 rounded-md mb-3">
+                  <div className="text-xs font-medium mb-2 text-white/90">Visualization Style</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        if (particleMode) {
+                          // If switching from particles to shapes, confirm
+                          if (window.confirm("Switching to geometric shapes will disable particle mode. Continue?")) {
+                            onConfigChange({ 
+                              useGeometricShapes: true,
+                              particleMode: false 
+                            });
+                          }
+                        } else {
+                          // Just enable shapes if particles not active
+                          onConfigChange({ useGeometricShapes: true });
                         }
-                      } else {
-                        // Just toggle the mode - generation happens separately
-                        onConfigChange({ particleMode: !config.particleMode });
-                      }
-                    }}
-                    className={`flex-1 mr-1 py-1.5 text-xs font-medium rounded flex items-center justify-center ${
-                      config.particleMode ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-600 hover:bg-gray-500'
-                    }`}
-                  >
-                    <Circle className="w-3 h-3 mr-1" />
-                    {config.particleMode ? "Particles: ON" : "Particles: OFF"}
-                  </button>
-                  
-                  {/* Shapes Mode Button */}
-                  <button
-                    onClick={() => {
-                      if (!config.useGeometricShapes && config.particleMode) {
-                        if (window.confirm("Enabling geometric shapes will disable particle mode. Continue?")) {
-                          onConfigChange({ 
-                            useGeometricShapes: true,
-                            particleMode: false 
-                          });
+                      }}
+                      className={`py-2 px-3 rounded-md flex flex-col items-center justify-center ${
+                        useGeometricShapes ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      <Square className="w-5 h-5 mb-1" />
+                      <span className="text-xs">Shapes</span>
+                      <span className="text-xs opacity-70 mt-0.5">
+                        {useGeometricShapes ? 'Active' : 'Inactive'}
+                      </span>
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        if (useGeometricShapes) {
+                          // If switching from shapes to particles, confirm
+                          if (window.confirm("Switching to particles will disable geometric shapes. Continue?")) {
+                            onConfigChange({ 
+                              useGeometricShapes: false,
+                              particleMode: true 
+                            });
+                          }
+                        } else {
+                          // Just toggle particle mode if shapes not active
+                          onConfigChange({ particleMode: !particleMode });
                         }
-                      } else {
-                        onConfigChange({ useGeometricShapes: !config.useGeometricShapes });
-                      }
-                    }}
-                    className={`flex-1 ml-1 py-1.5 text-xs font-medium rounded flex items-center justify-center ${
-                      config.useGeometricShapes ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-600 hover:bg-gray-500'
-                    }`}
-                  >
-                    <Square className="w-3 h-3 mr-1" />
-                    {config.useGeometricShapes ? "Shapes: ON" : "Shapes: OFF"}
-                  </button>
+                      }}
+                      className={`py-2 px-3 rounded-md flex flex-col items-center justify-center ${
+                        particleMode ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      <Circle className="w-5 h-5 mb-1" />
+                      <span className="text-xs">Particles</span>
+                      <span className="text-xs opacity-70 mt-0.5">
+                        {particleMode ? 'Active' : 'Inactive'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
+                {/* WebGL recommendation for particle mode */}
+                {particleMode && !useWebGLRenderer && particleMetrics.totalParticles > 2000 && (
+                  <div className="mb-3 p-2 bg-yellow-500/20 rounded-md border border-yellow-500/30">
+                    <div className="flex items-start">
+                      <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 mr-2 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-medium text-yellow-300">
+                          Performance Recommendation
+                        </p>
+                        <p className="text-xs mt-1 text-yellow-200/80">
+                          For better performance with {particleMetrics.totalParticles.toLocaleString()} particles, 
+                          enable WebGL rendering in the 3D/WebGL tab.
+                        </p>
+                        <button
+                          onClick={() => setActiveTab('3d')}
+                          className="mt-2 text-xs px-2 py-1 bg-yellow-600/50 hover:bg-yellow-500/50 rounded-sm flex items-center"
+                        >
+                          <Cpu className="w-3 h-3 mr-1" />
+                          Go to WebGL Settings
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Use ParticleControlsWithApply when particle mode is enabled */}
-                {config.particleMode && (
+                {particleMode && (
                   <ParticleControlsWithApply 
                     config={config}
                     onConfigChange={onConfigChange}
@@ -571,7 +644,7 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
                 )}
                 
                 {/* Geometric Shapes Controls - only shown when shapes are enabled */}
-                {config.useGeometricShapes && (
+                {useGeometricShapes && (
                   <div className="border-t border-white/10 mt-2 pt-2">
                     <h3 className="text-xs font-semibold mb-1.5 text-white/80">Shape Settings</h3>
                     
@@ -643,8 +716,8 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
                   </div>
                 )}
                 
-                {/* Particle generation controls - only visible when particle mode is ON and not inside ParticleControlsWithApply */}
-                {config.particleMode && (
+                {/* Particle generation controls - only visible when particle mode is ON */}
+                {particleMode && (
                   <div className={`mt-2 p-2 rounded ${particlesInitialized ? 'bg-green-500/20' : 'bg-blue-500/20'}`}>
                     {isGeneratingParticles ? (
                       <div className="text-xs">
@@ -679,142 +752,163 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
                           </span>
                           {particlesInitialized && <span>{particleMetrics.totalParticles} total</span>}
                         </div>
-                        
-{/* High performance mode toggle */}
-<div className="flex justify-between items-center text-xs mt-2">
-  <span className="flex items-center">
-    <Zap className="w-3 h-3 mr-1 text-yellow-400" />
-    High Performance Mode:
-  </span>
-  <div className="relative inline-block w-8 h-4">
-    <input 
-      type="checkbox" 
-      className="sr-only"
-      checked={config.highPerformanceMode}
-      onChange={() => onConfigChange({ highPerformanceMode: !config.highPerformanceMode })}
-      id="high-perf-toggle"
-    />
-    <label 
-      htmlFor="high-perf-toggle"
-      className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.highPerformanceMode ? 'bg-yellow-500' : 'bg-gray-500'}`}
-    >
-      <span 
-        className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform ${config.highPerformanceMode ? 'transform translate-x-4' : ''}`}
-      ></span>
-    </label>
-  </div>
-</div>
-{config.highPerformanceMode && (
-  <div className="text-xs text-yellow-300/70 mt-1 italic">
-    Reduces visual quality for better performance
-  </div>
-)}
-
-                        {/* Progressive generation toggle */}
-                        <div className="flex justify-between items-center text-xs mb-2">
-                          <span>Progressive Generation:</span>
-                          <div className="relative inline-block w-8 h-4">
-                            <input 
-                              type="checkbox" 
-                              className="sr-only"
-                              checked={progressiveGenerationEnabled}
-                              onChange={(e) => onProgressiveGeneration(e.target.checked)}
-                              id="progressive-toggle"
-                            />
-                            <label 
-                              htmlFor="progressive-toggle"
-                              className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${progressiveGenerationEnabled ? 'bg-purple-500' : 'bg-gray-500'}`}
-                            >
-                              <span 
-                                className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform ${progressiveGenerationEnabled ? 'transform translate-x-4' : ''}`}
-                              ></span>
-                            </label>
-                          </div>
-                        </div>
-
-{/* High performance mode toggle */}
-<div className="flex justify-between items-center text-xs mt-2">
-  <span className="flex items-center">
-    <Zap className="w-3 h-3 mr-1 text-yellow-400" />
-    High Performance Mode:
-  </span>
-  <div className="relative inline-block w-8 h-4">
-    <input 
-      type="checkbox" 
-      className="sr-only"
-      checked={config.highPerformanceMode}
-      onChange={() => onConfigChange({ highPerformanceMode: !config.highPerformanceMode })}
-      id="high-perf-toggle"
-    />
-    <label 
-      htmlFor="high-perf-toggle"
-      className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.highPerformanceMode ? 'bg-yellow-500' : 'bg-gray-500'}`}
-    >
-      <span 
-        className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform ${config.highPerformanceMode ? 'transform translate-x-4' : ''}`}
-      ></span>
-    </label>
-  </div>
-</div>
-{config.highPerformanceMode && (
-  <div className="text-xs text-yellow-300/70 mt-1 italic">
-    Reduces visual quality for better performance
-  </div>
-)}
-
                       </div>
                     )}
                   </div>
                 )}
-                
-                {/* WebGL toggle button */}
-                <button
-                  onClick={() => setShowWebGLControls(!showWebGLControls)}
-                  className="flex items-center justify-between w-full text-xs px-2 py-1.5 bg-blue-600/30 hover:bg-blue-600/40 rounded mt-2"
-                >
-                  <span className="flex items-center">
-                    <Zap className="w-3 h-3 mr-1" />
-                    WebGL Acceleration
-                  </span>
-                  <span className="text-xs opacity-70">
-                    {showWebGLControls ? "Hide Options ▲" : "Show Options ▼"}
-                  </span>
-                </button>
-                
-                {/* WebGL Controls (collapsible) */}
-                {showWebGLControls && (
-                  <WebGLParticleControls 
-                    config={config}
-                    onConfigChange={onConfigChange}
-                  />
-                )}
               </div>
             )}
-
+{/* Visualization Layers Section */}
+<div className="border-t border-white/10 mt-2 pt-2">
+  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Visualization Layers</h3>
+  
+  <div className="text-xs mb-2 text-white/70">
+    Control which visual elements are displayed and how they interact.
+  </div>
+  
+  {/* Chord Ribbons Layer */}
+  <div className="flex items-center mt-1.5">
+    <label className="flex items-center cursor-pointer">
+      <div className="relative mr-2">
+        <input
+          type="checkbox"
+          className="sr-only"
+          checked={config.showChordRibbons}
+          onChange={() => handleToggleChange('showChordRibbons')}
+        />
+        <div className={`w-8 h-4 rounded-full transition-colors ${config.showChordRibbons ? 'bg-blue-500' : 'bg-gray-500'}`}></div>
+        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showChordRibbons ? 'translate-x-4' : ''}`}></div>
+      </div>
+      <span className="text-xs">Show Chord Ribbons</span>
+    </label>
+  </div>
+  
+  {config.showChordRibbons && (
+    <>
+      {/* Ribbon Opacity Control */}
+      <div className="flex items-center justify-between mt-1.5 text-xs pl-6">
+        <label>Ribbon Opacity: {config.ribbonOpacity.toFixed(2)}</label>
+        <input
+          type="range"
+          min="0.05"
+          max="1.0"
+          step="0.05"
+          value={config.ribbonOpacity}
+          onChange={(e) => handleRangeChange('ribbonOpacity', parseFloat(e.target.value))}
+          className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
+      
+      {/* Real Connections Only for Ribbons */}
+      <div className="flex items-center mt-1.5 pl-6">
+        <label className="flex items-center cursor-pointer">
+          <div className="relative mr-2">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={config.showOnlyRealConnectionsRibbons}
+              onChange={() => handleToggleChange('showOnlyRealConnectionsRibbons')}
+            />
+            <div className={`w-8 h-4 rounded-full transition-colors ${config.showOnlyRealConnectionsRibbons ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
+            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsRibbons ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="text-xs">Real connections only</span>
+        </label>
+      </div>
+    </>
+  )}
+  
+  {/* Geometric Shapes Layer */}
+  <div className="flex items-center mt-3">
+    <label className="flex items-center cursor-pointer">
+      <div className="relative mr-2">
+        <input
+          type="checkbox"
+          className="sr-only"
+          checked={config.showGeometricShapesLayer}
+          onChange={() => handleToggleChange('showGeometricShapesLayer')}
+        />
+        <div className={`w-8 h-4 rounded-full transition-colors ${config.showGeometricShapesLayer ? 'bg-purple-500' : 'bg-gray-500'}`}></div>
+        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showGeometricShapesLayer ? 'translate-x-4' : ''}`}></div>
+      </div>
+      <span className="text-xs">Show Geometric Shapes</span>
+    </label>
+  </div>
+  
+  {config.showGeometricShapesLayer && (
+    <>
+      {/* Real Connections Only for Shapes */}
+      <div className="flex items-center mt-1.5 pl-6">
+        <label className="flex items-center cursor-pointer">
+          <div className="relative mr-2">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={config.showOnlyRealConnectionsShapes}
+              onChange={() => handleToggleChange('showOnlyRealConnectionsShapes')}
+            />
+            <div className={`w-8 h-4 rounded-full transition-colors ${config.showOnlyRealConnectionsShapes ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
+            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsShapes ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="text-xs">Real connections only</span>
+        </label>
+      </div>
+    </>
+  )}
+  
+  {/* Particles Layer */}
+  <div className="flex items-center mt-3">
+    <label className="flex items-center cursor-pointer">
+      <div className="relative mr-2">
+        <input
+          type="checkbox"
+          className="sr-only"
+          checked={config.showParticlesLayer}
+          onChange={() => handleToggleChange('showParticlesLayer')}
+        />
+        <div className={`w-8 h-4 rounded-full transition-colors ${config.showParticlesLayer ? 'bg-green-500' : 'bg-gray-500'}`}></div>
+        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showParticlesLayer ? 'translate-x-4' : ''}`}></div>
+      </div>
+      <span className="text-xs">Show Particles</span>
+    </label>
+  </div>
+  
+  {/* Note about combined modes */}
+  <div className="text-xs mt-3 text-white/60">
+    You can show multiple layer types simultaneously for interesting visual effects.
+  </div>
+</div>
             {/* 3D/WebGL Tab */}
             {activeTab === '3d' && (
               <div className="space-y-3">
-                <div className="mb-2 text-xs text-white/80">
-                  WebGL rendering dramatically improves performance for particle effects, especially with large datasets.
-                </div>
-                
-                {/* WebGL Controls */}
+                {/* Improved WebGL Controls with more prominence */}
                 <WebGLParticleControls 
                   config={config}
                   onConfigChange={onConfigChange}
+                  particleMetrics={particleMetrics}
                 />
                 
-                {/* Additional WebGL note - especially if particles enabled but WebGL disabled */}
-                {particleMode && !useWebGLRenderer && (
+                {/* Additional explanation text */}
+                {useWebGLRenderer && (
                   <div className="mt-3 text-xs p-2 bg-blue-500/20 text-blue-300 rounded">
-                    <strong>Performance Tip:</strong> Enable WebGL rendering for much better performance with particle effects.
+                    <div className="flex items-start">
+                      <Cpu className="w-3.5 h-3.5 text-blue-400 mr-1.5 mt-0.5 flex-shrink-0" />
+                      <p>
+                        <strong>WebGL Rendering Active</strong>: Your particle effects are using 
+                        hardware acceleration for smoother performance, especially with large numbers
+                        of particles.
+                      </p>
+                    </div>
                   </div>
                 )}
                 
-                {/* WebGL with Detailed View note */}
-                {showDetailedView && useWebGLRenderer && particleMode && (
-                  <div className="mt-3 text-xs p-2 bg-green-500/20 text-green-300 rounded">
-                    <strong>Performance Benefit:</strong> WebGL is especially helpful in detailed view with many nodes and particles.
+                {!useWebGLRenderer && particleMode && (
+                  <div className="mt-3 text-xs p-2 bg-gray-700 rounded">
+                    <p className="text-white/70">
+                      WebGL rendering uses your graphics card to accelerate particle rendering,
+                      providing significantly better performance than standard SVG rendering.
+                      Enable it when using many particles or in detailed view.
+                    </p>
                   </div>
                 )}
               </div>
@@ -855,7 +949,7 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
                       className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${useFadeTransition ? 'bg-purple-500' : 'bg-gray-500'}`}
                     >
                       <span 
-                        className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform ${useFadeTransition ? 'transform translate-x-4' : ''}`}
+                        className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${useFadeTransition ? 'translate-x-4' : ''}`}
                       ></span>
                     </label>
                   </div>

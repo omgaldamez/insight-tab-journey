@@ -373,6 +373,47 @@ const ParticleControlsWithApply: React.FC<ParticleControlsWithApplyProps> = ({
         )}
       </div>
       
+      {/* High Performance Mode */}
+      <div className="border-t border-white/10 mt-2 pt-2">
+        <h4 className="text-xs font-semibold mb-1.5 text-white/80">Performance Optimization</h4>
+        <div className="flex items-center mt-1.5">
+          <label className="flex items-center cursor-pointer">
+            <div className="relative mr-2">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={getCurrentValue('highPerformanceMode')}
+                onChange={() => handleToggleChange('highPerformanceMode')}
+              />
+              <div className={`w-8 h-4 rounded-full transition-colors ${getCurrentValue('highPerformanceMode') ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
+              <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${getCurrentValue('highPerformanceMode') ? 'translate-x-4' : ''}`}></div>
+            </div>
+            <span className="text-xs font-medium">High Performance Mode</span>
+            <span className="text-xs ml-1 text-gray-400">(faster, lower quality)</span>
+          </label>
+        </div>
+      </div>
+      
+      {/* Generation speed control */}
+      <div className="border-t border-white/10 mt-2 pt-2">
+        <h4 className="text-xs font-semibold mb-1.5 text-white/80">Generation Speed</h4>
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Delay: {getCurrentValue('particleGenerationDelay')}ms</label>
+          <input
+            type="range"
+            min="5"
+            max="100"
+            step="5"
+            value={getCurrentValue('particleGenerationDelay')}
+            onChange={(e) => handleRangeChange('particleGenerationDelay', parseInt(e.target.value))}
+            className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+        <div className="text-xs text-gray-400 mt-1">
+          Lower = faster but may cause lag
+        </div>
+      </div>
+      
       {/* Apply and Generate Buttons */}
       <div className="space-y-2 pt-2 border-t border-white/10 mt-2">
         {hasChanges && (
@@ -399,44 +440,6 @@ const ParticleControlsWithApply: React.FC<ParticleControlsWithApplyProps> = ({
           </button>
         )}
       </div>
-      {/* Generation speed control */}
-<div className="border-t border-white/10 mt-2 pt-2">
-  <h4 className="text-xs font-semibold mb-1.5 text-white/80">Generation Speed</h4>
-  <div className="flex items-center justify-between mt-1.5 text-xs">
-    <label>Delay: {getCurrentValue('particleGenerationDelay')}ms</label>
-    <input
-      type="range"
-      min="5"
-      max="100"
-      step="5"
-      value={getCurrentValue('particleGenerationDelay')}
-      onChange={(e) => handleRangeChange('particleGenerationDelay', parseInt(e.target.value))}
-      className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-    />
-  </div>
-  <div className="text-xs text-gray-400 mt-1">
-    Lower = faster but may cause lag
-  </div>
-</div>
-<div className="border-t border-white/10 mt-2 pt-2">
-  <h4 className="text-xs font-semibold mb-1.5 text-white/80">Performance Optimization</h4>
-  <div className="flex items-center mt-1.5">
-    <label className="flex items-center cursor-pointer">
-      <div className="relative mr-2">
-        <input
-          type="checkbox"
-          className="sr-only"
-          checked={getCurrentValue('highPerformanceMode')}
-          onChange={() => handleToggleChange('highPerformanceMode')}
-        />
-        <div className={`w-8 h-4 rounded-full transition-colors ${getCurrentValue('highPerformanceMode') ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
-        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${getCurrentValue('highPerformanceMode') ? 'translate-x-4' : ''}`}></div>
-      </div>
-      <span className="text-xs font-medium">High Performance Mode</span>
-      <span className="text-xs ml-1 text-gray-400">(faster, lower quality)</span>
-    </label>
-  </div>
-</div>
     </div>
   );
 };

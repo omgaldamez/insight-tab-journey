@@ -8,8 +8,7 @@ import { prepareChordMatrix, createCustomRibbon, addShapesOrParticlesAlongPath, 
 import { useToast } from '@/components/ui/use-toast';
 import { setupParticleMovement } from '@/utils/chordUtils';
 import { WebGLParticleSystem } from '@/utils/webglParticleSystem';
-
-
+import { WebGLParticleSystemOptions, checkWebGLSupport } from '@/utils/webglUtils';
 export interface DetailedNode {
   id: string;
   category: string;
@@ -118,6 +117,17 @@ minimalConnectionParticleStrokeWidth: number;
   // WebGL rendering options (new)
   useWebGLRenderer: boolean;
   webGLParticleQuality: 'low' | 'medium' | 'high';
+
+  // Visualization layers
+showChordRibbons: boolean;         // Show/hide base chord ribbons
+ribbonOpacity: number;             // Control ribbon opacity independently 
+showParticlesLayer: boolean;       // Show/hide particles
+showGeometricShapesLayer: boolean; // Show/hide geometric shapes
+
+// Connection filters 
+showOnlyRealConnectionsRibbons: boolean;   // For chord ribbons
+showOnlyRealConnectionsShapes: boolean;    // For geometric shapes
+
 }
 
 export interface ChordDiagramHookProps {
@@ -272,7 +282,17 @@ highPerformanceMode: false,
     
     // WebGL rendering options (new)
     useWebGLRenderer: false,
-    webGLParticleQuality: 'medium'
+    webGLParticleQuality: 'medium',
+  
+  // New visualization layer properties
+  showChordRibbons: true,
+  ribbonOpacity: 0.75, // Same as chordOpacity default
+  showParticlesLayer: false, // Will be turned on when particleMode is enabled
+  showGeometricShapesLayer: false, // Will be turned on when useGeometricShapes is enabled
+  
+  // New connection filter properties
+  showOnlyRealConnectionsRibbons: false,
+  showOnlyRealConnectionsShapes: true,
   });
   
   // Animation state
@@ -319,6 +339,19 @@ highPerformanceMode: false,
       setNodeCounts({ total: nodeData.length });
     }
   }, [nodeData]);
+
+  useEffect(() => {
+    // Sync layer visibility with mode toggles for backward compatibility
+    if (chordConfig.particleMode !== chordConfig.showParticlesLayer ||
+        chordConfig.useGeometricShapes !== chordConfig.showGeometricShapesLayer) {
+      
+      setChordConfig(prev => ({
+        ...prev,
+        showParticlesLayer: prev.particleMode,
+        showGeometricShapesLayer: prev.useGeometricShapes
+      }));
+    }
+  }, [chordConfig.particleMode, chordConfig.useGeometricShapes]);
 
   const cancelParticleGeneration = useCallback(() => {
     if (particleGenerationRef.current) {
@@ -637,7 +670,24 @@ highPerformanceMode: false,
     startProgressiveParticleGeneration
   ]);
 
-
+// Function to sync WebGL transforms with SVG zoom/pan
+const syncWebGLTransform = useCallback(() => {
+  if (!svgRef.current || !webglParticleSystemRef.current || !contentRef.current) return;
+  
+  // Get the current transform from the SVG content group
+  const transform = contentRef.current.getAttribute('transform') || '';
+  
+  console.log(`[CHORD-WEBGL-DEBUG] Syncing WebGL transform: ${transform}`);
+  
+  // Apply this transform to the WebGL system
+  webglParticleSystemRef.current.applyTransform(transform);
+  
+  // Log debug information about the current transform
+  const transformParts = transform.match(/translate\(([^,]+),([^)]+)\)|scale\(([^)]+)\)/g);
+  if (transformParts) {
+    console.log(`[CHORD-WEBGL-DEBUG] Transform components:`, transformParts);
+  }
+}, []);
 
   // Create the connectivity matrix for chord diagram
   useEffect(() => {
@@ -813,17 +863,6 @@ highPerformanceMode: false,
 
 // Effect to initialize and manage the WebGL particle system
 useEffect(() => {
-    if (chordConfig.useWebGLRenderer && chordConfig.particleMode) {
-        console.log('[CHORD-WEBGL-DEBUG] WebGL rendering enabled:', {
-          particleMovement: chordConfig.particleMovement,
-          particleMovementAmount: chordConfig.particleMovementAmount,
-          particleCount: chordConfig.particleDensity,
-          particleQuality: chordConfig.webGLParticleQuality
-        });
-        
-        // Verify the chord paths 
-        console.log(`[CHORD-WEBGL-DEBUG] Using ${chordPaths.length} SVG paths for WebGL`);
-      }
   // Only proceed if WebGL rendering is enabled and particle mode is on
   if (!chordConfig.useWebGLRenderer || !chordConfig.particleMode || !containerRef.current) {
     // Clean up any existing WebGL system if settings are disabled
@@ -837,9 +876,16 @@ useEffect(() => {
 
   console.log('[CHORD-WEBGL] Initializing or updating WebGL particle system');
   
+  // Get container dimensions for proper WebGL initialization
+  const containerWidth = containerRef.current.clientWidth;
+  const containerHeight = containerRef.current.clientHeight;
+  
   // Initialize WebGL system if not already created
   if (!webglParticleSystemRef.current) {
-    webglParticleSystemRef.current = new WebGLParticleSystem({
+    try {
+      // Ensure container is treated as HTMLDivElement
+      const container = containerRef.current as HTMLDivElement;
+    const options: WebGLParticleSystemOptions = {
       container: containerRef.current,
       particleColor: chordConfig.particleColor,
       particleSize: chordConfig.particleSize,
@@ -853,9 +899,23 @@ useEffect(() => {
       particleStrokeColor: chordConfig.particleStrokeColor,
       particleStrokeWidth: chordConfig.particleStrokeWidth,
       particleQuality: chordConfig.webGLParticleQuality
-    });
+    };
+    
+    webglParticleSystemRef.current = new WebGLParticleSystem(options);
     webglParticleSystemRef.current.init();
-  } else {
+    
+    // Log initialization
+    console.log('[CHORD-WEBGL] WebGL system initialized');
+  } catch (error) {
+    console.error('Failed to initialize WebGL particle system:', error);
+    // Disable WebGL rendering on failure
+    setChordConfig(prev => ({
+      ...prev, 
+      useWebGLRenderer: false
+    }));
+    return;
+  }
+} else {
     // Update existing WebGL system with new options
     webglParticleSystemRef.current.updateOptions({
       particleColor: chordConfig.particleColor,
@@ -877,6 +937,9 @@ useEffect(() => {
   if (chordPaths.length > 0 && webglParticleSystemRef.current) {
     console.log(`[CHORD-WEBGL] Setting ${chordPaths.length} paths to WebGL system`);
     webglParticleSystemRef.current.setPathsFromSVG(chordPaths);
+    
+    // Immediately sync the transform to ensure correct positioning
+    syncWebGLTransform();
     
     // Start or stop animation based on movement setting
     if (chordConfig.particleMovement) {
@@ -907,21 +970,13 @@ useEffect(() => {
   chordConfig.particleStrokeColor,
   chordConfig.particleStrokeWidth,
   chordConfig.webGLParticleQuality,
-  chordPaths.length
+  chordPaths.length,
+  syncWebGLTransform
 ]);
 
 
 
-// Function to sync WebGL transforms with SVG zoom/pan
-const syncWebGLTransform = useCallback(() => {
-  if (!svgRef.current || !webglParticleSystemRef.current || !contentRef.current) return;
-  
-  // Get the current transform from the SVG content group
-  const transform = contentRef.current.getAttribute('transform') || '';
-  
-  // Apply this transform to the WebGL system
-  webglParticleSystemRef.current.applyTransform(transform);
-}, []);
+
 
 // Effect to clean up WebGL system on unmount
 useEffect(() => {
@@ -935,6 +990,7 @@ useEffect(() => {
 }, []);
 
 // Add an effect to handle particle movement changes
+
 useEffect(() => {
     // Clean up any existing particle movement
     if (particleMovementCleanupRef.current) {
@@ -1275,7 +1331,7 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
           // Apply transform to the content group
           d3.select(contentRef.current).attr("transform", event.transform.toString());
           
-          // Sync WebGL transform with SVG zoom/pan
+          // Sync WebGL transform with SVG zoom/pan after each zoom event
           syncWebGLTransform();
         }
       });
@@ -1315,20 +1371,43 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
         // Apply transform with transition
         svg.transition()
           .duration(500)
-          .call(zoom.transform, transform);
-          
-        // Also update WebGL view
-        syncWebGLTransform();
+          .call(zoom.transform, transform)
+          .on("end", () => {
+            // Ensure WebGL is synced after transition completes
+            syncWebGLTransform();
+            console.log("[CHORD-WEBGL-DEBUG] Transform applied after fit:", contentRef.current?.getAttribute('transform'));
+          });
       } catch (error) {
         console.error("Error fitting chord diagram:", error);
       }
     };
     
-    // Call fit function after a short delay
+    // Call fit function after a short delay to ensure DOM is ready
     setTimeout(fitChordDiagram, 300);
     
     return { zoom, fitChordDiagram };
   }, [svgRef, containerRef, contentRef, syncWebGLTransform]);
+
+  const handleLayerToggle = useCallback((layerName: string, value: boolean) => {
+    if (layerName === 'showParticlesLayer') {
+      setChordConfig(prev => ({
+        ...prev,
+        showParticlesLayer: value,
+        particleMode: value // Keep in sync
+      }));
+    } else if (layerName === 'showGeometricShapesLayer') {
+      setChordConfig(prev => ({
+        ...prev,
+        showGeometricShapesLayer: value,
+        useGeometricShapes: value // Keep in sync
+      }));
+    } else {
+      setChordConfig(prev => ({
+        ...prev,
+        [layerName]: value
+      }));
+    }
+  }, []);
 
   // Functions for handling zoom controls
   const handleZoomIn = useCallback(() => {
@@ -1742,40 +1821,40 @@ useEffect(() => {
 
       // Add the chords (ribbons) with enhanced visual styling and dynamic opacity/stroke
       const ribbonGroup = g.append("g")
-        .attr("class", "chord-ribbons")
-        .attr("fill-opacity", ribbonFillEnabled ? chordOpacity : 0); // Use 0 opacity for stroke-only mode
-      
-      if (!isAnimating) {
-        // If not animating, add all chords at once
-        const chordPaths = ribbonGroup.selectAll("path")
-          .data(chordResult)
-          .join("path")
-          .attr("d", d => customRibbon(d, false))
-          .attr("fill", d => {
-            // If directional styling is enabled, use source/target colors
-            if (useDirectionalStyling) {
-              return sourceChordColor;
+      .attr("class", "chord-ribbons")
+      .attr("fill-opacity", ribbonFillEnabled && chordConfig.showChordRibbons ? chordConfig.ribbonOpacity : 0); // Use 0 opacity if ribbons disabled
+    
+    if (!isAnimating) {
+      // If not animating, add all chords at once
+      const chordPaths = ribbonGroup.selectAll("path")
+        .data(chordResult)
+        .join("path")
+        .attr("d", d => customRibbon(d, false))
+        .attr("fill", d => {
+          // If directional styling is enabled, use source/target colors
+          if (useDirectionalStyling) {
+            return sourceChordColor;
+          }
+          
+          // If using monochrome ribbons, return a neutral color
+          if (!useColoredRibbons) {
+            return "#999999"; // Neutral gray for monochrome mode
+          }
+          
+          // Otherwise use category colors
+          if (showDetailedView) {
+            // For detailed view, use source node's category
+            if (d.source.index < detailedNodeData.length) {
+              const sourceNode = detailedNodeData[d.source.index];
+              return getNodeColor({ id: "", category: sourceNode.category });
             }
-            
-            // If using monochrome ribbons, return a neutral color
-            if (!useColoredRibbons) {
-              return "#999999"; // Neutral gray for monochrome mode
-            }
-            
-            // Otherwise use category colors
-            if (showDetailedView) {
-              // For detailed view, use source node's category
-              if (d.source.index < detailedNodeData.length) {
-                const sourceNode = detailedNodeData[d.source.index];
-                return getNodeColor({ id: "", category: sourceNode.category });
-              }
-              return "#999"; // Fallback
-            } else {
-              // For category view, use source category color
-              const sourceCategory = uniqueCategories[d.source.index];
-              return getNodeColor({ id: "", category: sourceCategory });
-            }
-          })
+            return "#999"; // Fallback
+          } else {
+            // For category view, use source category color
+            const sourceCategory = uniqueCategories[d.source.index];
+            return getNodeColor({ id: "", category: sourceCategory });
+          }
+        })
           .attr("stroke", d => {
             // If directional styling is enabled, use darker source color for stroke
             if (useDirectionalStyling) {
@@ -1798,9 +1877,34 @@ useEffect(() => {
               return d3.rgb(baseColor).darker(0.8).toString();
             }
           })
-          .attr("stroke-width", chordStrokeWidth) // Use dynamic stroke width
-          .attr("stroke-opacity", chordStrokeOpacity) // Use dynamic stroke opacity
+          .attr("stroke-width", chordStrokeWidth)
+          .attr("stroke-opacity", chordConfig.showChordRibbons ? chordStrokeOpacity : 0) // Hide stroke if ribbons disabled
           .style("opacity", d => {
+            // Modified to respect showChordRibbons and showOnlyRealConnectionsRibbons
+            if (!chordConfig.showChordRibbons) return 0;
+            
+            // Check if this is a real connection
+            const sourceIndex = d.source.index;
+            const targetIndex = d.target.index;
+            let connectionValue = 0;
+            
+            if (showDetailedView) {
+              if (sourceIndex < detailedMatrix.length && targetIndex < detailedMatrix[0].length) {
+                connectionValue = detailedMatrix[sourceIndex][targetIndex];
+              }
+            } else {
+              if (sourceIndex < categoryMatrix.length && targetIndex < categoryMatrix[0].length) {
+                connectionValue = categoryMatrix[sourceIndex][targetIndex];
+              }
+            }
+            
+            const isRealConnection = connectionValue > 0.2;
+            
+            // Apply real connections filter if enabled
+            if (chordConfig.showOnlyRealConnectionsRibbons && !isRealConnection) {
+              return 0; // Hide if it's not a real connection
+            }
+            
             // If directional styling is enabled, use source opacity
             if (useDirectionalStyling) {
               return sourceChordOpacity;
@@ -1881,6 +1985,123 @@ useEffect(() => {
           })
           .attr("cursor", "pointer"); // Add a pointer cursor
           
+// Modified WebGL handling
+if (useWebGLRenderer && chordConfig.showParticlesLayer) {
+  // Collect all chord paths for WebGL rendering
+  const pathElements = Array.from(ribbonGroup.selectAll("path").nodes() as SVGPathElement[]);
+  setChordPaths(pathElements);
+  
+  // Sync WebGL transform with SVG
+  syncWebGLTransform();
+  
+  // When using WebGL, we should hide or simplify the SVG paths
+  // But only if chord ribbons are not meant to be shown
+  if (!chordConfig.showChordRibbons) {
+    pathElements.forEach(path => {
+      d3.select(path)
+        .attr("fill-opacity", 0.02)  // Nearly invisible fill
+        .attr("stroke-opacity", 0.05); // Very subtle stroke
+    });
+  }
+  
+  console.log('[CHORD-WEBGL] Using WebGL renderer for particles');
+}
+// Modified approach for geometric shapes and SVG particles
+else {
+  const showShapes = chordConfig.showGeometricShapesLayer && chordConfig.useGeometricShapes;
+  const showParticles = chordConfig.showParticlesLayer && chordConfig.particleMode && !useWebGLRenderer;
+  
+  if (showShapes || showParticles) {
+    // For each chord path, determine if it should have shapes or particles
+    chordPaths.each(function(d, i) {
+      // Get connection info
+      const sourceIndex = d.source.index;
+      const targetIndex = d.target.index;
+      let connectionValue = 0;
+      
+      if (showDetailedView) {
+        if (sourceIndex < detailedMatrix.length && targetIndex < detailedMatrix[0].length) {
+          connectionValue = detailedMatrix[sourceIndex][targetIndex];
+        }
+      } else {
+        if (sourceIndex < categoryMatrix.length && targetIndex < categoryMatrix[0].length) {
+          connectionValue = categoryMatrix[sourceIndex][targetIndex];
+        }
+      }
+      
+      const isRealConnection = connectionValue > 0.2;
+      
+      // Add shapes if enabled and passes the real connection filter
+      if (showShapes && (!chordConfig.showOnlyRealConnectionsShapes || isRealConnection)) {
+        addShapesOrParticlesAlongPath(
+          d3.select(this),
+          ribbonGroup,
+          true, // useGeometricShapes
+          false, // particleMode
+          shapeType,
+          shapeSize,
+          shapeSpacing,
+          shapeFill,
+          shapeStroke,
+          particleDensity, // Not used for shapes but required by function
+          particleSize, // Not used for shapes but required by function
+          particleSizeVariation, // Not used for shapes but required by function
+          particleBlur, // Not used for shapes but required by function
+          particleDistribution, // Not used for shapes but required by function
+          particleColor, // Not used for shapes but required by function
+          particleOpacity, // Not used for shapes but required by function
+          particleStrokeColor, // Required by function
+          particleStrokeWidth, // Required by function
+          showDetailedView,
+          chordStrokeWidth,
+          i,
+          isRealConnection,
+          true, // Apply to this chord
+          chordConfig.maxParticlesPerChord,
+          chordConfig.maxParticlesDetailedView,
+          chordConfig.maxShapesDetailedView,
+          false, // No progressive fade-in for shapes
+          1.0 // Stroke opacity
+        );
+      }
+      
+      // Add particles if enabled and passes the real connection filter
+      if (showParticles && (!chordConfig.particlesOnlyRealConnections || isRealConnection)) {
+        addShapesOrParticlesAlongPath(
+          d3.select(this),
+          ribbonGroup,
+          false, // useGeometricShapes 
+          true, // particleMode
+          shapeType, // Not used for particles
+          shapeSize, // Not used for particles
+          shapeSpacing, // Not used for particles
+          shapeFill, // Not used for particles
+          shapeStroke, // Not used for particles
+          particleDensity,
+          particleSize,
+          particleSizeVariation,
+          particleBlur,
+          particleDistribution,
+          particleColor,
+          particleOpacity,
+          particleStrokeColor,
+          particleStrokeWidth,
+          showDetailedView,
+          chordStrokeWidth,
+          i,
+          isRealConnection,
+          true, // Apply to this chord
+          chordConfig.maxParticlesPerChord,
+          chordConfig.maxParticlesDetailedView,
+          chordConfig.maxShapesDetailedView,
+          true, // Use progressive fade-in for particles
+          chordConfig.particleStrokeOpacity || 1.0 // Pass the stroke opacity
+        );
+      }
+    });
+  }
+}
+
 // Collect all chord paths for WebGL rendering (if enabled)
 if (useWebGLRenderer && particleMode) {
   // Collect all chord paths for WebGL rendering
@@ -1890,15 +2111,16 @@ if (useWebGLRenderer && particleMode) {
   // Sync WebGL transform with SVG
   syncWebGLTransform();
   
-  // When using WebGL, we should hide or simplify the SVG particles
+  // When using WebGL, we should hide or simplify the SVG paths
   // This makes the base ribbons almost completely transparent
-  chordPaths
-    .attr("fill-opacity", 0.02)  // Nearly invisible fill
-    .attr("stroke-opacity", 0.05); // Very subtle stroke
-    
-  // Skip adding SVG particles for better performance
+  pathElements.forEach(path => {
+    d3.select(path)
+      .attr("fill-opacity", 0.02)  // Nearly invisible fill
+      .attr("stroke-opacity", 0.05); // Very subtle stroke
+  });
+  
   console.log('[CHORD-WEBGL] Using WebGL renderer for particles');
-} 
+}
 // If geometric shapes or particles are enabled (and not using WebGL), add them along the chord paths
 else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
   // Determine total number of chords that will have particles
@@ -2461,6 +2683,7 @@ else if (particleMode && !useWebGLRenderer && animatedChords.length > 0) {
     showTooltip,
     textColor,
     useWebGLRenderer,
+    handleLayerToggle,
     syncWebGLTransform
   ]);
 
