@@ -439,8 +439,10 @@ export const addShapesOrParticlesAlongPath = (
   applyToThisChord: boolean = true,
   maxParticlesPerChord: number,
   maxParticlesDetailedView: number,
-  maxShapesDetailedView: number
-) => {
+  maxShapesDetailedView: number,
+  progressiveFadeIn: boolean = false,    // New parameter for progressive fade-in
+  particleStrokeOpacity: number = 1.0    // Add stroke opacity parameter
+): number => {
   // Add this diagnostic counter
   let totalParticlesCreated = 0;
   
@@ -552,45 +554,60 @@ export const addShapesOrParticlesAlongPath = (
         const randomOpacityFactor = 0.5 + Math.random() * 0.5;
         const finalOpacity = particleOpacity * randomOpacityFactor;
         
-        // Create particle with enhanced styling and initial fade-in
+        // Create particle with enhanced styling and progressive fade-in
         const particle = shapesGroup.append("circle")
-          .attr("cx", point.x)
-          .attr("cy", point.y)
-          .attr("r", finalSize)
-          .attr("fill", particleColor)
-          .attr("stroke", particleStrokeColor)
-          .attr("stroke-width", particleStrokeWidth)
-          .attr("data-is-real", isRealConnection ? "true" : "false") // Use the parameter
-          .attr("data-particle-color", particleColor) // Store original color
-          .attr("data-original-x", point.x) // For animation
-          .attr("data-original-y", point.y)
-          .style("opacity", 0); // Start invisible for fade-in
+        .attr("cx", point.x)
+        .attr("cy", point.y)
+        .attr("r", finalSize)
+        .attr("fill", particleColor)
+        .attr("stroke", particleStrokeColor)
+        .attr("stroke-width", particleStrokeWidth)
+        .attr("stroke-opacity", particleStrokeOpacity) // New stroke opacity attribute
+        .attr("data-is-real", isRealConnection ? "true" : "false")
+        .attr("data-particle-color", particleColor) // Store original color
+        .attr("data-original-x", point.x) // For animation
+        .attr("data-original-y", point.y);
         
-        // Add blur if enabled
-        if (particleBlur > 0) {
-          particle.style("filter", `blur(${particleBlur}px)`);
-        }
-        
-        // Add fade-in transition with staggered delay
-        particle.transition()
-          .delay(j * 2) // Stagger based on index
+      // Start invisible and fade in if progressive fade-in is enabled
+      if (progressiveFadeIn) {
+        particle
+          .style("opacity", 0) // Start invisible
+          .transition()
+          .delay(j * 5) // Staggered delay based on index
           .duration(300)
           .style("opacity", finalOpacity);
+      } else {
+        particle.style("opacity", finalOpacity);
+      }
+      
+      // Add blur if enabled
+      if (particleBlur > 0) {
+        particle.style("filter", `blur(${particleBlur}px)`);
+      }
       } else {
         // For geometric shapes mode
         switch (shapeType) {
           case 'circle': {
-            shapesGroup.append("circle")
+            const shape = shapesGroup.append("circle")
               .attr("cx", point.x)
               .attr("cy", point.y)
               .attr("r", shapeSize)
               .attr("fill", shapeFill)
               .attr("stroke", shapeStroke)
               .attr("stroke-width", chordStrokeWidth);
+              
+            if (progressiveFadeIn) {
+              shape
+                .style("opacity", 0)
+                .transition()
+                .delay(j * 10)
+                .duration(300)
+                .style("opacity", 1);
+            }
             break;
           }
           case 'square': {
-            shapesGroup.append("rect")
+            const shape = shapesGroup.append("rect")
               .attr("x", point.x - shapeSize)
               .attr("y", point.y - shapeSize)
               .attr("width", shapeSize * 2)
@@ -598,6 +615,15 @@ export const addShapesOrParticlesAlongPath = (
               .attr("fill", shapeFill)
               .attr("stroke", shapeStroke)
               .attr("stroke-width", chordStrokeWidth);
+              
+            if (progressiveFadeIn) {
+              shape
+                .style("opacity", 0)
+                .transition()
+                .delay(j * 10)
+                .duration(300)
+                .style("opacity", 1);
+            }
             break;
           }
           case 'diamond': {
@@ -608,11 +634,20 @@ export const addShapesOrParticlesAlongPath = (
               [point.x, point.y + shapeSize],
               [point.x - shapeSize, point.y]
             ];
-            shapesGroup.append("polygon")
+            const shape = shapesGroup.append("polygon")
               .attr("points", diamond.map(p => p.join(",")).join(" "))
               .attr("fill", shapeFill)
               .attr("stroke", shapeStroke)
               .attr("stroke-width", chordStrokeWidth);
+              
+            if (progressiveFadeIn) {
+              shape
+                .style("opacity", 0)
+                .transition()
+                .delay(j * 10)
+                .duration(300)
+                .style("opacity", 1);
+            }
             break;
           }
         }
@@ -624,6 +659,145 @@ export const addShapesOrParticlesAlongPath = (
       console.log(`[PARTICLE-DIAGNOSTICS] Total particles created for this chord: ${totalParticlesCreated}`);
     }
   });
+  
+  // Return the count of particles created for metrics
+  return totalParticlesCreated;
+};
+
+/**
+ * Pre-calculate particle positions along a path without rendering them
+ * This improves performance by separating calculation from DOM operations
+ */
+export const precalculateParticlePositions = (
+  path: SVGPathElement,
+  particleCount: number,
+  particleDistribution: 'uniform' | 'random' | 'gaussian',
+  randomSeed?: number
+): Array<{x: number, y: number, size: number, opacity: number}> => {
+  // Get the total length of the path
+  const totalLength = path.getTotalLength();
+  const positions: Array<{x: number, y: number, size: number, opacity: number}> = [];
+  
+  // Use seeded random generation if provided
+  const seededRandom = randomSeed !== undefined ? 
+    createSeededRandom(randomSeed) : 
+    Math.random;
+  
+  for (let j = 0; j < particleCount; j++) {
+    // Calculate position along path
+    let position;
+    
+    switch (particleDistribution) {
+      case 'uniform':
+        position = (j / (particleCount - 1)) * totalLength;
+        break;
+      case 'gaussian':
+        // Gaussian distribution centered at middle of path
+        const u = seededRandom();
+        const v = seededRandom();
+        const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+        // Standard deviation of 0.25 of the total length
+        position = (0.5 + z * 0.25) * totalLength;
+        // Clamp to path length
+        position = Math.max(0, Math.min(totalLength, position));
+        break;
+      case 'random':
+      default:
+        position = seededRandom() * totalLength;
+        break;
+    }
+    
+    // Get the point at this position
+    const point = path.getPointAtLength(position);
+    
+    // Calculate a random size variation and opacity variation for more natural look
+    const sizeVariation = 0.5 + seededRandom();
+    const opacityVariation = 0.5 + seededRandom() * 0.5;
+    
+    // Store calculated values
+    positions.push({
+      x: point.x,
+      y: point.y,
+      size: sizeVariation,
+      opacity: opacityVariation
+    });
+  }
+  
+  return positions;
+};
+
+/**
+ * Create a deterministic random function with a seed
+ * This ensures consistent randomization across different runs
+ */
+export const createSeededRandom = (seed: number): () => number => {
+  return function() {
+    const x = Math.sin(seed++) * 10000;
+    return x - Math.floor(x);
+  };
+};
+
+/**
+ * Efficiently render pre-calculated particles with progressive fade-in
+ * This reduces DOM thrashing by batching operations
+ */
+export const renderPrecalculatedParticles = (
+  shapesGroup: d3.Selection<SVGGElement, unknown, null, undefined>,
+  positions: Array<{x: number, y: number, size: number, opacity: number}>,
+  baseSize: number,
+  color: string,
+  baseOpacity: number,
+  strokeColor: string,
+  strokeWidth: number,
+  strokeOpacity: number,
+  progressiveFadeIn: boolean = false,
+  fadeInDelay: number = 3
+): void => {
+  // Create a document fragment for better performance
+  const frag = document.createDocumentFragment();
+  const ns = "http://www.w3.org/2000/svg";
+  
+  // Add all particles to the fragment
+  positions.forEach((pos, i) => {
+    const circle = document.createElementNS(ns, "circle");
+    
+    // Set attributes
+    circle.setAttribute("cx", pos.x.toString());
+    circle.setAttribute("cy", pos.y.toString());
+    circle.setAttribute("r", (baseSize * pos.size).toString());
+    circle.setAttribute("fill", color);
+    circle.setAttribute("stroke", strokeColor);
+    circle.setAttribute("stroke-width", strokeWidth.toString());
+    circle.setAttribute("stroke-opacity", strokeOpacity.toString());
+    circle.setAttribute("data-original-x", pos.x.toString());
+    circle.setAttribute("data-original-y", pos.y.toString());
+    
+    // Apply fade-in effect for smoother appearance
+    if (progressiveFadeIn) {
+      // Start with opacity 0
+      circle.style.opacity = "0";
+      // Set transition properties for smooth fade
+      circle.style.transition = "opacity 300ms ease-out";
+      
+      // Store final opacity value as an attribute for reference
+      const finalOpacity = (baseOpacity * pos.opacity).toString();
+      circle.setAttribute("data-final-opacity", finalOpacity);
+      
+      // Gradually reveal each particle with a staggered delay
+      // This creates a cascade effect when many particles are added
+      setTimeout(() => {
+        circle.style.opacity = finalOpacity;
+      }, i * fadeInDelay);
+    } else {
+      // Without progressive fade, just set the opacity directly
+      circle.style.opacity = (baseOpacity * pos.opacity).toString();
+    }
+    
+    frag.appendChild(circle);
+  });
+  
+  // Append the fragment to the group in a single operation
+  shapesGroup.node()?.appendChild(frag);
 };
 
 /**

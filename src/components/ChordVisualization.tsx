@@ -13,6 +13,7 @@ import ConnectionInfoBox from './ConnectionInfoBox';
 import ChordDiagramControls from './ChordDiagramControls';
 import { downloadChordDiagram } from '@/utils/chordUtils';
 import useChordDiagram from '@/hooks/useChordDiagram';
+import ParticleMetricsPanel from './ParticleMetricsPanel';
 
 interface ChordVisualizationProps {
   onCreditsClick: () => void;
@@ -59,6 +60,7 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [controlsPanelVisible, setControlsPanelVisible] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showParticleMetrics, setShowParticleMetrics] = useState(true);
 
   // Apply fullscreen styles
   useFullscreenStyles();
@@ -110,7 +112,8 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     onPrevious: chord.goToPreviousRibbon,
     onNext: chord.goToNextRibbon,
     onReset: chord.resetAnimation,
-    onSpeedChange: chord.changeAnimationSpeed
+    onSpeedChange: chord.changeAnimationSpeed,
+    onJumpToFrame: chord.jumpToFrame  // Add this new prop
   };
 
   // Toggle sidebar state handler
@@ -278,11 +281,19 @@ handleApplyBackgroundColors: (
               touchAction: "none" // Important for proper touch handling
             }}
           >
-            <svg
-              ref={svgRef}
-              className="w-full h-full"
-              style={{ overflow: "visible" }}
-            />
+           {/* Add a style tag for particle transitions */}
+<style>
+  {`
+  .chord-particles circle {
+    transition: opacity 300ms ease-out;
+  }
+  `}
+</style>
+<svg
+  ref={svgRef}
+  className="w-full h-full"
+  style={{ overflow: "visible" }}
+/>
             
             {/* Use the updated VisualizationControls component */}
             <VisualizationControls
@@ -501,13 +512,77 @@ handleApplyBackgroundColors: (
               />
             </div>
             
-            {/* Use our new ChordDiagramControls component */}
-            <ChordDiagramControls
-              config={chord.chordConfig}
-              onConfigChange={chord.updateConfig}
-              controlsPanelVisible={controlsPanelVisible}
-              onToggleControlPanel={() => setControlsPanelVisible(prev => !prev)}
-            />
+
+
+{/* Add the Particle Metrics Panel RIGHT AFTER the ConnectionInfoBox */}
+{/* Particle Metrics Panel - at bottom-left */}
+<div className="absolute bottom-4 left-4 z-50 transition-opacity cursor-move"
+    onMouseDown={(e) => {
+      // Make the panel draggable
+      if (e.currentTarget) {
+        const el = e.currentTarget;
+        const rect = el.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+        
+        const onMouseMove = (e: MouseEvent) => {
+          if (containerRef.current) {
+            const containerRect = containerRef.current.getBoundingClientRect();
+            const x = e.clientX - offsetX - containerRect.left;
+            const y = e.clientY - offsetY - containerRect.top;
+            
+            // Keep within container bounds
+            const maxX = containerRect.width - rect.width;
+            const maxY = containerRect.height - rect.height;
+            
+            el.style.left = `${Math.max(0, Math.min(maxX, x))}px`;
+            el.style.top = `${Math.max(0, Math.min(maxY, y))}px`;
+            el.style.right = 'auto';
+            el.style.bottom = 'auto';
+            el.style.transform = 'none';
+          }
+        };
+        
+        const onMouseUp = () => {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        };
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      }
+    }}
+>
+  <ParticleMetricsPanel 
+    isVisible={showParticleMetrics && chord.chordConfig.particleMode}
+    totalParticles={chord.particleMetrics.totalParticles}
+    totalChordsWithParticles={chord.particleMetrics.totalChordsWithParticles}
+    chordsGenerated={chord.particleMetrics.chordsGenerated}
+    totalChords={chord.particleMetrics.totalChords}
+    renderTime={chord.particleMetrics.renderTime}
+    fps={chord.particleMetrics.fps}
+    useWebGL={chord.chordConfig.useWebGLRenderer}
+    isGenerating={chord.isGeneratingParticles}
+    onCancelGeneration={chord.cancelParticleGeneration}
+  />
+</div>
+
+{/* Use our updated ChordDiagramControls component with particle generation support */}
+<ChordDiagramControls
+  config={chord.chordConfig}
+  onConfigChange={chord.updateConfig}
+  controlsPanelVisible={controlsPanelVisible}
+  onToggleControlPanel={() => setControlsPanelVisible(prev => !prev)}
+  particlesInitialized={chord.particlesInitialized}
+  isGeneratingParticles={chord.isGeneratingParticles}
+  onInitializeParticles={chord.initializeParticles}
+  onCancelParticleGeneration={chord.cancelParticleGeneration}
+  onToggleParticleMetrics={() => setShowParticleMetrics(prev => !prev)}
+  showParticleMetrics={showParticleMetrics}
+  onProgressiveGeneration={chord.toggleProgressiveGeneration}
+  progressiveGenerationEnabled={chord.chordConfig.progressiveGenerationEnabled}
+  particleMetrics={chord.particleMetrics}
+/>
           </div>
         </div>
       }

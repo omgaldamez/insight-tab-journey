@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useMemo, RefObject, useRef } from 'react';
 import * as d3 from 'd3';
 import { Node, Link } from '@/types/networkTypes';
-import { prepareChordMatrix, createCustomRibbon, addShapesOrParticlesAlongPath } from '@/utils/chordUtils';
+import { prepareChordMatrix, createCustomRibbon, addShapesOrParticlesAlongPath, precalculateParticlePositions, renderPrecalculatedParticles } from '@/utils/chordUtils';
 import { useToast } from '@/components/ui/use-toast';
 import { setupParticleMovement } from '@/utils/chordUtils';
 import { WebGLParticleSystem } from '@/utils/webglParticleSystem';
@@ -82,13 +82,25 @@ minimalConnectionParticleStrokeWidth: number;
   
   particleStrokeColor: string;
   particleStrokeWidth: number;
+  particleStrokeOpacity: number;
   particleGeometryStrokeColor: string;
   particleGeometryStrokeWidth: number;
+
+  
   
     // Particles per chord
     maxParticlesPerChord: number;          // Maximum particles per chord
     maxParticlesDetailedView: number;      // Maximum particles in detailed view
     maxShapesDetailedView: number;         // Maximum shapes in detailed view
+
+    particlesInitialized: boolean;
+    progressiveGenerationEnabled: boolean;
+    particleGenerationDelay: number;
+
+    // High performance mode
+  highPerformanceMode: boolean;
+  batchSize: number;
+  useFixedRandomSeeds: boolean;
 
   // Animation
   isAnimating: boolean;
@@ -143,6 +155,7 @@ export const useChordDiagram = ({
   const { toast } = useToast();
   const particleMovementCleanupRef = useRef<(() => void) | null>(null);
   const webglParticleSystemRef = useRef<WebGLParticleSystem | null>(null);
+  const particleGenerationRef = useRef<number | null>(null);
 
   // Basic state
   const [isLoading, setIsLoading] = useState(true);
@@ -159,7 +172,18 @@ export const useChordDiagram = ({
   const [needsRedraw, setNeedsRedraw] = useState(false);
   const [chordPaths, setChordPaths] = useState<SVGPathElement[]>([]);
 
-  
+  const [particlesInitialized, setParticlesInitialized] = useState(false);
+  const [isGeneratingParticles, setIsGeneratingParticles] = useState(false);
+  const [particleMetrics, setParticleMetrics] = useState({
+    totalParticles: 0,
+    totalChordsWithParticles: 0,
+    chordsGenerated: 0,
+    totalChords: 0,
+    renderTime: 0,
+    fps: 0,
+    lastFrameTime: 0
+  });
+
   // Chord diagram configuration
   const [chordConfig, setChordConfig] = useState<ChordDiagramConfig>({
     // Basic styling
@@ -216,6 +240,7 @@ minimalConnectionParticleStrokeWidth: 0.1,
     
     particleStrokeColor: '#ffffff',
     particleStrokeWidth: 0.2,
+    particleStrokeOpacity: 1.0,
     particleGeometryStrokeColor: '#ffffff',
     particleGeometryStrokeWidth: 0.3,
 
@@ -223,6 +248,15 @@ minimalConnectionParticleStrokeWidth: 0.1,
     maxParticlesDetailedView: 50,    // Default for detailed view
     maxShapesDetailedView: 30,       // Default for shapes
     
+// Initialize chord config with new properties
+particlesInitialized: false,
+progressiveGenerationEnabled: true,
+particleGenerationDelay: 15, // ms between chord particle generation
+
+highPerformanceMode: false,
+  batchSize: 2,
+  useFixedRandomSeeds: true,
+
     // Animation
     isAnimating: false,
     animationSpeed: 1.0,
@@ -285,6 +319,325 @@ minimalConnectionParticleStrokeWidth: 0.1,
       setNodeCounts({ total: nodeData.length });
     }
   }, [nodeData]);
+
+  const cancelParticleGeneration = useCallback(() => {
+    if (particleGenerationRef.current) {
+      clearTimeout(particleGenerationRef.current);
+      particleGenerationRef.current = null;
+    }
+    
+    setIsGeneratingParticles(false);
+    
+    toast({
+      title: "Generation Cancelled",
+      description: "Particle generation was cancelled",
+    });
+  }, [toast]);
+
+  const startProgressiveParticleGeneration = useCallback(() => {
+    if (!svgRef.current || chordData.length === 0) return;
+    
+    // Set starting state
+    setParticlesInitialized(true);
+    setIsGeneratingParticles(true);
+    
+    // Track start time for performance measurement
+    const startTime = performance.now();
+    setParticleMetrics(prev => ({
+      ...prev,
+      lastFrameTime: startTime,
+      totalChords: chordData.length
+    }));
+    
+    // Counters for tracking progress
+    let currentIndex = 0;
+    let totalParticles = 0;
+    let totalChordsWithParticles = 0;
+    
+    // Clear any existing generation timeout
+    if (particleGenerationRef.current) {
+      clearTimeout(particleGenerationRef.current);
+    }
+    
+    // Pre-calculate phase: store all particle positions for each chord path
+    const chordParticleData: Array<{
+      index: number,
+      pathElement: SVGPathElement | null,
+      isRealConnection: boolean,
+      positions: Array<{x: number, y: number, size: number, opacity: number}>
+    }> = [];
+    
+    // Get all chord paths
+    const ribbonGroup = d3.select(svgRef.current).select('.chord-ribbons');
+    const allChordPaths = Array.from(ribbonGroup.selectAll("path").nodes() as SVGPathElement[]);
+    
+    // Initial chord processing - calculate all positions in advance
+    console.log(`[PARTICLE-OPTIMIZATION] Pre-calculating positions for ${allChordPaths.length} chords`);
+    const calculateStart = performance.now();
+    
+    // Batch size for calculation (we can process more at once since we're not updating the DOM)
+    const CALC_BATCH_SIZE = 10;
+    
+    // Function to process a batch of chord calculations
+    const processCalculationBatch = (startIdx: number) => {
+      const endIdx = Math.min(startIdx + CALC_BATCH_SIZE, chordData.length);
+      let calculatedCount = 0;
+      
+      for (let i = startIdx; i < endIdx; i++) {
+        // Get chord data for this index
+        const chord = chordData[i];
+        if (!chord || i >= allChordPaths.length) continue;
+        
+        // Determine if this is a real connection
+        const sourceIndex = chord.source.index;
+        const targetIndex = chord.target.index;
+        let connectionValue = 0;
+        
+        if (chordConfig.showDetailedView) {
+          if (sourceIndex < detailedMatrix.length && targetIndex < detailedMatrix[0].length) {
+            connectionValue = detailedMatrix[sourceIndex][targetIndex];
+          }
+        } else {
+          if (sourceIndex < categoryMatrix.length && targetIndex < categoryMatrix[0].length) {
+            connectionValue = categoryMatrix[sourceIndex][targetIndex];
+          }
+        }
+        
+        const isRealConnection = connectionValue > 0.2;
+        
+        // Only calculate if we should add particles
+        const shouldAddParticles = chordConfig.particleMode && 
+          (!chordConfig.particlesOnlyRealConnections || 
+           (chordConfig.particlesOnlyRealConnections && isRealConnection));
+        
+        if (shouldAddParticles) {
+          // Get path element
+          const pathElement = allChordPaths[i];
+          
+          if (pathElement) {
+            // Choose particle density based on connection type
+            const baseDensity = isRealConnection ? 
+              chordConfig.particleDensity : 
+              chordConfig.particleDensity * 0.6; // Fewer particles for minimal connections
+            
+            // Calculate number of particles
+            const totalLength = pathElement.getTotalLength();
+            let numParticles = Math.round(baseDensity * (totalLength / 300));
+            
+            // Apply limits
+            if (chordConfig.showDetailedView) {
+              numParticles = Math.min(numParticles, chordConfig.maxParticlesDetailedView);
+            } else {
+              numParticles = Math.min(numParticles, chordConfig.maxParticlesPerChord);
+            }
+            
+            // Ensure a minimum number of particles
+            numParticles = Math.max(5, numParticles);
+            
+            // Generate a fixed seed for this chord to ensure consistent randomization
+            const randomSeed = i * 1000 + numParticles;
+            
+            // Pre-calculate positions for this chord
+            const positions = precalculateParticlePositions(
+              pathElement,
+              numParticles,
+              chordConfig.particleDistribution,
+              randomSeed
+            );
+            
+            // Store the data
+            chordParticleData.push({
+              index: i,
+              pathElement,
+              isRealConnection,
+              positions
+            });
+            
+            totalParticles += numParticles;
+            calculatedCount++;
+          }
+        }
+      }
+      
+      // Update metrics for calculation phase
+      setParticleMetrics(prev => ({
+        ...prev,
+        totalParticles,
+        chordsGenerated: endIdx,
+        renderTime: performance.now() - calculateStart
+      }));
+      
+      // If we've finished calculations, start rendering phase
+      if (endIdx >= chordData.length) {
+        console.log(`[PARTICLE-OPTIMIZATION] Finished calculating ${totalParticles} particles in ${(performance.now() - calculateStart).toFixed(1)}ms`);
+        totalChordsWithParticles = chordParticleData.length;
+        startRenderingPhase(chordParticleData);
+      } else {
+        // Process next batch with small delay to prevent UI freezing
+        setTimeout(() => processCalculationBatch(endIdx), 0);
+      }
+    };
+    
+    // Rendering phase: progressively render particles from pre-calculated positions
+    const startRenderingPhase = (chordParticleData: Array<any>) => {
+      console.log(`[PARTICLE-OPTIMIZATION] Starting rendering phase for ${chordParticleData.length} chords`);
+      const renderStart = performance.now();
+      
+      // Reset counter for rendering phase
+      currentIndex = 0;
+      const renderBatchSize = 1; // Number of chords to render in each batch
+      
+      // Function to render a batch of chords
+      const renderNextBatch = () => {
+        const endIdx = Math.min(currentIndex + renderBatchSize, chordParticleData.length);
+        
+        for (let i = currentIndex; i < endIdx; i++) {
+          const chordData = chordParticleData[i];
+          if (!chordData) continue;
+          
+          // Clear existing particles for this chord
+          d3.selectAll(`.chord-particles[data-chord-index="${chordData.index}"]`).remove();
+          
+          // Choose particle style based on connection type
+          const styleConfig = chordData.isRealConnection ? 
+            {
+              color: chordConfig.particleColor,
+              size: chordConfig.particleSize,
+              opacity: chordConfig.particleOpacity,
+              strokeColor: chordConfig.particleStrokeColor,
+              strokeWidth: chordConfig.particleStrokeWidth,
+              strokeOpacity: chordConfig.particleStrokeOpacity || 1.0
+            } : 
+            {
+              color: chordConfig.minimalConnectionParticleColor,
+              size: chordConfig.minimalConnectionParticleSize,
+              opacity: chordConfig.minimalConnectionParticleOpacity,
+              strokeColor: chordConfig.minimalConnectionParticleStrokeColor,
+              strokeWidth: chordConfig.minimalConnectionParticleStrokeWidth,
+              strokeOpacity: 1.0
+            };
+          
+          // Create shapes group
+          const shapesGroup = ribbonGroup.append("g")
+            .attr("class", "chord-particles")
+            .attr("data-chord-index", chordData.index);
+          
+          // Efficiently render the pre-calculated particles
+          renderPrecalculatedParticles(
+            shapesGroup,
+            chordData.positions,
+            styleConfig.size,
+            styleConfig.color,
+            styleConfig.opacity,
+            styleConfig.strokeColor,
+            styleConfig.strokeWidth,
+            styleConfig.strokeOpacity,
+            true, // Always enable progressive fade-in for better visuals
+            2  // Use a very small delay for faster but still visible transitions
+          );
+        }
+        
+        // Update progress
+        currentIndex = endIdx;
+        
+        // Update metrics for rendering phase
+        setParticleMetrics(prev => ({
+          ...prev,
+          totalParticles,
+          totalChordsWithParticles,
+          chordsGenerated: currentIndex,
+          renderTime: performance.now() - renderStart,
+          fps: currentIndex > 0 ? 1000 / ((performance.now() - renderStart) / currentIndex) : 0
+        }));
+        
+        // If we're done, finish up
+        if (currentIndex >= chordParticleData.length) {
+          console.log(`[PARTICLE-OPTIMIZATION] Finished rendering ${totalParticles} particles in ${(performance.now() - renderStart).toFixed(1)}ms`);
+          setIsGeneratingParticles(false);
+          
+          // Setup particle movement if enabled
+          if (chordConfig.particleMovement && svgRef.current && !chordConfig.useWebGLRenderer) {
+            if (particleMovementCleanupRef.current) {
+              particleMovementCleanupRef.current();
+            }
+            
+            particleMovementCleanupRef.current = setupParticleMovement(
+              svgRef.current,
+              chordConfig.particleMovementAmount,
+              true
+            );
+          }
+          
+          // Final metrics update
+          setParticleMetrics(prev => ({
+            ...prev,
+            totalParticles,
+            totalChordsWithParticles,
+            chordsGenerated: chordParticleData.length,
+            renderTime: performance.now() - startTime,
+            fps: 1000 / ((performance.now() - startTime) / chordParticleData.length)
+          }));
+          
+          // Notify about completion
+          toast({
+            title: "Particles Generated",
+            description: `Generated ${totalParticles} particles for ${totalChordsWithParticles} chords`,
+          });
+        } else {
+          // Schedule next batch with delay
+          particleGenerationRef.current = window.setTimeout(
+            renderNextBatch, 
+            chordConfig.particleGenerationDelay
+          );
+        }
+      };
+      
+      // Start the rendering phase
+      renderNextBatch();
+    };
+    
+    // Start the calculation phase
+    processCalculationBatch(0);
+  }, [
+    svgRef, 
+    chordData, 
+    chordConfig,
+    detailedMatrix,
+    categoryMatrix,
+    toast
+  ]);
+  
+  const initializeParticles = useCallback(() => {
+    if (isGeneratingParticles) {
+      // Cancel any ongoing generation
+      cancelParticleGeneration();
+      return;
+    }
+  
+    // Reset metrics
+    setParticleMetrics(prev => ({
+      ...prev,
+      totalParticles: 0,
+      totalChordsWithParticles: 0,
+      chordsGenerated: 0,
+      totalChords: chordData.length,
+      renderTime: 0
+    }));
+  
+    // Flag that we're starting generation
+    setIsGeneratingParticles(true);
+  
+    // Always use progressive generation for better visual effect
+    // This ensures particles fade in gracefully
+    startProgressiveParticleGeneration();
+  }, [
+    isGeneratingParticles, 
+    chordData.length, 
+    cancelParticleGeneration,
+    startProgressiveParticleGeneration
+  ]);
+
+
 
   // Create the connectivity matrix for chord diagram
   useEffect(() => {
@@ -557,6 +910,8 @@ useEffect(() => {
   chordPaths.length
 ]);
 
+
+
 // Function to sync WebGL transforms with SVG zoom/pan
 const syncWebGLTransform = useCallback(() => {
   if (!svgRef.current || !webglParticleSystemRef.current || !contentRef.current) return;
@@ -640,8 +995,17 @@ useEffect(() => {
       setCurrentAnimatedIndex(0);
     }
     
-    // Start the animation loop
-    const animate = () => {
+    // Clear any existing animation
+    if (animationRef.current) {
+      clearTimeout(animationRef.current);
+      animationRef.current = null;
+    }
+    
+    // Start the animation loop - this function captures the latest animation speed
+    const animateWithCurrentSpeed = () => {
+      // Get the current speed from config to ensure we're using the latest value
+      const currentSpeed = chordConfig.animationSpeed;
+      
       setCurrentAnimatedIndex(prevIndex => {
         // If we've reached the end, stop the animation
         if (prevIndex >= totalRibbonCount) {
@@ -652,41 +1016,43 @@ useEffect(() => {
         return prevIndex + 1;
       });
       
-      // Calculate delay based on animation speed
-      // Enhanced to support speeds up to 10x
-      let frameDelay = 1000 / animationSpeed;
-      
+// Calculate delay based on animation speed - linear scaling for entire range
+let frameDelay = 1000 / currentSpeed;
+
+// Make sure we don't go too fast at high speeds (causes stuttering)
+frameDelay = Math.max(frameDelay, 50); // Minimum 50ms delay even at max speed
+
+// Apply additional time for fade transition if enabled
+if (chordConfig.useFadeTransition) {
+  // When fade is enabled, we need more time between frames
+  // but still respect the overall speed setting
+  frameDelay = Math.max(frameDelay, chordConfig.transitionDuration * 0.3 / currentSpeed);
+}
       // For very high speeds (>5x), adjust the delay calculation
       // to make transitions smoother but still reach 10x speed
-      if (animationSpeed > 5) {
-        frameDelay = 1000 / (5 + (animationSpeed - 5) * 0.5);
+      if (currentSpeed > 5) {
+        frameDelay = 1000 / (5 + (currentSpeed - 5) * 0.5);
       }
       
       // Apply additional time for fade transition if enabled
-      if (useFadeTransition) {
+      if (chordConfig.useFadeTransition) {
         // When fade is enabled, we need more time between frames
         // but still respect the overall speed setting
-        frameDelay = Math.max(frameDelay, transitionDuration * 0.4 / animationSpeed);
+        frameDelay = Math.max(frameDelay, chordConfig.transitionDuration * 0.4 / currentSpeed);
       }
       
       // Schedule the next frame
-      animationRef.current = window.setTimeout(animate, frameDelay);
+      animationRef.current = window.setTimeout(animateWithCurrentSpeed, frameDelay);
     };
     
     // Calculate initial delay
-    const initialDelay = useFadeTransition ? 
-      Math.max(300, transitionDuration * 0.5) / animationSpeed : 
-      1000 / animationSpeed;
+    const initialDelay = chordConfig.useFadeTransition ? 
+      Math.max(300, chordConfig.transitionDuration * 0.5) / chordConfig.animationSpeed : 
+      1000 / chordConfig.animationSpeed;
     
     // Start the animation with initial delay
-    animationRef.current = window.setTimeout(animate, initialDelay);
-  }, [
-    currentAnimatedIndex, 
-    totalRibbonCount, 
-    animationSpeed, 
-    useFadeTransition, 
-    transitionDuration
-  ]);
+    animationRef.current = window.setTimeout(animateWithCurrentSpeed, initialDelay);
+  }, [currentAnimatedIndex, totalRibbonCount, chordConfig]);
 
   // Stop animation
   const stopAnimation = useCallback(() => {
@@ -737,6 +1103,19 @@ useEffect(() => {
     setNeedsRedraw(true);
   }, [stopAnimation]);
 
+  const jumpToFrame = useCallback((frameIndex: number) => {
+    // Stop any running animation
+    stopAnimation();
+    
+    // Set the index directly to the requested frame
+    // Clamp between 0 and total count
+    const clampedIndex = Math.max(0, Math.min(totalRibbonCount, frameIndex));
+    setCurrentAnimatedIndex(clampedIndex);
+    
+    // Force redraw
+    setNeedsRedraw(true);
+  }, [stopAnimation, totalRibbonCount]);
+  
   // Change animation speed
   const changeAnimationSpeed = useCallback((speed: number) => {
     setChordConfig(prev => ({ ...prev, animationSpeed: speed }));
@@ -748,37 +1127,55 @@ useEffect(() => {
     }
   }, [isAnimating, startAnimation]);
 
-  // Update config settings
-  const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
-    // Log diagnostics for particle-related changes
-    if ('particleMode' in updates) {
-      console.log(`[DIAGRAM-DIAGNOSTICS] Particle mode toggled: ${updates.particleMode}`);
-      if (updates.particleMode && showDetailedView) {
-        console.log(`[DIAGRAM-DIAGNOSTICS] WARNING: Enabling particles in detailed view may impact performance`);
-      }
+// Update config settings
+const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
+  // Log diagnostics for particle-related changes
+  if ('particleMode' in updates) {
+    console.log(`[DIAGRAM-DIAGNOSTICS] Particle mode toggled: ${updates.particleMode}`);
+    if (updates.particleMode && showDetailedView) {
+      console.log(`[DIAGRAM-DIAGNOSTICS] WARNING: Enabling particles in detailed view may impact performance`);
     }
     
-    if ('particleDensity' in updates) {
-      console.log(`[DIAGRAM-DIAGNOSTICS] Particle density changed: ${updates.particleDensity}`);
+    // If particle mode is being enabled, update config first, then initialize particles
+    if (updates.particleMode) {
+      setChordConfig(prev => ({
+        ...prev,
+        ...updates
+      }));
+      setNeedsRedraw(true);
+      
+      // Use a short delay to ensure the config update is applied first
+      setTimeout(() => {
+        // Initialize particles with fade-in effect
+        initializeParticles();
+      }, 50);
+      
+      return; // Exit early since we're handling this toggle specially
     }
-    
-    if ('particleMovement' in updates) {
-      console.log(`[DIAGRAM-DIAGNOSTICS] Particle movement toggled: ${updates.particleMovement}`);
+  }
+  
+  if ('particleDensity' in updates) {
+    console.log(`[DIAGRAM-DIAGNOSTICS] Particle density changed: ${updates.particleDensity}`);
+  }
+  
+  if ('particleMovement' in updates) {
+    console.log(`[DIAGRAM-DIAGNOSTICS] Particle movement toggled: ${updates.particleMovement}`);
+  }
+  
+  if ('useWebGLRenderer' in updates) {
+    console.log(`[DIAGRAM-DIAGNOSTICS] WebGL rendering toggled: ${updates.useWebGLRenderer}`);
+    if (updates.useWebGLRenderer && showDetailedView) {
+      console.log(`[DIAGRAM-DIAGNOSTICS] WebGL can significantly improve performance with many particles`);
     }
-    
-    if ('useWebGLRenderer' in updates) {
-      console.log(`[DIAGRAM-DIAGNOSTICS] WebGL rendering toggled: ${updates.useWebGLRenderer}`);
-      if (updates.useWebGLRenderer && showDetailedView) {
-        console.log(`[DIAGRAM-DIAGNOSTICS] WebGL can significantly improve performance with many particles`);
-      }
-    }
-    
-    setChordConfig(prev => ({
-      ...prev,
-      ...updates
-    }));
-    setNeedsRedraw(true);
-  }, [showDetailedView]);
+  }
+  
+  // Normal update for other config changes
+  setChordConfig(prev => ({
+    ...prev,
+    ...updates
+  }));
+  setNeedsRedraw(true);
+}, [showDetailedView, setNeedsRedraw, initializeParticles]);
 
   // Effect to update connection info when animation index changes
   useEffect(() => {
@@ -1563,7 +1960,8 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
         sizeVariation: particleSizeVariation,
         opacity: particleOpacity,
         strokeColor: particleStrokeColor,
-        strokeWidth: particleStrokeWidth
+        strokeWidth: particleStrokeWidth,
+        strokeOpacity: chordConfig.particleStrokeOpacity || 1.0 // Include stroke opacity
       } : 
       {
         color: chordConfig.minimalConnectionParticleColor,
@@ -1571,13 +1969,15 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
         sizeVariation: chordConfig.minimalConnectionParticleSizeVariation,
         opacity: chordConfig.minimalConnectionParticleOpacity,
         strokeColor: chordConfig.minimalConnectionParticleStrokeColor,
-        strokeWidth: chordConfig.minimalConnectionParticleStrokeWidth
+        strokeWidth: chordConfig.minimalConnectionParticleStrokeWidth,
+        strokeOpacity: 1.0 // Default stroke opacity for minimal connections
       };
     
     if (shouldAddParticles) {
       console.log(`[PARTICLE-DIAGNOSTICS] Adding particles to chord #${i} with connection value ${connectionValue.toFixed(2)}, isReal: ${isRealConnection}`);
     }
     
+    // MODIFY THIS CALL to include the progressiveFadeIn parameter
     return addShapesOrParticlesAlongPath(
       d3.select(this),
       ribbonGroup,
@@ -1604,7 +2004,9 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
       shouldAddParticles,
       chordConfig.maxParticlesPerChord,
       chordConfig.maxParticlesDetailedView,
-      chordConfig.maxShapesDetailedView
+      chordConfig.maxShapesDetailedView,
+      false, // Don't use progressive fade-in during initial rendering to maintain performance
+      styleConfig.strokeOpacity // Pass the stroke opacity
     );
   });
   
@@ -1829,59 +2231,79 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
             .attr("fill-opacity", 0.15) // Very transparent fill
             .attr("stroke-opacity", 0.3); // Subtle stroke
         }
-        // Add particles if enabled and not using WebGL
-        else if (particleMode && !useWebGLRenderer && animatedChords.length > 0) {
-          // For each chord, add particles along the path
-          animatedPaths.each(function(d, i) {
-            return addShapesOrParticlesAlongPath(
-                  d3.select(this),
-                  ribbonGroup,
-                  false, // useGeometricShapes
-                  true, // particleMode
-                  shapeType, // not used
-                  shapeSize, // not used
-                  shapeSpacing, // not used
-                  shapeFill, // not used
-                  shapeStroke, // not used
-                  particleDensity,
-                  particleSize,
-                  particleSizeVariation,
-                  particleBlur,
-                  particleDistribution,
-                  particleColor,
-                  particleOpacity,
-                  particleStrokeColor,
-                  particleStrokeWidth,
-                  showDetailedView,
-                  chordStrokeWidth,
-                  i,
-                  true,
-                  true,
-                  chordConfig.maxParticlesPerChord,
-                  chordConfig.maxParticlesDetailedView,
-                  chordConfig.maxShapesDetailedView
-              );
-          });
+// Add particles if enabled and not using WebGL
+else if (particleMode && !useWebGLRenderer && animatedChords.length > 0) {
+  // Only process the newest chord that was just added
+  if (currentAnimatedIndex > 0 && currentAnimatedIndex <= chordResult.length) {
+    // Get only the latest chord index
+    const latestChordIndex = currentAnimatedIndex - 1;
+    
+    // Important: Check if particles already exist for this chord
+    const existingParticles = d3.selectAll(`.chord-particles[data-chord-index="${latestChordIndex}"]`);
+    
+    // Only add particles if they don't already exist for this chord
+    if (existingParticles.empty()) {
+      // Get just the latest chord path
+      const latestChord = animatedPaths.filter((d, i) => i === latestChordIndex);
+      
+      // Only add particles to the newest chord
+      latestChord.each(function(d) {
+        // Add class to help identify this path
+        d3.select(this).classed("particle-path", true);
+        
+        return addShapesOrParticlesAlongPath(
+              d3.select(this),
+              ribbonGroup,
+              false, // useGeometricShapes
+              true, // particleMode
+              shapeType, 
+              shapeSize, 
+              shapeSpacing, 
+              shapeFill, 
+              shapeStroke, 
+              particleDensity,
+              particleSize,
+              particleSizeVariation,
+              particleBlur,
+              particleDistribution,
+              particleColor,
+              particleOpacity,
+              particleStrokeColor,
+              particleStrokeWidth,
+              showDetailedView,
+              chordStrokeWidth,
+              latestChordIndex,
+              true,
+              true,
+              chordConfig.maxParticlesPerChord,
+              chordConfig.maxParticlesDetailedView,
+              chordConfig.maxShapesDetailedView,
+              true // Enable fade-in for smoother appearance of new particles
+          );
+      });
+    }
+  }
+  
+  // Apply transparent style to all animated paths
+  // Only adjust opacity for ribbons, not particles
+  animatedPaths
+    .attr("fill-opacity", 0.03) // Nearly invisible fill
+    .attr("stroke-opacity", 0.07); // Very subtle stroke
+}
           
-          // For particles, make the base ribbons very transparent
-          animatedPaths
-            .attr("fill-opacity", 0.03) // Nearly invisible fill
-            .attr("stroke-opacity", 0.07); // Very subtle stroke
-          
-          // Set up particle movement if enabled
-          if (chordConfig.particleMovement && svgRef.current && !useWebGLRenderer) {
-            if (particleMovementCleanupRef.current) {
-              particleMovementCleanupRef.current();
-            }
-            
-            particleMovementCleanupRef.current = setupParticleMovement(
-              svgRef.current,
-              chordConfig.particleMovementAmount,
-              true
+  // Set up particle movement if enabled
+  if (chordConfig.particleMovement && svgRef.current && !useWebGLRenderer) {
+    if (particleMovementCleanupRef.current) {
+      particleMovementCleanupRef.current();
+    }
+    
+    particleMovementCleanupRef.current = setupParticleMovement(
+      svgRef.current,
+      chordConfig.particleMovementAmount,
+      true
             );
           }
         }
-      }
 
       // Add arc click handlers
       groups
@@ -2079,6 +2501,33 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
     };
   }, [svgRef, tooltipRef, hideTooltip]);
 
+
+
+
+const toggleProgressiveGeneration = useCallback((enabled: boolean) => {
+  setChordConfig(prev => ({
+    ...prev,
+    progressiveGenerationEnabled: enabled
+  }));
+  
+  toast({
+    title: enabled ? "Progressive Generation Enabled" : "Instant Generation Enabled",
+    description: enabled 
+      ? "Particles will be generated progressively for better visualization" 
+      : "All particles will be generated at once",
+  });
+}, [toast]);
+
+// Cleanup effect
+useEffect(() => {
+  return () => {
+    if (particleGenerationRef.current) {
+      clearTimeout(particleGenerationRef.current);
+    }
+  };
+}, []);
+
+
   return {
     // State
     isLoading,
@@ -2102,6 +2551,7 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
     goToNextRibbon,
     resetAnimation,
     changeAnimationSpeed,
+    jumpToFrame,
     
     // Configuration updates
     updateConfig,
@@ -2122,7 +2572,13 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
     hideTooltip,
     
     // Flag setters
-    setNeedsRedraw
+    setNeedsRedraw,
+    particlesInitialized,
+    isGeneratingParticles,
+    particleMetrics,
+    initializeParticles,
+    cancelParticleGeneration,
+    toggleProgressiveGeneration
   };
 };
 
