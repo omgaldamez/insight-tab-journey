@@ -16,16 +16,19 @@ import {
   Box, 
   RotateCcw,
   Info,
-  Network, // Added Network icon for the 3D network layout
+  Network,
   Globe, 
   ZoomOut,
   Target, 
-  Users
+  Users,
+  Settings, // Added Settings icon
+  Save
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import NetworkColorControls from './NetworkColorControls';
 import { getNodeColor } from '@/utils/colorThemes';
 import TooltipSettings, { TooltipDetail, TooltipTrigger } from './TooltipSettings';
+import ConfigPresets from './ConfigPresets';
 
 // Update visualization type to include 3D
 export type VisualizationType = 'network' | 'arc' | '3d' | 'rad360' |
@@ -62,6 +65,7 @@ interface NetworkSidebarProps {
     visualizationType: boolean;
     threeDControls?: boolean;
     tooltipSettings: boolean;
+    configPresets?: boolean; // Added configPresets property
   };
   selectedNode: Node | null;
   selectedNodeConnections: {
@@ -95,6 +99,10 @@ interface NetworkSidebarProps {
   threeDCenterNode?: string | null;
   nodePositioningEnabled?: boolean;
   onToggleNodePositioning?: () => void;
+  
+  // Configuration preset handlers
+  onGetCurrentConfig?: () => Record<string, unknown>;
+  onApplyConfig?: (config: Record<string, unknown>) => void;
   
   onParameterChange: (type: string, value: number) => void;
   onNodeGroupChange: (group: string) => void;
@@ -187,7 +195,9 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   onResetView,
   onZoomIn,
   onZoomOut,
-  onThreeDLayoutChange
+  onThreeDLayoutChange,
+  onGetCurrentConfig,
+  onApplyConfig
 }) => {
   const { toast } = useToast();
   const [nodeSearch, setNodeSearch] = useState('');
@@ -285,6 +295,8 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
           </button>
         </div>
       </div>
+
+
 
       {/* Scrollable content */}
       <div className="overflow-y-auto flex-1">
@@ -433,7 +445,40 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
             </div>
           )}
         </div>
-
+      {/* Configuration Presets Section */}
+      {typeof expandedSections.configPresets !== 'undefined' && (
+        <div className="px-5 mb-3">
+          <button 
+            className="bg-gray-700 w-full p-2.5 rounded-md flex justify-between items-center cursor-pointer mb-1"
+            onClick={() => onToggleSection('configPresets')}
+          >
+            <h2 className="text-base font-medium text-blue-400 m-0 flex items-center">
+              <Settings className="w-4 h-4 mr-1.5" />
+              Configuration Presets
+            </h2>
+            {expandedSections.configPresets ? 
+              <ChevronDown className="w-4 h-4 text-white" /> : 
+              <ChevronRight className="w-4 h-4 text-white" />
+            }
+          </button>
+          
+          {expandedSections.configPresets && (
+            <div className="mb-4 bg-gray-700 p-3 rounded-md">
+              {onGetCurrentConfig && onApplyConfig ? (
+                <ConfigPresets
+                  getCurrentConfig={onGetCurrentConfig}
+                  applyConfig={onApplyConfig}
+                  visualizationType={visualizationType}
+                />
+              ) : (
+                <div className="text-xs text-gray-400 py-2">
+                  Configuration presets not available for this visualization type.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
         {/* Network Controls Section - Only shown for network visualization type */}
         {visualizationType === 'network' && (
           <div className="px-5 mb-3">

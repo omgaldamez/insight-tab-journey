@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // This is a revised version of the GroupableNetworkVisualization component
 // focusing on fixing dragging issues and panning conflicts
@@ -162,7 +163,8 @@ const [expandedSections, setExpandedSections] = useState({
   visualizationType: true,
   threeDControls: false,
   tooltipSettings: true,
-  groupingControls: true
+  groupingControls: true,
+  configPresets: true
 });
 
 

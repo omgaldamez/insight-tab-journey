@@ -14,6 +14,7 @@ import ChordDiagramControls from './ChordDiagramControls';
 import { downloadChordDiagram } from '@/utils/chordUtils';
 import useChordDiagram from '@/hooks/useChordDiagram';
 import ParticleMetricsPanel from './ParticleMetricsPanel';
+import { useConfigPresets } from '@/hooks/useConfigPresets';
 
 interface ChordVisualizationProps {
   onCreditsClick: () => void;
@@ -78,6 +79,18 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     initialDynamicColorThemes: dynamicColorThemes
   });
 
+
+  const [localExpandedSections, setLocalExpandedSections] = useState({
+    networkControls: true,
+    nodeControls: true,
+    colorControls: false,
+    networkInfo: false,
+    visualizationType: true,
+    tooltipSettings: true,
+    configPresets: true
+  });
+
+
   // Use the chord diagram hook for diagram state and rendering
   const chord = useChordDiagram({
     nodeData,
@@ -91,15 +104,6 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     customNodeColors: colors.customNodeColors,
     colorTheme: colors.colorTheme,
     dynamicColorThemes: colors.dynamicColorThemes
-  });
-
-  const [localExpandedSections, setLocalExpandedSections] = useState({
-    networkControls: true,
-    nodeControls: true,
-    colorControls: false,
-    networkInfo: false,
-    visualizationType: true,
-    tooltipSettings: true
   });
 
   // Animation controls props
@@ -174,6 +178,42 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     tooltipDetail,
     tooltipTrigger
   };
+
+  const { getCurrentConfig, applyConfig } = useConfigPresets({
+    colors,
+    tooltipDetail,
+    setTooltipDetail: (detail) => {
+      if (onTooltipDetailChange) {
+        onTooltipDetailChange(detail);
+      }
+    },
+    tooltipTrigger,
+    setTooltipTrigger: (trigger) => {
+      if (onTooltipTriggerChange) {
+        onTooltipTriggerChange(trigger);
+      }
+    },
+    networkTitle: "Chord Diagram",
+    setNetworkTitle: () => {},
+    expandedSections: localExpandedSections,
+    setExpandedSections: setLocalExpandedSections,
+    // Add these with default values
+    linkDistance: null,
+    setLinkDistance: () => {},
+    linkStrength: null,
+    setLinkStrength: () => {},
+    nodeCharge: null,
+    setNodeCharge: () => {},
+    localFixNodesOnDrag: null,
+    setLocalFixNodesOnDrag: () => {},
+    // Include chord-specific settings
+    chordConfig: chord.chordConfig,
+    updateChordConfig: chord.updateConfig,
+    reinitializeVisualization: chord.setNeedsRedraw,
+    setForceUpdate: () => chord.setNeedsRedraw(true),
+    visualizationType: 'chord'
+  });
+
 
   const handlers = {
     handleParameterChange: (type: string, value: number) => {
@@ -266,7 +306,9 @@ handleApplyBackgroundColors: (
       }
     },
     downloadData: () => {},
-    downloadGraph: handleDownloadGraph
+    downloadGraph: handleDownloadGraph,
+    onGetCurrentConfig: getCurrentConfig,
+    onApplyConfig: applyConfig
   };
 
   return (

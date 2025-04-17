@@ -40,7 +40,7 @@ import {
 import NodeNavVisualization from './NodeNavVisualization';
 import FullscreenButton from './FullscreenButton';
 import useFullscreenStyles from '@/hooks/useFullscreenStyles';
-
+import { useConfigPresets } from '@/hooks/useConfigPresets';
 
 // Define interfaces for handling both raw data and processed nodes/links
 interface NodeData {
@@ -139,7 +139,8 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
     networkInfo: false,
     visualizationType: true,
     threeDControls: false,
-    tooltipSettings: true
+    tooltipSettings: true,
+    configPresets: true
   });
   const [nodeGroup, setNodeGroup] = useState('all');
   const [activeColorTab, setActiveColorTab] = useState('presets');
@@ -192,6 +193,89 @@ const NetworkVisualization: React.FC<NetworkVisualizationProps> = ({
   });
 
   useFullscreenStyles();
+
+  // Complete reinitialization function 
+  const reinitializeVisualization = () => {
+    console.log("Completely reinitializing visualization");
+    
+    try {
+      // Clean up existing simulation
+      if (simulationRef.current) {
+        simulationRef.current.stop();
+        simulationRef.current = null;
+      }
+      
+      // Clear SVG
+      if (svgRef.current) {
+        d3.select(svgRef.current).selectAll("*").remove();
+      }
+      
+      // Reset visualization initialized flag
+      visualizationInitialized.current = false;
+      
+      // Reset all parameters to defaults
+      setLinkDistance(70);
+      setLinkStrength(1.0);
+      setNodeCharge(-300);
+      colors.setNodeSize(1.0);
+      
+      // Update reference values
+      prevLinkDistanceRef.current = 70;
+      prevNodeChargeRef.current = -300;
+      prevLinkStrengthRef.current = 1.0;
+      
+      // Set a flag to trigger the useEffect that creates the visualization
+      setIsLoading(true);
+      
+      // Delay to allow for DOM updates
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 100);
+      
+      // Clear any error state
+      setVisualizationError(null);
+      
+      toast({
+        title: "Visualization Reset",
+        description: "Network visualization has been completely reinitialized",
+      });
+    } catch (error) {
+      console.error("Error reinitializing visualization:", error);
+      setVisualizationError(error instanceof Error ? error.message : "Unknown error during reinitialization");
+      
+      toast({
+        title: "Error",
+        description: "Failed to reinitialize the visualization. Please try reloading the page.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const { getCurrentConfig, applyConfig } = useConfigPresets({
+    colors,
+    tooltipDetail,
+    setTooltipDetail,
+    tooltipTrigger,
+    setTooltipTrigger,
+    networkTitle,
+    setNetworkTitle,
+    expandedSections,
+    setExpandedSections,
+    linkDistance,
+    setLinkDistance,
+    linkStrength,
+    setLinkStrength,
+    nodeCharge,
+    setNodeCharge,
+    localFixNodesOnDrag,
+    setLocalFixNodesOnDrag,
+    // Add these with null defaults
+    chordConfig: null,
+    updateChordConfig: () => {},
+    reinitializeVisualization, // This should now be defined
+    setForceUpdate,
+    visualizationType: 'network'
+  });
 
 
   // Setup the file export hook
@@ -1735,62 +1819,7 @@ const handleExportNodeData = (format: 'text' | 'json') => {
     }
   };
 
-  // Complete reinitialization function 
-  const reinitializeVisualization = () => {
-    console.log("Completely reinitializing visualization");
-    
-    try {
-      // Clean up existing simulation
-      if (simulationRef.current) {
-        simulationRef.current.stop();
-        simulationRef.current = null;
-      }
-      
-      // Clear SVG
-      if (svgRef.current) {
-        d3.select(svgRef.current).selectAll("*").remove();
-      }
-      
-      // Reset visualization initialized flag
-      visualizationInitialized.current = false;
-      
-      // Reset all parameters to defaults
-      setLinkDistance(70);
-      setLinkStrength(1.0);
-      setNodeCharge(-300);
-      colors.setNodeSize(1.0);
-      
-      // Update reference values
-      prevLinkDistanceRef.current = 70;
-      prevNodeChargeRef.current = -300;
-      prevLinkStrengthRef.current = 1.0;
-      
-      // Set a flag to trigger the useEffect that creates the visualization
-      setIsLoading(true);
-      
-      // Delay to allow for DOM updates
-      setTimeout(() => {
-        setIsLoading(false);
-      }, 100);
-      
-      // Clear any error state
-      setVisualizationError(null);
-      
-      toast({
-        title: "Visualization Reset",
-        description: "Network visualization has been completely reinitialized",
-      });
-    } catch (error) {
-      console.error("Error reinitializing visualization:", error);
-      setVisualizationError(error instanceof Error ? error.message : "Unknown error during reinitialization");
-      
-      toast({
-        title: "Error",
-        description: "Failed to reinitialize the visualization. Please try reloading the page.",
-        variant: "destructive"
-      });
-    }
-  };
+
 
   // Handle parameter change - Update to ensure correct state updates
   const handleParameterChange = (type: string, value: number) => {
@@ -2039,7 +2068,9 @@ const handleExportNodeData = (format: 'text' | 'json') => {
     handleResetZoom: resetZoom,
     handleTooltipDetailChange: (detail: string) => handleTooltipDetailChange(detail as TooltipDetail),
     handleTooltipTriggerChange: (trigger: string) => handleTooltipTriggerChange(trigger as TooltipTrigger), 
-    handleExportNodeData
+    handleExportNodeData,
+    onGetCurrentConfig: getCurrentConfig,
+    onApplyConfig: applyConfig
   };
 
   // Direct visualization type checking

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import NetworkSidebar, { VisualizationType } from './NetworkSidebar';
 import { LoadingIndicator, NetworkError } from './NetworkComponents';
@@ -32,13 +33,14 @@ interface NetworkHandlers {
   handleTooltipDetailChange?: (detail: TooltipDetail) => void;
   handleTooltipTriggerChange?: (trigger: TooltipTrigger) => void;
   handleExportNodeData?: (format: 'text' | 'json') => void;
+  // Configuration preset handlers
+  onGetCurrentConfig?: () => any;
+  onApplyConfig?: (config: any) => void;
 }
 
 interface BaseVisualizationProps {
   children: React.ReactNode;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   nodeData: Node[] | any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   linkData: Link[] | any[];
   onCreditsClick: () => void;
   isLoading: boolean;
@@ -46,6 +48,7 @@ interface BaseVisualizationProps {
   selectedNode: Node | null;
   selectedNodeConnections: { to: string[]; from: string[] };
   expandedSections: {
+    configPresets: boolean;
     networkControls: boolean;
     nodeControls: boolean;
     colorControls: boolean;
@@ -125,7 +128,10 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
           nodeGroup={sidebar.nodeGroup}
           colorTheme={sidebar.localColorTheme}
           activeColorTab={sidebar.activeColorTab}
-          expandedSections={expandedSections}
+          expandedSections={{
+            ...expandedSections,
+            configPresets: expandedSections.configPresets || false
+          }}
           selectedNode={selectedNode}
           selectedNodeConnections={selectedNodeConnections}
           nodeCounts={nodeCounts}
@@ -142,7 +148,7 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
           uniqueCategories={uniqueCategories}
           fixNodesOnDrag={sidebar.localFixNodesOnDrag}
           visualizationType={sidebar.localVisualizationType as VisualizationType}
-          tooltipDetail={sidebar.tooltipDetail || 'simple'} 
+          tooltipDetail={sidebar.tooltipDetail || 'simple'}
           tooltipTrigger={sidebar.tooltipTrigger || 'hover'}
           onParameterChange={handlers.handleParameterChange}
           onNodeGroupChange={handlers.handleNodeGroupChange}
@@ -169,7 +175,8 @@ const BaseVisualization: React.FC<BaseVisualizationProps> = ({
           onTooltipDetailChange={handlers.handleTooltipDetailChange || emptyTooltipDetailChange}
           onTooltipTriggerChange={handlers.handleTooltipTriggerChange || emptyTooltipTriggerChange}
           onExportNodeData={handlers.handleExportNodeData}
-        />
+          onGetCurrentConfig={handlers.onGetCurrentConfig}
+          onApplyConfig={handlers.onApplyConfig} />
       )}
       <div className="flex-1">
         {children}
