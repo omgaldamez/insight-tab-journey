@@ -126,19 +126,40 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
   };
 
   const handleLayerToggle = (layerName: string, value: boolean) => {
+    console.log(`[LAYER-TOGGLE] Setting ${layerName} to ${value}`);
+    
+    // Handle specific layer toggles with special behavior
     if (layerName === 'showParticlesLayer') {
       chord.updateConfig({ 
         showParticlesLayer: value,
         particleMode: value // Keep particle mode in sync with layer visibility
       });
-    } else if (layerName === 'showGeometricShapesLayer') {
+      
+      // If enabling particles and they haven't been initialized, do so
+      if (value && !chord.particlesInitialized && !chord.isGeneratingParticles) {
+        // Use a short delay to ensure the config update is applied first
+        setTimeout(() => {
+          chord.initializeParticles();
+        }, 100);
+      }
+    } 
+    else if (layerName === 'showGeometricShapesLayer') {
       chord.updateConfig({ 
         showGeometricShapesLayer: value,
         useGeometricShapes: value // Keep geometric shapes in sync with layer visibility
       });
-    } else {
+    } 
+    else if (layerName === 'showChordRibbons') {
+      // For ribbons, just update the visibility without changing other settings
+      chord.updateConfig({ showChordRibbons: value });
+    }
+    // Simple toggle for other layer settings
+    else {
       chord.updateConfig({ [layerName]: value });
     }
+    
+    // Always redraw after layer changes
+    chord.setNeedsRedraw(true);
   };
 
   // Custom download function for Chord visualization

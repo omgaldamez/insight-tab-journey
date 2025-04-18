@@ -853,6 +853,34 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
           <span className="text-xs">Real connections only</span>
         </label>
       </div>
+
+{/* Ribbon Color Controls - Only show when Chord Ribbons are enabled */}
+{config.showChordRibbons && (
+  <div className="flex items-center gap-2 mt-2 pl-6">
+    <div className="flex items-center">
+      <label className="text-xs mr-1">Stroke:</label>
+      <input
+        type="color"
+        value={config.ribbonStrokeColor}
+        onChange={(e) => handleColorChange('ribbonStrokeColor', e.target.value)}
+        className="w-5 h-5 rounded cursor-pointer"
+      />
+    </div>
+    
+    {!config.useColoredRibbons && (
+      <div className="flex items-center">
+        <label className="text-xs mr-1">Fill:</label>
+        <input
+          type="color"
+          value={config.ribbonFillColor}
+          onChange={(e) => handleColorChange('ribbonFillColor', e.target.value)}
+          className="w-5 h-5 rounded cursor-pointer"
+        />
+      </div>
+    )}
+  </div>
+)}
+
     </>
   )}
   
