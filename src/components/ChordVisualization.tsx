@@ -15,6 +15,7 @@ import { downloadChordDiagram } from '@/utils/chordUtils';
 import useChordDiagram from '@/hooks/useChordDiagram';
 import ParticleMetricsPanel from './ParticleMetricsPanel';
 import { useConfigPresets } from '@/hooks/useConfigPresets';
+import '@/styles/visualization.css';
 
 interface ChordVisualizationProps {
   onCreditsClick: () => void;
@@ -373,7 +374,19 @@ handleApplyBackgroundColors: (
   className="w-full h-full"
   style={{ overflow: "visible" }}
 />
-            
+      {/* SVG Filter definition for animations and visual effects */}
+<svg className="chord-filter" style={{ position: 'absolute', width: 0, height: 0, visibility: 'hidden' }} 
+     xmlns="http://www.w3.org/2000/svg" version="1.1">
+  <defs>
+    <filter id="chordBlurFilter">
+      <feGaussianBlur id="chordBlur" stdDeviation="2.5"></feGaussianBlur>
+      <feColorMatrix type="matrix" values="1 0 0 0 0
+                   0 1 0 0 0
+                   0 0 1 0 0
+                   0 0 0 12 -8"></feColorMatrix>
+    </filter>
+  </defs>
+</svg>      
             {/* Use the updated VisualizationControls component */}
             <VisualizationControls
               containerRef={containerRef}

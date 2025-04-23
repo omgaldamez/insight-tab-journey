@@ -960,7 +960,140 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                     className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
                   />
                 </div>
-                
+                {/* Visual Effects Section */}
+<div className="border-t border-white/10 mt-3 pt-3">
+  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Visual Effects</h3>
+  
+  {/* Ribbon Animation Toggle */}
+  <div className="flex items-center justify-between mt-1.5">
+    <label className="text-xs">Ribbon Animation:</label>
+    <div className="relative inline-block w-8 h-4">
+      <input 
+        type="checkbox" 
+        className="sr-only"
+        checked={config.ribbonAnimationEnabled}
+        onChange={() => onConfigChange({ ribbonAnimationEnabled: !config.ribbonAnimationEnabled })}
+        id="ribbon-animation-toggle"
+      />
+      <label 
+        htmlFor="ribbon-animation-toggle"
+        className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+          config.ribbonAnimationEnabled ? 'bg-blue-500' : 'bg-gray-500'
+        }`}
+      >
+        <span 
+          className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+            config.ribbonAnimationEnabled ? 'translate-x-4' : ''
+          }`}
+        ></span>
+      </label>
+    </div>
+  </div>
+  
+  {/* Arc Animation Toggle */}
+  <div className="flex items-center justify-between mt-1.5">
+    <label className="text-xs">Arc Animation:</label>
+    <div className="relative inline-block w-8 h-4">
+      <input 
+        type="checkbox" 
+        className="sr-only"
+        checked={config.arcAnimationEnabled}
+        onChange={() => onConfigChange({ arcAnimationEnabled: !config.arcAnimationEnabled })}
+        id="arc-animation-toggle"
+      />
+      <label 
+        htmlFor="arc-animation-toggle"
+        className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+          config.arcAnimationEnabled ? 'bg-purple-500' : 'bg-gray-500'
+        }`}
+      >
+        <span 
+          className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+            config.arcAnimationEnabled ? 'translate-x-4' : ''
+          }`}
+        ></span>
+      </label>
+    </div>
+  </div>
+  
+  {/* Blur Effect Toggle */}
+  <div className="flex items-center justify-between mt-1.5">
+    <label className="text-xs">Blur/Glow Effect:</label>
+    <div className="relative inline-block w-8 h-4">
+      <input 
+        type="checkbox" 
+        className="sr-only"
+        checked={config.blurEffectEnabled}
+        onChange={() => onConfigChange({ blurEffectEnabled: !config.blurEffectEnabled })}
+        id="blur-effect-toggle"
+      />
+      <label 
+        htmlFor="blur-effect-toggle"
+        className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+          config.blurEffectEnabled ? 'bg-cyan-500' : 'bg-gray-500'
+        }`}
+      >
+        <span 
+          className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+            config.blurEffectEnabled ? 'translate-x-4' : ''
+          }`}
+        ></span>
+      </label>
+    </div>
+  </div>
+  
+  {/* Animation Effect Selector - only visible when animation is enabled */}
+  {(config.ribbonAnimationEnabled || config.arcAnimationEnabled) && (
+    <div className="mt-3 space-y-2">
+      <div className="text-xs mb-1">Animation Type:</div>
+      <div className="grid grid-cols-3 gap-1">
+        {['wave', 'pulse', 'rotate'].map((effect) => (
+          <button
+            key={effect}
+            className={`text-xs py-1 rounded-sm capitalize ${
+              config.animationEffect === effect ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+            }`}
+            onClick={() => onConfigChange({ animationEffect: effect as 'rotate' | 'wave' | 'pulse' })}
+          >
+            {effect}
+          </button>
+        ))}
+      </div>
+    </div>
+  )}
+  
+  {/* Blur Amount Slider - only visible when blur is enabled */}
+  {config.blurEffectEnabled && (
+    <div className="flex items-center justify-between mt-3 text-xs">
+      <label>Blur Amount: {config.blurEffectAmount.toFixed(1)}</label>
+      <input
+        type="range"
+        min="0.5"
+        max="5.0"
+        step="0.5"
+        value={config.blurEffectAmount}
+        onChange={(e) => onConfigChange({ blurEffectAmount: parseFloat(e.target.value) })}
+        className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+  )}
+  
+  {/* Animation Speed Control */}
+  {(config.ribbonAnimationEnabled || config.arcAnimationEnabled) && (
+    <div className="flex items-center justify-between mt-3 text-xs">
+      <label>Effect Speed: {config.animationSpeedMultiplier.toFixed(1)}x</label>
+      <input
+        type="range"
+        min="0.5"
+        max="3.0"
+        step="0.1"
+        value={config.animationSpeedMultiplier}
+        onChange={(e) => onConfigChange({ animationSpeedMultiplier: parseFloat(e.target.value) })}
+        className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+  )}
+</div>
                 {/* Fade Transition Toggle */}
                 <div className="flex items-center justify-between mt-2">
                   <label className="text-xs">Source-to-Target Fade:</label>

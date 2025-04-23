@@ -132,6 +132,14 @@ ribbonFillColor: string;           // Control ribbon fill color when not using c
 showOnlyRealConnectionsRibbons: boolean;   // For chord ribbons
 showOnlyRealConnectionsShapes: boolean;    // For geometric shapes
 
+// Animation effects
+ribbonAnimationEnabled: boolean,
+arcAnimationEnabled: boolean, 
+animationEffect: 'wave' | 'pulse' | 'rotate',
+blurEffectEnabled: boolean,
+blurEffectAmount: number,
+animationSpeedMultiplier: number,
+
 }
 
 export interface ChordDiagramHookProps {
@@ -301,6 +309,14 @@ ribbonFillColor: '#999999',
   // New connection filter properties
   showOnlyRealConnectionsRibbons: false,
   showOnlyRealConnectionsShapes: true,
+
+  // Animation effects (new)
+ribbonAnimationEnabled: false,
+arcAnimationEnabled: false,
+animationEffect: 'wave',
+blurEffectEnabled: false,
+blurEffectAmount: 2.5,
+animationSpeedMultiplier: 1.0,
   });
   
   // Animation state
@@ -1753,6 +1769,14 @@ useEffect(() => {
         }
       }
 
+// Add a style element to ensure CSS variables are properly set
+svg.append("style")
+  .text(`:root {
+    --chord-animation-speed: ${chordConfig.animationSpeedMultiplier};
+    --chord-filter: url(#chordBlurFilter) drop-shadow(0 0 6vmin rgba(0,0,0,0.2));
+    --wave-distance: 3px;
+  }`);
+
       // Store total ribbon count for animation
       setTotalRibbonCount(chordResult.length);
       
@@ -1802,12 +1826,12 @@ useEffect(() => {
         setCurrentConnectionInfo(null);
       }
       
-      // Add the groups (arcs) - using our potentially modified groupData
-      const groups = g.append("g")
-        .attr("class", "chord-arcs")
-        .selectAll("g")
-        .data(groupData)
-        .join("g");
+// Add the groups (arcs) - with animation class
+const groups = g.append("g")
+  .attr("class", `chord-arcs ${chordConfig.arcAnimationEnabled ? 'animated' : ''}`)
+  .selectAll("g")
+  .data(groupData)
+  .join("g");
 
       // Add the arc paths with enhanced visual styling and dynamic opacity
       groups.append("path")
@@ -1860,12 +1884,56 @@ useEffect(() => {
         .style("fill", textColor)
         .style("text-shadow", "0 1px 2px rgba(0,0,0,0.4)"); // Add text shadow for better contrast
 
-// Add the chords (ribbons) with enhanced visual styling
+// Add the chords (ribbons) with animation class
 const ribbonGroup = g.append("g")
-  .attr("class", "chord-ribbons")
+  .attr("class", `chord-ribbons ${chordConfig.ribbonAnimationEnabled ? 'animated' : ''}`)
   .attr("fill-opacity", (ribbonFillEnabled && chordConfig.showChordRibbons) ? chordConfig.ribbonOpacity : 0);
-    
-  if (!isAnimating) {
+
+// Apply blur effect if enabled
+if (chordConfig.blurEffectEnabled) {
+  g.classed('blur-effect', true);
+  
+  // Create and update the blur filter directly
+  const defs = svg.select("defs");
+  if (defs.empty()) {
+    svg.append("defs")
+      .html(`<filter id="chordBlurFilter">
+        <feGaussianBlur stdDeviation="${chordConfig.blurEffectAmount}"></feGaussianBlur>
+        <feColorMatrix type="matrix" values="1 0 0 0 0
+                     0 1 0 0 0
+                     0 0 1 0 0
+                     0 0 0 12 -8"></feColorMatrix>
+      </filter>`);
+  } else {
+    defs.select("#chordBlurFilter feGaussianBlur")
+      .attr("stdDeviation", chordConfig.blurEffectAmount);
+  }
+}
+
+// Apply rotation animation if that effect is selected
+if (chordConfig.animationEffect === 'rotate' && 
+    (chordConfig.ribbonAnimationEnabled || chordConfig.arcAnimationEnabled)) {
+  g.classed('rotate-animation', true);
+}
+
+// Apply CSS variable for animation speed
+svg.style('--chord-animation-speed', chordConfig.animationSpeedMultiplier);
+
+// Apply animation directly to paths for ribbon animation
+if (chordConfig.ribbonAnimationEnabled) {
+  ribbonGroup.selectAll("path")
+    .style("animation", `ribbonWave calc(3s * ${chordConfig.animationSpeedMultiplier}) ease-in-out infinite`)
+    .style("animation-delay", (_, i) => `${(i % 3) * 0.3}s`); // Add varied delays
+}
+
+// Apply animation directly to arcs for arc animation
+if (chordConfig.arcAnimationEnabled) {
+  groups.selectAll("path")
+    .style("animation", `arcPulse calc(4s * ${chordConfig.animationSpeedMultiplier}) ease-in-out infinite`)
+    .style("animation-delay", (_, i) => `${(i % 2) * 0.5}s`); // Add varied delays
+}
+
+if (!isAnimating) {
       // If not animating, add all chords at once
       
       const chordPaths = ribbonGroup.selectAll("path")

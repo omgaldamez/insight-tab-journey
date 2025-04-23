@@ -147,3 +147,90 @@ svg {
   opacity: 1 !important;
   visibility: visible !important;
 }
+
+/* Animation custom properties for SVG elements */
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: true;
+}
+
+:root {
+  --chord-animation-speed: 1.6;
+  --chord-filter: url(#chordBlurFilter) drop-shadow(0 0 6vmin rgba(0, 0, 0, 0.2));
+}
+
+/* Animation keyframes for ribbons */
+@keyframes ribbonWave {
+  from, to {
+    transform: translateX(0) scale(1);
+  }
+  50% {
+    transform: translateX(var(--wave-distance, 3px)) scale(1.02);
+  }
+}
+
+/* Animation keyframes for arcs */
+@keyframes arcPulse {
+  from, to {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+/* Animation keyframes for particles */
+@keyframes particlePulse {
+  from, to {
+    transform: scale(1);
+    opacity: var(--base-opacity, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: calc(var(--base-opacity, 0.7) * 1.3);
+  }
+}
+
+/* Animation for rotation */
+@keyframes rotation {
+  to {
+    --angle: 360deg;
+  }
+}
+
+/* Animation classes that will be applied to SVG elements */
+.chord-ribbons.animated path {
+  animation: ribbonWave calc(3s * var(--chord-animation-speed)) ease-in-out infinite;
+  --wave-distance: 3px;
+}
+
+.chord-arcs.animated path {
+  animation: arcPulse calc(4s * var(--chord-animation-speed)) ease-in-out infinite;
+}
+
+.chord-particles.animated circle {
+  animation: particlePulse calc(2s * var(--chord-animation-speed)) ease-in-out infinite;
+}
+
+/* Blur effect classes */
+.blur-effect {
+  filter: var(--chord-filter);
+}
+
+.rotate-animation {
+  animation: rotation calc(12s * var(--chord-animation-speed)) linear infinite;
+}
+
+/* Offset animations to create more organic movement */
+.chord-ribbons.animated path:nth-child(odd) {
+  animation-delay: calc(0.5s * var(--chord-animation-speed));
+}
+
+.chord-ribbons.animated path:nth-child(3n) {
+  animation-delay: calc(0.8s * var(--chord-animation-speed));
+}
+
+.chord-arcs.animated path:nth-child(even) {
+  animation-delay: calc(0.75s * var(--chord-animation-speed));
+}
