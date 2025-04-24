@@ -1094,6 +1094,201 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
     </div>
   )}
 </div>
+
+{/* Glow Effect Toggle */}
+<div className="flex items-center justify-between mt-1.5">
+  <label className="text-xs">Glow Effect:</label>
+  <div className="relative inline-block w-8 h-4">
+    <input 
+      type="checkbox" 
+      className="sr-only"
+      checked={config.glowEffectEnabled}
+      onChange={() => onConfigChange({ glowEffectEnabled: !config.glowEffectEnabled })}
+      id="glow-effect-toggle"
+    />
+    <label 
+      htmlFor="glow-effect-toggle"
+      className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+        config.glowEffectEnabled ? 'bg-blue-500' : 'bg-gray-500'
+      }`}
+    >
+      <span 
+        className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+          config.glowEffectEnabled ? 'translate-x-4' : ''
+        }`}
+      ></span>
+    </label>
+  </div>
+</div>
+
+{/* Individual Glow Colors Toggle */}
+{config.glowEffectEnabled && (
+  <div className="flex items-center justify-between mt-3">
+    <label className="text-xs">Individual Category Glow:</label>
+    <div className="relative inline-block w-8 h-4">
+      <input 
+        type="checkbox" 
+        className="sr-only"
+        checked={config.useIndividualGlowColors}
+        onChange={() => onConfigChange({ useIndividualGlowColors: !config.useIndividualGlowColors })}
+        id="individual-glow-toggle"
+      />
+      <label 
+        htmlFor="individual-glow-toggle"
+        className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+          config.useIndividualGlowColors ? 'bg-green-500' : 'bg-gray-500'
+        }`}
+      >
+        <span 
+          className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+            config.useIndividualGlowColors ? 'translate-x-4' : ''
+          }`}
+        ></span>
+      </label>
+    </div>
+  </div>
+)}
+
+{/* Category Glow Color Picker */}
+{config.glowEffectEnabled && config.useIndividualGlowColors && (
+  <div className="mt-3 border-t border-white/10 pt-2">
+    <div className="text-xs font-medium mb-2">Category Glow Colors</div>
+    <div className="max-h-32 overflow-y-auto pr-1">
+      {Object.entries(config.categoryGlowColors).map(([category, color]) => (
+        <div key={category} className="flex items-center justify-between mt-1 text-xs">
+          <div className="truncate max-w-24">{category}</div>
+          <div className="flex items-center gap-1">
+            <div 
+              className="w-4 h-4 rounded-full border border-white/30"
+              style={{ backgroundColor: color }}
+            ></div>
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => {
+                const newColors = {...config.categoryGlowColors, [category]: e.target.value};
+                onConfigChange({ categoryGlowColors: newColors });
+              }}
+              className="w-5 h-5 rounded cursor-pointer"
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+    
+    {/* Randomize All Category Colors */}
+    <button
+      onClick={() => {
+        const newColors = {...config.categoryGlowColors};
+        Object.keys(newColors).forEach(category => {
+          const hue = Math.floor(Math.random() * 360);
+          newColors[category] = `hsl(${hue}, 100%, 50%)`;
+        });
+        onConfigChange({ categoryGlowColors: newColors });
+      }}
+      className="w-full mt-2 text-xs py-1 bg-gray-700 hover:bg-gray-600 rounded-sm flex items-center justify-center"
+    >
+      <RefreshCw className="w-3 h-3 mr-1" />
+      Randomize All Colors
+    </button>
+  </div>
+)}
+
+{/* Only show glow controls if glow effect is enabled */}
+{config.glowEffectEnabled && (
+  <>
+    {/* Dark Mode Toggle */}
+    <div className="flex items-center justify-between mt-1.5">
+      <label className="text-xs">Invert Colors (Dark):</label>
+      <div className="relative inline-block w-8 h-4">
+        <input 
+          type="checkbox" 
+          className="sr-only"
+          checked={config.glowEffectDarkMode}
+          onChange={() => onConfigChange({ glowEffectDarkMode: !config.glowEffectDarkMode })}
+          id="glow-dark-mode-toggle"
+        />
+        <label 
+          htmlFor="glow-dark-mode-toggle"
+          className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+            config.glowEffectDarkMode ? 'bg-purple-500' : 'bg-gray-500'
+          }`}
+        >
+          <span 
+            className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+              config.glowEffectDarkMode ? 'translate-x-4' : ''
+            }`}
+          ></span>
+        </label>
+      </div>
+    </div>
+    
+    {/* Glow Size Slider */}
+    <div className="flex items-center justify-between mt-3 text-xs">
+      <label>Glow Size: {config.glowEffectSize.toFixed(1)}px</label>
+      <input
+        type="range"
+        min="1"
+        max="20"
+        step="0.5"
+        value={config.glowEffectSize}
+        onChange={(e) => onConfigChange({ glowEffectSize: parseFloat(e.target.value) })}
+        className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+    
+    {/* Glow Intensity Slider */}
+    <div className="flex items-center justify-between mt-3 text-xs">
+      <label>Glow Intensity: {config.glowEffectIntensity.toFixed(1)}</label>
+      <input
+        type="range"
+        min="0.5"
+        max="3.0"
+        step="0.1"
+        value={config.glowEffectIntensity}
+        onChange={(e) => onConfigChange({ glowEffectIntensity: parseFloat(e.target.value) })}
+        className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+    
+    {/* Glow Color Picker with Preview */}
+    <div className="mt-3">
+      <div className="flex items-center justify-between">
+        <label className="text-xs">Glow Color:</label>
+        <div className="flex items-center gap-2">
+          <div 
+            className="w-6 h-6 rounded-full border border-white/30"
+            style={{ backgroundColor: config.glowEffectColor }}
+          ></div>
+          <input
+            type="color"
+            value={config.glowEffectColor}
+            onChange={(e) => onConfigChange({ glowEffectColor: e.target.value })}
+            className="w-6 h-6 rounded cursor-pointer"
+          />
+        </div>
+      </div>
+    </div>
+    
+    {/* Random Color Generator */}
+    <div className="mt-3">
+      <button
+        onClick={() => {
+          // Generate random color
+          const randomColor = `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`;
+          onConfigChange({ glowEffectColor: randomColor });
+        }}
+        className="text-xs w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded-sm flex items-center justify-center"
+      >
+        <div className="flex items-center">
+          <RefreshCw className="w-3 h-3 mr-1" />
+          Random Color: {config.glowEffectColor.toUpperCase()}
+        </div>
+      </button>
+    </div>
+  </>
+)}
+
                 {/* Fade Transition Toggle */}
                 <div className="flex items-center justify-between mt-2">
                   <label className="text-xs">Source-to-Target Fade:</label>

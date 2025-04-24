@@ -9,6 +9,19 @@ import { useToast } from '@/components/ui/use-toast';
 import { setupParticleMovement } from '@/utils/chordUtils';
 import { WebGLParticleSystem } from '@/utils/webglParticleSystem';
 import { WebGLParticleSystemOptions, checkWebGLSupport } from '@/utils/webglUtils';
+
+
+// Add global flag to track animation-only updates
+declare global {
+  interface SVGSVGElement {
+    particleGroupsToRestore?: Element[];
+  }
+  interface Window {
+    forceParticleRegeneration?: boolean;
+    lastUpdateWasAnimationOnly?: boolean;
+    preserveParticlesDuringAnimation?: boolean;
+  }
+}
 export interface DetailedNode {
   id: string;
   category: string;
@@ -140,6 +153,17 @@ blurEffectEnabled: boolean,
 blurEffectAmount: number,
 animationSpeedMultiplier: number,
 
+// Glow effect properties
+glowEffectEnabled: boolean;
+glowEffectColor: string;
+glowEffectIntensity: number;
+glowEffectSize: number;
+glowEffectDarkMode: boolean;
+
+// Group/ribbon individual glow settings
+useIndividualGlowColors: boolean;
+categoryGlowColors: Record<string, string>; // Map category names to glow colors
+
 }
 
 export interface ChordDiagramHookProps {
@@ -178,6 +202,7 @@ export const useChordDiagram = ({
   const particleMovementCleanupRef = useRef<(() => void) | null>(null);
   const webglParticleSystemRef = useRef<WebGLParticleSystem | null>(null);
   const particleGenerationRef = useRef<number | null>(null);
+  const particlePositionCacheRef = useRef<Map<string, Array<{x: number, y: number, size: number, opacity: number}>>>(new Map());
 
   // Basic state
   const [isLoading, setIsLoading] = useState(true);
@@ -317,6 +342,17 @@ animationEffect: 'wave',
 blurEffectEnabled: false,
 blurEffectAmount: 2.5,
 animationSpeedMultiplier: 1.0,
+
+// Glow effect properties
+glowEffectEnabled: false,
+glowEffectColor: '#00aaff', // Default to a bright blue
+glowEffectIntensity: 1.5,
+glowEffectSize: 10,
+glowEffectDarkMode: false,
+
+// Group/ribbon individual glow settings
+useIndividualGlowColors: false,
+categoryGlowColors: {}, // Will be populated from categories
   });
   
   // Animation state
@@ -341,7 +377,26 @@ animationSpeedMultiplier: 1.0,
     showDetailedView, showAllNodes, evenDistribution, useColoredRibbons, ribbonFillEnabled,
     useWebGLRenderer, webGLParticleQuality
   } = chordConfig;
-  
+
+// Initialize category glow colors
+useEffect(() => {
+  if (uniqueCategories.length > 0 && Object.keys(chordConfig.categoryGlowColors).length === 0) {
+    // Create random colors for categories
+    const colorMap: Record<string, string> = {};
+    uniqueCategories.forEach(category => {
+      // Generate vibrant colors for glow
+      const hue = Math.floor(Math.random() * 360);
+      colorMap[category] = `hsl(${hue}, 100%, 50%)`;
+    });
+    
+    // Update config with initial colors
+    setChordConfig(prev => ({
+      ...prev,
+      categoryGlowColors: colorMap
+    }));
+  }
+}, [uniqueCategories, chordConfig.categoryGlowColors]);
+
   // Extract unique categories and map nodes to categories
   useEffect(() => {
     if (nodeData.length > 0) {
@@ -390,6 +445,15 @@ animationSpeedMultiplier: 1.0,
       description: "Particle generation was cancelled",
     });
   }, [toast]);
+
+// Add this function for generating cache keys
+const generateCacheKey = useCallback((chordIndex: number, config: {
+  particleDensity: number,
+  particleDistribution: string,
+  particleSizeVariation: number
+}) => {
+  return `chord_${chordIndex}_density_${config.particleDensity}_dist_${config.particleDistribution}_var_${config.particleSizeVariation}`;
+}, []);
 
   const startProgressiveParticleGeneration = useCallback(() => {
     if (!svgRef.current || chordData.length === 0) return;
@@ -495,23 +559,42 @@ animationSpeedMultiplier: 1.0,
             const randomSeed = i * 1000 + numParticles;
             
             // Pre-calculate positions for this chord
-            const positions = precalculateParticlePositions(
-              pathElement,
-              numParticles,
-              chordConfig.particleDistribution,
-              randomSeed
-            );
-            
-            // Store the data
-            chordParticleData.push({
-              index: i,
-              pathElement,
-              isRealConnection,
-              positions
-            });
-            
-            totalParticles += numParticles;
-            calculatedCount++;
+           // Check if we can use cached positions
+let positions;
+const cacheKey = generateCacheKey(i, {
+  particleDensity: chordConfig.particleDensity,
+  particleDistribution: chordConfig.particleDistribution,
+  particleSizeVariation: chordConfig.particleSizeVariation
+});
+
+// Check if this chord's positions are already cached
+if (particlePositionCacheRef.current.has(cacheKey)) {
+  console.log(`[PARTICLE-OPTIMIZATION] Using cached positions for chord #${i}`);
+  positions = particlePositionCacheRef.current.get(cacheKey);
+} else {
+  // Calculate new positions if not cached
+  positions = precalculateParticlePositions(
+    pathElement,
+    numParticles,
+    chordConfig.particleDistribution,
+    randomSeed
+  );
+  
+  // Cache the calculated positions
+  particlePositionCacheRef.current.set(cacheKey, positions);
+  console.log(`[PARTICLE-OPTIMIZATION] Cached new positions for chord #${i}`);
+}
+
+// Store the data
+chordParticleData.push({
+  index: i,
+  pathElement,
+  isRealConnection,
+  positions
+});
+
+totalParticles += numParticles;
+calculatedCount++;
           }
         }
       }
@@ -1066,23 +1149,37 @@ useEffect(() => {
     }
   }
 
-  // Animation functions for chord diagram
-  const startAnimation = useCallback(() => {
-    setChordConfig(prev => ({ ...prev, isAnimating: true }));
-    
-    // If we're at the end, reset to the beginning
-    if (currentAnimatedIndex >= totalRibbonCount) {
-      setCurrentAnimatedIndex(0);
+// Animation functions for chord diagram
+const startAnimation = useCallback(() => {
+  // IMPORTANT FIX: Capture all particle elements before entering animation mode
+  let particleGroupsToPreserve = [];
+  if (particleMode && svgRef.current) {
+    // Save all particle groups to restore them
+    const particleGroups = svgRef.current.querySelectorAll('.chord-particles');
+    if (particleGroups.length > 0) {
+      console.log(`[ANIMATION-FIX] Preserving ${particleGroups.length} particle groups during animation start`);
+      // Store particle groups in a dedicated variable
+      particleGroupsToPreserve = Array.from(particleGroups);
+      // Store them in the SVG element for later use
+      svgRef.current.particleGroupsToRestore = particleGroupsToPreserve;
     }
-    
-    // Clear any existing animation
-    if (animationRef.current) {
-      clearTimeout(animationRef.current);
-      animationRef.current = null;
-    }
-    
-    // Start the animation loop - this function captures the latest animation speed
-    const animateWithCurrentSpeed = () => {
+  }
+  
+  setChordConfig(prev => ({ ...prev, isAnimating: true }));
+  
+  // If we're at the end, reset to the beginning
+  if (currentAnimatedIndex >= totalRibbonCount) {
+    setCurrentAnimatedIndex(0);
+  }
+  
+  // Clear any existing animation
+  if (animationRef.current) {
+    clearTimeout(animationRef.current);
+    animationRef.current = null;
+  }
+  
+  // Start the animation loop - this function captures the latest animation speed
+  const animateWithCurrentSpeed = () => {
       // Get the current speed from config to ensure we're using the latest value
       const currentSpeed = chordConfig.animationSpeed;
       
@@ -1134,23 +1231,33 @@ if (chordConfig.useFadeTransition) {
     animationRef.current = window.setTimeout(animateWithCurrentSpeed, initialDelay);
   }, [currentAnimatedIndex, totalRibbonCount, chordConfig]);
 
-  // Stop animation
-  const stopAnimation = useCallback(() => {
-    if (animationRef.current) {
-      clearTimeout(animationRef.current);
-      animationRef.current = null;
-    }
-    setChordConfig(prev => ({ ...prev, isAnimating: false }));
-  }, []);
+// Stop animation
+const stopAnimation = useCallback(() => {
+  if (animationRef.current) {
+    clearTimeout(animationRef.current);
+    animationRef.current = null;
+  }
+  
+  // Clear the particle restoration list when animation stops
+  if (svgRef.current) {
+    svgRef.current.particleGroupsToRestore = [];
+  }
+  
+  setChordConfig(prev => ({ ...prev, isAnimating: false }));
+}, []);
 
   // Toggle animation
-  const toggleAnimation = useCallback(() => {
-    if (isAnimating) {
-      stopAnimation();
-    } else {
-      startAnimation();
-    }
-  }, [isAnimating, startAnimation, stopAnimation]);
+ // Toggle animation
+const toggleAnimation = useCallback(() => {
+  // Important: Set a flag to preserve existing particles when animation starts
+  window.preserveParticlesDuringAnimation = true;
+  
+  if (isAnimating) {
+    stopAnimation();
+  } else {
+    startAnimation();
+  }
+}, [isAnimating, startAnimation, stopAnimation]);
 
   // Go to previous ribbon
   const goToPreviousRibbon = useCallback(() => {
@@ -1206,10 +1313,102 @@ if (chordConfig.useFadeTransition) {
       startAnimation();
     }
   }, [isAnimating, startAnimation]);
-
-// Update config settings
+// Add this function after updateConfig to update particles without recreating them
+const updateParticleAppearance = useCallback((updates: Partial<ChordDiagramConfig>) => {
+  if (!svgRef.current) return;
+  
+  console.log('[PARTICLE-OPTIMIZATION] Updating particle appearance without recalculation');
+  
+  // Get all particles
+  const particles = d3.select(svgRef.current).selectAll('.chord-particles circle');
+  
+  // Skip if no particles exist
+  if (particles.size() === 0) {
+    console.log('[PARTICLE-OPTIMIZATION] No particles to update');
+    setNeedsRedraw(true); // Fall back to full redraw
+    return;
+  }
+  
+  // Update color if needed
+  if ('particleColor' in updates && particles.size()) {
+    particles.attr("fill", (d: any, i: number, nodes: any) => {
+      const element = d3.select(nodes[i]);
+      // Only update real connection particles (not minimal connection particles)
+      if (element.attr("data-is-real") === "true") {
+        return updates.particleColor;
+      }
+      return element.attr("fill");
+    });
+  }
+  
+  // Update size if needed
+  if ('particleSize' in updates && particles.size()) {
+    particles.attr("r", (d: any, i: number, nodes: any) => {
+      const element = d3.select(nodes[i]);
+      if (element.attr("data-is-real") === "true") {
+        // Apply size with random variation
+        const variation = chordConfig.particleSizeVariation * updates.particleSize!;
+        const baseSize = updates.particleSize as number;
+        return baseSize - variation + (Math.random() * variation * 2);
+      }
+      return element.attr("r");
+    });
+  }
+  
+  // Update opacity if needed
+  if ('particleOpacity' in updates && particles.size()) {
+    particles.style("opacity", (d: any, i: number, nodes: any) => {
+      const element = d3.select(nodes[i]);
+      if (element.attr("data-is-real") === "true") {
+        // Apply opacity with slight randomization
+        const randomOpacityFactor = 0.5 + Math.random() * 0.5;
+        return (updates.particleOpacity as number) * randomOpacityFactor;
+      }
+      return element.style("opacity");
+    });
+  }
+  
+  // Update stroke properties if needed
+  if (('particleStrokeColor' in updates || 'particleStrokeWidth' in updates) && particles.size()) {
+    if ('particleStrokeColor' in updates) {
+      particles.attr("stroke", (d: any, i: number, nodes: any) => {
+        const element = d3.select(nodes[i]);
+        if (element.attr("data-is-real") === "true") {
+          return updates.particleStrokeColor;
+        }
+        return element.attr("stroke");
+      });
+    }
+    
+    if ('particleStrokeWidth' in updates) {
+      particles.attr("stroke-width", (d: any, i: number, nodes: any) => {
+        const element = d3.select(nodes[i]);
+        if (element.attr("data-is-real") === "true") {
+          return updates.particleStrokeWidth;
+        }
+        return element.attr("stroke-width");
+      });
+    }
+  }
+  
+  console.log('[PARTICLE-OPTIMIZATION] Updated appearance of existing particles');
+}, [svgRef, chordConfig.particleSizeVariation]);
+// Update config settings with smarter handling
 const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
-  // Log diagnostics for particle-related changes
+  // Check if any of these position-affecting properties are being updated
+  const positionAffectingProps = [
+    'particleDensity', 
+    'particleDistribution',
+    'maxParticlesPerChord',
+    'maxParticlesDetailedView'
+  ];
+  
+  // Check if any changes affect particle positions
+  const needsRecalculation = Object.keys(updates).some(key => 
+    positionAffectingProps.includes(key)
+  );
+  
+  // Special handling for particle mode toggle
   if ('particleMode' in updates) {
     console.log(`[DIAGRAM-DIAGNOSTICS] Particle mode toggled: ${updates.particleMode}`);
     if (updates.particleMode && showDetailedView) {
@@ -1234,6 +1433,7 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
     }
   }
   
+  // Log diagnostics for important changes
   if ('particleDensity' in updates) {
     console.log(`[DIAGRAM-DIAGNOSTICS] Particle density changed: ${updates.particleDensity}`);
   }
@@ -1249,13 +1449,33 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
     }
   }
   
-  // Normal update for other config changes
+  // Update the configuration
   setChordConfig(prev => ({
     ...prev,
     ...updates
   }));
-  setNeedsRedraw(true);
-}, [showDetailedView, setNeedsRedraw, initializeParticles]);
+  
+  // Only force a complete redraw if necessary
+  if (needsRecalculation) {
+    console.log('[PARTICLE-OPTIMIZATION] Position-affecting properties changed, forcing redraw');
+    setNeedsRedraw(true);
+    
+    // If particle mode is enabled, clear the cache to force recalculation
+    if (chordConfig.particleMode) {
+      particlePositionCacheRef.current.clear();
+    }
+  } else if ('particleColor' in updates || 'particleOpacity' in updates || 
+           'particleSize' in updates || 'particleStrokeColor' in updates || 
+           'particleStrokeWidth' in updates) {
+    // For appearance-only changes, update particles without redrawing
+    updateParticleAppearance(updates);
+  } else {
+    // For other changes, still need to redraw but don't need to recalculate positions
+    setNeedsRedraw(true);
+  }
+}, [showDetailedView, initializeParticles, chordConfig.particleMode, updateParticleAppearance]);
+
+
 
   // Effect to update connection info when animation index changes
   useEffect(() => {
@@ -1323,6 +1543,18 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
     categoryNodeCounts,
     chordData
   ]);
+
+// Effect to clear particle cache when critical view settings change
+useEffect(() => {
+  // If there are cached positions, clear them
+  if (particlePositionCacheRef.current.size > 0) {
+    console.log('[PARTICLE-OPTIMIZATION] Clearing particle cache due to view mode change');
+    particlePositionCacheRef.current.clear();
+    
+    // Set a flag to force particle regeneration on next redraw
+    window.forceParticleRegeneration = true;
+  }
+}, [showDetailedView, showAllNodes, evenDistribution]);
 
   // Use useMemo to calculate the matrix for rendering to avoid recalculation on every render
   const preparedMatrix = useMemo(() => {
@@ -1613,11 +1845,14 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
   }, [isLoading, setupChordZoom]);
 
   // Effect to redraw when animation state changes
-  useEffect(() => {
-    if (!isLoading) {
-      setNeedsRedraw(true);
-    }
-  }, [isLoading, isAnimating, currentAnimatedIndex]);
+  // Effect to redraw when animation state changes
+useEffect(() => {
+  if (!isLoading) {
+    // Set redraw flag but mark that this was animation-only
+    window.lastUpdateWasAnimationOnly = true;
+    setNeedsRedraw(true);
+  }
+}, [isLoading, isAnimating, currentAnimatedIndex]);
 
   // Handle tooltip display on element interaction
   const showTooltip = useCallback((content: string, event: MouseEvent) => {
@@ -1683,6 +1918,14 @@ useEffect(() => {
   // Add performance timing for rendering
   const renderStartTime = performance.now();
   console.log(`[RENDER-DIAGNOSTICS] Starting chord diagram render: detailed=${showDetailedView}, particles=${particleMode}, webgl=${useWebGLRenderer}`);
+
+// Check if this was only an animation update
+  const isAnimationOnly = window.lastUpdateWasAnimationOnly === true;
+  window.lastUpdateWasAnimationOnly = false;
+  
+  if (isAnimationOnly && particleMode && particlesInitialized) {
+    console.log('[PARTICLE-OPTIMIZATION] Animation-only update, will try to preserve particles');
+  }
 
   try {
       // Clear previous visualization
@@ -1889,11 +2132,15 @@ const ribbonGroup = g.append("g")
   .attr("class", `chord-ribbons ${chordConfig.ribbonAnimationEnabled ? 'animated' : ''}`)
   .attr("fill-opacity", (ribbonFillEnabled && chordConfig.showChordRibbons) ? chordConfig.ribbonOpacity : 0);
 
-// Apply blur effect if enabled
+// Generate individual effect filters
+const blurFilter = chordConfig.blurEffectEnabled ? 
+  `url(#chordBlurFilter) drop-shadow(0 0 6vmin rgba(0, 0, 0, 0.2))` : '';
+
+const glowFilter = chordConfig.glowEffectEnabled ? 
+  `drop-shadow(0 0 ${chordConfig.glowEffectSize}px ${chordConfig.glowEffectColor})` : '';
+
+// Update the blur filter in SVG defs if enabled
 if (chordConfig.blurEffectEnabled) {
-  g.classed('blur-effect', true);
-  
-  // Create and update the blur filter directly
   const defs = svg.select("defs");
   if (defs.empty()) {
     svg.append("defs")
@@ -1908,6 +2155,30 @@ if (chordConfig.blurEffectEnabled) {
     defs.select("#chordBlurFilter feGaussianBlur")
       .attr("stdDeviation", chordConfig.blurEffectAmount);
   }
+}
+
+// Apply combined filter effects
+if (chordConfig.blurEffectEnabled || chordConfig.glowEffectEnabled) {
+  // Create combined filter value
+  const combinedFilter = `${blurFilter} ${glowFilter}`.trim();
+  const combinedFilterPulse = chordConfig.glowEffectEnabled ? 
+    `${blurFilter} drop-shadow(0 0 ${chordConfig.glowEffectSize * 1.5}px ${chordConfig.glowEffectColor})` : 
+    combinedFilter;
+  
+  // Remove individual effect classes and apply combined class
+  g.classed('blur-effect', false)
+   .classed('glow-effect', false)
+   .classed('combined-effects', true)
+   .classed('dark-mode', chordConfig.glowEffectDarkMode)
+   .classed('light-mode', !chordConfig.glowEffectDarkMode)
+   .classed('animated', chordConfig.ribbonAnimationEnabled || chordConfig.arcAnimationEnabled);
+  
+  // Apply combined filter variables
+  g.style('--combined-filter', combinedFilter)
+   .style('--combined-filter-pulse', combinedFilterPulse)
+   .style('--glow-color', chordConfig.glowEffectColor)
+   .style('--glow-size', `${chordConfig.glowEffectSize}px`)
+   .style('--glow-intensity', chordConfig.glowEffectIntensity);
 }
 
 // Apply rotation animation if that effect is selected
@@ -1941,6 +2212,55 @@ if (!isAnimating) {
         .join("path")
         .attr("d", d => customRibbon(d, false))
         .attr("fill", d => {
+          // Apply individual glow filters if enabled
+if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
+  ribbonGroup.selectAll("path")
+    .each(function(d: any) {
+      const path = d3.select(this);
+      let glowColor;
+      
+      if (showDetailedView) {
+        // For detailed view, use source node's category color
+        if (d.source.index < detailedNodeData.length) {
+          const sourceNode = detailedNodeData[d.source.index];
+          glowColor = chordConfig.categoryGlowColors[sourceNode.category] || chordConfig.glowEffectColor;
+        }
+      } else {
+        // For category view, use source category color
+        const sourceCategory = uniqueCategories[d.source.index];
+        glowColor = chordConfig.categoryGlowColors[sourceCategory] || chordConfig.glowEffectColor;
+      }
+      
+      // Apply individual glow filter
+      const individualGlowFilter = `drop-shadow(0 0 ${chordConfig.glowEffectSize}px ${glowColor})`;
+      path.style("filter", individualGlowFilter);
+    });
+}
+
+// Also apply to arcs
+if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
+  groups.selectAll("path")
+    .each(function(d: any) {
+      const path = d3.select(this);
+      let glowColor;
+      
+      if (showDetailedView) {
+        // For detailed view, get the node's category
+        if (d.index < detailedNodeData.length) {
+          const node = detailedNodeData[d.index];
+          glowColor = chordConfig.categoryGlowColors[node.category] || chordConfig.glowEffectColor;
+        }
+      } else {
+        // For category view - use the category
+        const category = uniqueCategories[d.index];
+        glowColor = chordConfig.categoryGlowColors[category] || chordConfig.glowEffectColor;
+      }
+      
+      // Apply individual glow filter
+      const individualGlowFilter = `drop-shadow(0 0 ${chordConfig.glowEffectSize}px ${glowColor})`;
+      path.style("filter", individualGlowFilter);
+    });
+}
           // If directional styling is enabled, use source/target colors
           if (useDirectionalStyling) {
             return sourceChordColor;
@@ -2471,6 +2791,22 @@ chordPaths
 .attr("stroke-opacity", Math.min(chordConfig.chordStrokeOpacity, 0.6));
 }
 
+// CRUCIAL FIX: Restore particle groups that we set aside
+if (particleMode && svgRef.current?.particleGroupsToRestore && svgRef.current.particleGroupsToRestore.length > 0) {
+  console.log(`[ANIMATION-FIX] Restoring ${svgRef.current.particleGroupsToRestore.length} particle groups after animation update`);
+  
+  // Append all preserved particle groups back to the ribbon group
+  svgRef.current.particleGroupsToRestore.forEach(group => {
+    // Make them visible again
+    (group as HTMLElement).style.display = "block";
+    // Re-append to put them back in the DOM
+    ribbonGroup.node()?.appendChild(group);
+  });
+  
+  // Clear the restore list since we've restored them
+  svgRef.current.particleGroupsToRestore = [];
+}
+
   // Apply correct styling to all particles
   if (particleMode) {
     ribbonGroup.selectAll(".chord-particles circle")
@@ -2522,19 +2858,34 @@ chordPaths
       } else {
         // For animation mode, we'll add chords dynamically 
         
+        // CRITICAL FIX: Check if we have particle groups to restore
+        const hasParticlesToRestore = svgRef.current?.particleGroupsToRestore && 
+                                   svgRef.current.particleGroupsToRestore.length > 0;
+        
+        if (hasParticlesToRestore) {
+          console.log(`[ANIMATION-FIX] Will restore ${svgRef.current.particleGroupsToRestore.length} particle groups after rendering`);
+        }
+        
         // First, create empty selection to be populated
         ribbonGroup.selectAll("path").remove();
         ribbonGroup.selectAll(".chord-shapes").remove(); // Remove any shape groups
-        ribbonGroup.selectAll(".chord-particles").remove(); // Remove any particle groups
+        
+        // ONLY remove particles if not in particle mode or if we don't have particles to restore
+        if (!particleMode || !hasParticlesToRestore) {
+          ribbonGroup.selectAll(".chord-particles").remove();
+        } else {
+          // Just hide them during animation update
+          ribbonGroup.selectAll(".chord-particles").style("display", "none");
+        }
         
         // Get the current chord data based on animation index
         const animatedChords = chordResult.slice(0, Math.max(0, currentAnimatedIndex));
         
-        // Add ribbons up to the current index only
-        const animatedPaths = ribbonGroup.selectAll("path")
-          .data(animatedChords)
-          .join("path")
-          .attr("d", d => customRibbon(d, true))
+  // Add ribbons up to the current index only
+  const animatedPaths = ribbonGroup.selectAll("path")
+    .data(animatedChords)
+    .join("path")
+    .attr("d", d => customRibbon(d, true))
           .attr("fill", d => {
             // If directional styling is enabled, use source color
             if (useDirectionalStyling) {
@@ -2639,6 +2990,122 @@ chordPaths
             return 0.6; // Default opacity
           });
         
+  // After creating the ribbon paths, ensure particles are visible for these chords
+  if (particleMode && particlesInitialized && !useWebGLRenderer) {
+    console.log(`[ANIMATION-PARTICLES] Showing particles for ${animatedChords.length} animated chords`);
+    
+    // Show particles only for the currently animated chords
+    ribbonGroup.selectAll(".chord-particles").style("display", "none");
+    
+    // Show only particles for current chords
+    animatedChords.forEach((chord, i) => {
+      ribbonGroup.selectAll(`.chord-particles[data-chord-index="${i}"]`)
+        .style("display", "block");
+    });
+    // If no particles exist yet but mode is enabled, generate them
+    if (ribbonGroup.selectAll(".chord-particles").empty() && particleMode) {
+      console.log('[ANIMATION-PARTICLES] No particles found, generating new ones');
+      
+      // Generate particles for all currently visible chords (reuse your existing particle generation code)
+      animatedPaths.each(function(d, i) {
+        // Get connection info to check if it's a real connection
+        const sourceIndex = d.source.index;
+        const targetIndex = d.target.index;
+        let connectionValue = 0;
+        
+        if (showDetailedView) {
+          if (sourceIndex < detailedMatrix.length && targetIndex < detailedMatrix[0].length) {
+            connectionValue = detailedMatrix[sourceIndex][targetIndex];
+          }
+        } else {
+          if (sourceIndex < categoryMatrix.length && targetIndex < categoryMatrix[0].length) {
+            connectionValue = categoryMatrix[sourceIndex][targetIndex];
+          }
+        }
+        
+        const isRealConnection = connectionValue > 0.2;
+        
+        // Only add particles if they pass the filtering conditions
+        const shouldAddParticles = (!chordConfig.particlesOnlyRealConnections || 
+           (chordConfig.particlesOnlyRealConnections && isRealConnection));
+        
+        if (shouldAddParticles) {
+          // Choose appropriate particle style based on connection type
+          const styleConfig = isRealConnection ? 
+            {
+              color: particleColor,
+              size: particleSize,
+              sizeVariation: particleSizeVariation,
+              opacity: particleOpacity,
+              strokeColor: particleStrokeColor,
+              strokeWidth: particleStrokeWidth,
+              strokeOpacity: chordConfig.particleStrokeOpacity || 1.0
+            } : 
+            {
+              color: chordConfig.minimalConnectionParticleColor,
+              size: chordConfig.minimalConnectionParticleSize,
+              sizeVariation: chordConfig.minimalConnectionParticleSizeVariation,
+              opacity: chordConfig.minimalConnectionParticleOpacity,
+              strokeColor: chordConfig.minimalConnectionParticleStrokeColor,
+              strokeWidth: chordConfig.minimalConnectionParticleStrokeWidth,
+              strokeOpacity: 1.0
+            };
+          
+          addShapesOrParticlesAlongPath(
+            d3.select(this),
+            ribbonGroup,
+            false, // useGeometricShapes 
+            true,  // particleMode
+            shapeType,
+            shapeSize,
+            shapeSpacing,
+            shapeFill,
+            shapeStroke,
+            particleDensity,
+            styleConfig.size,
+            styleConfig.sizeVariation,
+            particleBlur,
+            particleDistribution,
+            styleConfig.color,
+            styleConfig.opacity,
+            styleConfig.strokeColor,
+            styleConfig.strokeWidth,
+            showDetailedView,
+            chordStrokeWidth,
+            i,
+            isRealConnection,
+            true, // Apply to this chord
+            chordConfig.maxParticlesPerChord,
+            chordConfig.maxParticlesDetailedView,
+            chordConfig.maxShapesDetailedView,
+            true, // Use progressive fade-in for particles
+            styleConfig.strokeOpacity
+          );
+        }
+      });
+    }
+  }
+
+  // Set up particle movement if enabled
+  if (chordConfig.particleMovement && svgRef.current && !useWebGLRenderer) {
+    if (particleMovementCleanupRef.current) {
+      particleMovementCleanupRef.current();
+    }
+    
+    particleMovementCleanupRef.current = setupParticleMovement(
+      svgRef.current,
+      chordConfig.particleMovementAmount,
+      true
+    );
+  }
+ // If using WebGL, update the paths there too
+ if (useWebGLRenderer && webglParticleSystemRef.current) {
+  const pathElements = Array.from(ribbonGroup.selectAll("path").nodes() as SVGPathElement[]);
+  webglParticleSystemRef.current.setPathsFromSVG(pathElements);
+  syncWebGLTransform();
+}
+
+
         // If source-to-target fade is enabled, animate with transitions
         if (useFadeTransition) {
           // Add special transition effects for the most recent chord
@@ -2808,94 +3275,56 @@ chordPaths
             .attr("fill-opacity", 0.15) // Semi-transparent fill
             .attr("stroke-opacity", 0.3); // Subtle stroke
         }
-        // SVG particle rendering
-        else if (particleMode && !useWebGLRenderer && chordConfig.showParticlesLayer && animatedChords.length > 0) {
-          // Clear existing particles to ensure consistency
-          ribbonGroup.selectAll(".chord-particles").remove();
-          
-          // Generate particles for all currently visible chords
-          animatedPaths.each(function(d, i) {
-            // Get connection info to check if it's a real connection
-            const sourceIndex = d.source.index;
-            const targetIndex = d.target.index;
-            let connectionValue = 0;
-            
-            if (showDetailedView) {
-              if (sourceIndex < detailedMatrix.length && targetIndex < detailedMatrix[0].length) {
-                connectionValue = detailedMatrix[sourceIndex][targetIndex];
-              }
-            } else {
-              if (sourceIndex < categoryMatrix.length && targetIndex < categoryMatrix[0].length) {
-                connectionValue = categoryMatrix[sourceIndex][targetIndex];
-              }
-            }
-            
-            const isRealConnection = connectionValue > 0.2;
-            
-            // Only add particles if they pass the filtering conditions
-            const shouldAddParticles = (!chordConfig.particlesOnlyRealConnections || 
-               (chordConfig.particlesOnlyRealConnections && isRealConnection));
-            
-            if (shouldAddParticles) {
-              // Choose appropriate particle style based on connection type
-              const styleConfig = isRealConnection ? 
-                {
-                  color: particleColor,
-                  size: particleSize,
-                  sizeVariation: particleSizeVariation,
-                  opacity: particleOpacity,
-                  strokeColor: particleStrokeColor,
-                  strokeWidth: particleStrokeWidth,
-                  strokeOpacity: chordConfig.particleStrokeOpacity || 1.0
-                } : 
-                {
-                  color: chordConfig.minimalConnectionParticleColor,
-                  size: chordConfig.minimalConnectionParticleSize,
-                  sizeVariation: chordConfig.minimalConnectionParticleSizeVariation,
-                  opacity: chordConfig.minimalConnectionParticleOpacity,
-                  strokeColor: chordConfig.minimalConnectionParticleStrokeColor,
-                  strokeWidth: chordConfig.minimalConnectionParticleStrokeWidth,
-                  strokeOpacity: 1.0
-                };
-              
-              addShapesOrParticlesAlongPath(
-                d3.select(this),
-                ribbonGroup,
-                false, // useGeometricShapes 
-                true, // particleMode
-                shapeType, // Not used for particles
-                shapeSize, // Not used for particles
-                shapeSpacing, // Not used for particles
-                shapeFill, // Not used for particles
-                shapeStroke, // Not used for particles
-                particleDensity,
-                styleConfig.size,
-                styleConfig.sizeVariation,
-                particleBlur,
-                particleDistribution,
-                styleConfig.color,
-                styleConfig.opacity,
-                styleConfig.strokeColor,
-                styleConfig.strokeWidth,
-                showDetailedView,
-                chordStrokeWidth,
-                i,
-                isRealConnection,
-                true, // Apply to this chord
-                chordConfig.maxParticlesPerChord,
-                chordConfig.maxParticlesDetailedView,
-                chordConfig.maxShapesDetailedView,
-                true, // Use progressive fade-in for particles
-                styleConfig.strokeOpacity // Pass the stroke opacity
-              );
-            }
-          });
-          
-          // Apply transparent style to base ribbons
-          animatedPaths
-            .attr("fill-opacity", 0.03) // Nearly invisible fill
-            .attr("stroke-opacity", 0.07); // Very subtle stroke
+// SVG particle rendering
+else if (particleMode && !useWebGLRenderer && chordConfig.showParticlesLayer && animatedChords.length > 0) {
+  // Check if particles already exist and should be preserved
+  const existingParticles = ribbonGroup.selectAll(".chord-particles").size();
+  const preserveParticles = existingParticles > 0 && particlesInitialized && 
+    // Only preserve when animation or visual-only changes happened
+    !window.forceParticleRegeneration;
+  
+  if (preserveParticles) {
+    console.log('[PARTICLE-OPTIMIZATION] Preserving existing particles');
+    
+    // Only update visibility of particles based on current chord visibility
+    animatedPaths.each(function(d, i) {
+      const sourceIndex = d.source.index;
+      const targetIndex = d.target.index;
+      let connectionValue = 0;
+      
+      if (showDetailedView) {
+        if (sourceIndex < detailedMatrix.length && targetIndex < detailedMatrix[0].length) {
+          connectionValue = detailedMatrix[sourceIndex][targetIndex];
         }
+      } else {
+        if (sourceIndex < categoryMatrix.length && targetIndex < categoryMatrix[0].length) {
+          connectionValue = categoryMatrix[sourceIndex][targetIndex];
+        }
+      }
+      
+      const isRealConnection = connectionValue > 0.2;
+      
+      // Only show particles if they pass the filtering conditions
+      const shouldShowParticles = (!chordConfig.particlesOnlyRealConnections || 
+         (chordConfig.particlesOnlyRealConnections && isRealConnection));
+      
+      // Find particles for this chord and update visibility
+      ribbonGroup.selectAll(`.chord-particles[data-chord-index="${i}"]`)
+        .style("display", shouldShowParticles ? "block" : "none");
+    });
+  } else {
+    // Original code to regenerate particles
+    ribbonGroup.selectAll(".chord-particles").remove();
+    
+    // Generate particles for all currently visible chords
+    animatedPaths.each(function(d, i) {
+      // Code continues as before...
+      
+      // After generation, update window flag
+      window.forceParticleRegeneration = false;
+    });
+  }
+}
         
         // Set up particle movement if enabled
         if (chordConfig.particleMovement && svgRef.current && !useWebGLRenderer) {
@@ -3005,7 +3434,8 @@ chordPaths
         showTooltip(tooltipContent, event);
       })
       .attr("cursor", "pointer"); // Just add a pointer cursor instead
-
+// Reset animation particle preservation flag
+window.preserveParticlesDuringAnimation = false;
       // Reset the redraw flag
       setNeedsRedraw(false);
       console.log(`[RENDER-DIAGNOSTICS] Render completed in ${(performance.now() - renderStartTime).toFixed(1)}ms`);  

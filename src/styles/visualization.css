@@ -234,3 +234,59 @@ svg {
 .chord-arcs.animated path:nth-child(even) {
   animation-delay: calc(0.75s * var(--chord-animation-speed));
 }
+
+/* Glow effect */
+.glow-effect {
+  filter: drop-shadow(0 0 var(--glow-size, 10px) var(--glow-color, #00aaff));
+}
+
+.glow-effect.light-mode {
+  filter: drop-shadow(0 0 var(--glow-size, 10px) var(--glow-color, #00aaff));
+}
+
+.glow-effect.dark-mode {
+  filter: drop-shadow(0 0 var(--glow-size, 10px) var(--glow-color, #00aaff));
+  mix-blend-mode: screen;
+}
+
+/* Animated glow effect */
+@keyframes glowPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 var(--glow-size, 10px) var(--glow-color, #00aaff));
+  }
+  50% {
+    filter: drop-shadow(0 0 calc(var(--glow-size, 10px) * 1.5) var(--glow-color, #00aaff));
+  }
+}
+
+.glow-effect.animated {
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+/* Combined effects - modify existing rules */
+.blur-effect {
+  filter: var(--blur-filter, url(#chordBlurFilter) drop-shadow(0 0 6vmin rgba(0, 0, 0, 0.2)));
+}
+
+.glow-effect {
+  filter: var(--glow-filter, drop-shadow(0 0 var(--glow-size, 10px) var(--glow-color, #00aaff)));
+}
+
+/* Combined effects class */
+.combined-effects {
+  filter: var(--combined-filter);
+}
+
+/* Animated combined effect */
+@keyframes combinedEffectPulse {
+  0%, 100% {
+    filter: var(--combined-filter);
+  }
+  50% {
+    filter: var(--combined-filter-pulse);
+  }
+}
+
+.combined-effects.animated {
+  animation: combinedEffectPulse 3s ease-in-out infinite;
+}
