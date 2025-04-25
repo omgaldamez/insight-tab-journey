@@ -747,6 +747,29 @@ calculatedCount++;
     toast
   ]);
   
+// Add this function to directly check color from dynamicColorThemes
+const getThemeColor = useCallback((category: string): string => {
+  // First check customNodeColors for this category
+  if (customNodeColors && Object.keys(customNodeColors).some(id => id === category)) {
+    return customNodeColors[category];
+  }
+  
+  // Then check the current theme
+  if (dynamicColorThemes && dynamicColorThemes[colorTheme] && dynamicColorThemes[colorTheme][category]) {
+    const color = dynamicColorThemes[colorTheme][category];
+    console.log(`[CHORD-COLOR-DIRECT] Found ${colorTheme} color for ${category}: ${color}`);
+    return color;
+  }
+  
+  // Fall back to default theme if available
+  if (dynamicColorThemes && dynamicColorThemes.default && dynamicColorThemes.default[category]) {
+    return dynamicColorThemes.default[category];
+  }
+  
+  // Final fallback
+  return "#3498db";
+}, [colorTheme, customNodeColors, dynamicColorThemes]);
+
   const initializeParticles = useCallback(() => {
     if (isGeneratingParticles) {
       // Cancel any ongoing generation
@@ -1817,17 +1840,28 @@ useEffect(() => {
     });
   }, [ribbonFillEnabled, toast]);
 
-  // Effect to clean up animation and other references
-  useEffect(() => {
-    return () => {
-      if (animationRef.current) {
-        clearTimeout(animationRef.current);
-      }
-      if (particleUpdateTimeoutRef.current) {
-        clearTimeout(particleUpdateTimeoutRef.current);
-      }
-    };
-  }, []);
+// Effect to clean up animation and other references
+useEffect(() => {
+  // Log current color theme for debugging
+  console.log(`[CHORD-COLOR-DEBUG] Current color theme: ${colorTheme}`);
+  if (dynamicColorThemes) {
+    const availableThemes = Object.keys(dynamicColorThemes);
+    console.log(`[CHORD-COLOR-DEBUG] Available themes: ${availableThemes.join(', ')}`);
+    console.log(`[CHORD-COLOR-DEBUG] Current theme exists: ${availableThemes.includes(colorTheme)}`);
+    
+    // Force a redraw when color theme changes to ensure colors update
+    setNeedsRedraw(true);
+  }
+  
+  return () => {
+    if (animationRef.current) {
+      clearTimeout(animationRef.current);
+    }
+    if (particleUpdateTimeoutRef.current) {
+      clearTimeout(particleUpdateTimeoutRef.current);
+    }
+  };
+}, [colorTheme, dynamicColorThemes]);
 
   // Set up zoom after the visualization is loaded
   useEffect(() => {
@@ -2075,26 +2109,31 @@ const groups = g.append("g")
   .selectAll("g")
   .data(groupData)
   .join("g");
-
-      // Add the arc paths with enhanced visual styling and dynamic opacity
-      groups.append("path")
-        .attr("fill", (d) => {
-          if (showDetailedView) {
-            // For detailed view, get the node's category
-            if (d.index < detailedNodeData.length) {
-              const node = detailedNodeData[d.index];
-              return getNodeColor({ id: "", category: node.category });
-            }
-            return "#999"; // Fallback
-          } else {
-            // For category view - use the index from the data point itself
-            return getNodeColor({ id: "", category: uniqueCategories[d.index] });
-          }
-        })
-        .attr("stroke", "#ffffff")
-        .attr("stroke-width", chordStrokeWidth) // Use dynamic stroke width
-        .attr("opacity", arcOpacity) // Apply opacity from state
-        .attr("d", arc as any);
+  
+// Add the arc paths with enhanced visual styling and dynamic opacity
+groups.append("path")
+  .attr("fill", (d) => {
+    if (showDetailedView) {
+      // For detailed view, get the node's category
+      if (d.index < detailedNodeData.length) {
+        const node = detailedNodeData[d.index];
+        // Use our direct theme color function to ensure correct color application
+        const color = getThemeColor(node.category);
+        return color;
+      }
+      return "#999"; // Fallback
+    } else {
+      // For category view - use the index from the data point itself
+      const category = uniqueCategories[d.index];
+      // Use our direct theme color function 
+      const color = getThemeColor(category);
+      return color;
+    }
+  })
+  .attr("stroke", "#ffffff")
+  .attr("stroke-width", chordStrokeWidth) // Use dynamic stroke width
+  .attr("opacity", arcOpacity) // Apply opacity from state
+  .attr("d", arc as any);
 
       // Add labels for each group
       groups.append("text")

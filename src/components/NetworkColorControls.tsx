@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Node } from '@/types/networkTypes';
-import { RotateCcw, CheckCircle2, Search } from 'lucide-react';
+import { RotateCcw, CheckCircle2, Search, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface NetworkColorControlsProps {
   uniqueCategories: string[];
@@ -34,6 +34,38 @@ interface NetworkColorControlsProps {
   activeColorTab: string;
 }
 
+// Group themes for better organization
+const THEME_GROUPS = {
+  basic: ["default", "bright", "pastel", "ocean", "autumn", "monochrome", "custom"],
+  monochromatic: ["azureCascade", "emeraldDepths", "violetTwilight", "roseReverie", "amberGlow"],
+  categorical: ["exoticPlumage", "pixelNostalgia", "culinaryPalette", "urbanCanvas"],
+  divergent: ["elementalContrast", "forestToDesert", "mysticMeadow", "cosmicDrift"]
+};
+
+// Theme display names for better UI
+const THEME_DISPLAY_NAMES: Record<string, string> = {
+  default: "Default",
+  bright: "Bright",
+  pastel: "Pastel",
+  ocean: "Ocean",
+  autumn: "Autumn",
+  monochrome: "Monochrome",
+  custom: "Custom",
+  azureCascade: "Azure Blue",
+  emeraldDepths: "Emerald Green",
+  violetTwilight: "Violet Purple",
+  roseReverie: "Rose Pink",
+  amberGlow: "Amber Orange",
+  exoticPlumage: "Exotic Plumage",
+  pixelNostalgia: "Pixel Nostalgia",
+  culinaryPalette: "Culinary",
+  urbanCanvas: "Urban Canvas",
+  elementalContrast: "Fire & Ice",
+  forestToDesert: "Forest to Desert",
+  mysticMeadow: "Mystic Meadow",
+  cosmicDrift: "Cosmic Drift"
+};
+
 const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
   uniqueCategories,
   nodes,
@@ -63,6 +95,12 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
   const [selectedColorNode, setSelectedColorNode] = useState<Node | null>(null);
   const [selectedColorValue, setSelectedColorValue] = useState('#3498db');
   const [hasCustomChanges, setHasCustomChanges] = useState(false);
+  const [expandedThemeGroups, setExpandedThemeGroups] = useState({
+    basic: true,
+    monochromatic: false,
+    categorical: false,
+    divergent: false
+  });
   
   // Background colors state
   const [localBgColor, setLocalBgColor] = useState(backgroundColor);
@@ -74,6 +112,9 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
   // Initialize category colors from the current theme
   useEffect(() => {
     if (Object.keys(dynamicColorThemes).length === 0) return;
+    
+    // Log available themes for debugging
+    console.log(`[NetworkColorControls] Available themes: ${Object.keys(dynamicColorThemes).join(', ')}`);
     
     // Use current theme or fall back to default theme
     const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default || {};
@@ -110,6 +151,14 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
     
     setFilteredNodes(filtered);
   }, [nodes, nodeFilter]);
+
+  // Toggle theme group expansion
+  const toggleThemeGroup = (group: string) => {
+    setExpandedThemeGroups(prev => ({
+      ...prev,
+      [group]: !prev[group]
+    }));
+  };
 
   // Handle node size change
   const handleNodeSizeChange = (values: number[]) => {
@@ -213,6 +262,22 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
     });
   };
 
+  // Render theme preview colors under the theme name
+  const renderThemePreview = (themeName: string) => {
+    const colors = getThemePreviewColors(themeName);
+    return (
+      <div className="flex gap-1 items-center mt-1">
+        {colors.slice(0, 5).map((color, i) => (
+          <div 
+            key={`preview-${themeName}-${i}`} 
+            className="w-3 h-3 rounded-full" 
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="text-sm">
       <Tabs value={activeColorTab} onValueChange={onColorTabChange}>
@@ -223,7 +288,7 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
           <TabsTrigger value="background" className="px-2">BG</TabsTrigger>
         </TabsList>
         
-        {/* Presets Tab */}
+        {/* Presets Tab - Updated with all themes */}
         <TabsContent value="presets" className="space-y-4">
           <div className="grid grid-cols-1 gap-2">
             <div className="flex items-center mb-2">
@@ -240,45 +305,193 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
             </div>
             
             <div className="bg-gray-800 p-3 rounded-md mt-4">
-              <h3 className="text-xs font-medium mb-2 text-gray-300">Color Themes</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {["default", "bright", "pastel", "ocean", "autumn", "monochrome", "custom"].map(theme => (
-                  <div key={theme} className="flex items-center">
-                    <input
-                      type="radio"
-                      id={`theme-${theme}`}
-                      name="colorTheme"
-                      className="mr-2"
-                      checked={colorTheme === theme}
-                      onChange={() => handleColorThemeChange(theme)}
-                    />
-                    <label 
-                      htmlFor={`theme-${theme}`} 
-                      className={`text-xs capitalize cursor-pointer ${theme === 'custom' && hasCustomChanges ? 'text-yellow-400' : ''}`}
-                    >
-                      {theme}
-                    </label>
-                  </div>
-                ))}
-              </div>
+              <h3 className="text-xs font-medium mb-3 text-gray-300">Color Themes</h3>
               
-              <div className="mt-3 flex flex-wrap gap-1">
-                {uniqueCategories.slice(0, 5).map(category => {
-                  const color = dynamicColorThemes[colorTheme]?.[category] || "#cccccc";
-                  return (
-                    <div 
-                      key={`preview-${category}`} 
-                      className="w-5 h-5 rounded-full"
-                      style={{backgroundColor: color}}
-                      title={category}
-                    ></div>
-                  );
-                })}
-                {uniqueCategories.length > 5 && (
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-700 text-xs">
-                    +{uniqueCategories.length - 5}
+              {/* Basic Themes Section */}
+              <div className="mb-2">
+                <button
+                  className="w-full flex items-center justify-between text-left px-1 py-1 rounded-sm hover:bg-gray-700"
+                  onClick={() => toggleThemeGroup('basic')}
+                >
+                  <span className="text-xs font-medium text-gray-300">Basic Themes</span>
+                  {expandedThemeGroups.basic ? (
+                    <ChevronDown className="w-3 h-3 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-gray-400" />
+                  )}
+                </button>
+                
+                {expandedThemeGroups.basic && (
+                  <div className="grid grid-cols-2 gap-3 mt-2 pl-2">
+                    {THEME_GROUPS.basic.map(theme => (
+                      <div key={theme} className="flex flex-col">
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            id={`theme-${theme}`}
+                            name="colorTheme"
+                            className="mr-2"
+                            checked={colorTheme === theme}
+                            onChange={() => handleColorThemeChange(theme)}
+                          />
+                          <label 
+                            htmlFor={`theme-${theme}`} 
+                            className={`text-xs cursor-pointer ${theme === 'custom' && hasCustomChanges ? 'text-yellow-400' : ''}`}
+                          >
+                            {THEME_DISPLAY_NAMES[theme]}
+                          </label>
+                        </div>
+                        {renderThemePreview(theme)}
+                      </div>
+                    ))}
                   </div>
                 )}
+              </div>
+              
+              {/* Monochromatic Themes Section */}
+              <div className="mb-2">
+                <button
+                  className="w-full flex items-center justify-between text-left px-1 py-1 rounded-sm hover:bg-gray-700"
+                  onClick={() => toggleThemeGroup('monochromatic')}
+                >
+                  <span className="text-xs font-medium text-gray-300">Monochromatic Themes</span>
+                  {expandedThemeGroups.monochromatic ? (
+                    <ChevronDown className="w-3 h-3 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-gray-400" />
+                  )}
+                </button>
+                
+                {expandedThemeGroups.monochromatic && (
+                  <div className="grid grid-cols-2 gap-3 mt-2 pl-2">
+                    {THEME_GROUPS.monochromatic.map(theme => (
+                      <div key={theme} className="flex flex-col">
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            id={`theme-${theme}`}
+                            name="colorTheme"
+                            className="mr-2"
+                            checked={colorTheme === theme}
+                            onChange={() => handleColorThemeChange(theme)}
+                          />
+                          <label 
+                            htmlFor={`theme-${theme}`} 
+                            className="text-xs cursor-pointer"
+                          >
+                            {THEME_DISPLAY_NAMES[theme]}
+                          </label>
+                        </div>
+                        {renderThemePreview(theme)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* Categorical Themes Section */}
+              <div className="mb-2">
+                <button
+                  className="w-full flex items-center justify-between text-left px-1 py-1 rounded-sm hover:bg-gray-700"
+                  onClick={() => toggleThemeGroup('categorical')}
+                >
+                  <span className="text-xs font-medium text-gray-300">Categorical Themes</span>
+                  {expandedThemeGroups.categorical ? (
+                    <ChevronDown className="w-3 h-3 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-gray-400" />
+                  )}
+                </button>
+                
+                {expandedThemeGroups.categorical && (
+                  <div className="grid grid-cols-2 gap-3 mt-2 pl-2">
+                    {THEME_GROUPS.categorical.map(theme => (
+                      <div key={theme} className="flex flex-col">
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            id={`theme-${theme}`}
+                            name="colorTheme"
+                            className="mr-2"
+                            checked={colorTheme === theme}
+                            onChange={() => handleColorThemeChange(theme)}
+                          />
+                          <label 
+                            htmlFor={`theme-${theme}`} 
+                            className="text-xs cursor-pointer"
+                          >
+                            {THEME_DISPLAY_NAMES[theme]}
+                          </label>
+                        </div>
+                        {renderThemePreview(theme)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* Divergent Themes Section */}
+              <div className="mb-2">
+                <button
+                  className="w-full flex items-center justify-between text-left px-1 py-1 rounded-sm hover:bg-gray-700"
+                  onClick={() => toggleThemeGroup('divergent')}
+                >
+                  <span className="text-xs font-medium text-gray-300">Divergent Themes</span>
+                  {expandedThemeGroups.divergent ? (
+                    <ChevronDown className="w-3 h-3 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-gray-400" />
+                  )}
+                </button>
+                
+                {expandedThemeGroups.divergent && (
+                  <div className="grid grid-cols-2 gap-3 mt-2 pl-2">
+                    {THEME_GROUPS.divergent.map(theme => (
+                      <div key={theme} className="flex flex-col">
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            id={`theme-${theme}`}
+                            name="colorTheme"
+                            className="mr-2"
+                            checked={colorTheme === theme}
+                            onChange={() => handleColorThemeChange(theme)}
+                          />
+                          <label 
+                            htmlFor={`theme-${theme}`} 
+                            className="text-xs cursor-pointer"
+                          >
+                            {THEME_DISPLAY_NAMES[theme]}
+                          </label>
+                        </div>
+                        {renderThemePreview(theme)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* Current Theme Preview */}
+              <div className="mt-4">
+                <h4 className="text-xs font-medium mb-1 text-gray-300">Current Theme: {THEME_DISPLAY_NAMES[colorTheme] || colorTheme}</h4>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {uniqueCategories.slice(0, 7).map((category, index) => {
+                    const color = dynamicColorThemes[colorTheme]?.[category] || "#cccccc";
+                    return (
+                      <div 
+                        key={`preview-current-${category}`} 
+                        className="w-5 h-5 rounded-full flex items-center justify-center"
+                        style={{backgroundColor: color}}
+                        title={category}
+                      ></div>
+                    );
+                  })}
+                  {uniqueCategories.length > 7 && (
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-700 text-xs">
+                      +{uniqueCategories.length - 7}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -325,7 +538,7 @@ const NetworkColorControls: React.FC<NetworkColorControlsProps> = ({
             <p className="text-xs text-gray-400">
               {colorTheme === 'custom' 
                 ? "Using custom colors for categories" 
-                : `Using "${colorTheme}" theme colors`}
+                : `Using "${THEME_DISPLAY_NAMES[colorTheme] || colorTheme}" theme colors`}
             </p>
             <p className="text-xs text-gray-400 mt-1">
               {hasCustomChanges 

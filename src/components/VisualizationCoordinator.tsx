@@ -44,13 +44,33 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
   const [backgroundOpacity, setBackgroundOpacity] = useState(1.0);
   const [customNodeColors, setCustomNodeColors] = useState<Record<string, string>>({});
   const [dynamicColorThemes, setDynamicColorThemes] = useState<Record<string, Record<string, string>>>({
+    // Basic themes
     default: {},
     bright: {},
     pastel: {},
     ocean: {},
     autumn: {},
     monochrome: {},
-    custom: {}
+    custom: {},
+    
+    // Monochromatic themes
+    azureCascade: {},
+    emeraldDepths: {},
+    violetTwilight: {},
+    roseReverie: {},
+    amberGlow: {},
+    
+    // Categorical themes
+    exoticPlumage: {},
+    pixelNostalgia: {},
+    culinaryPalette: {},
+    urbanCanvas: {},
+    
+    // Divergent themes
+    elementalContrast: {},
+    forestToDesert: {},
+    mysticMeadow: {},
+    cosmicDrift: {}
   });
   
   // Add tooltip settings
@@ -76,68 +96,152 @@ const VisualizationCoordinator: React.FC<VisualizationCoordinatorProps> = ({
   // Add consistent network title state across all visualizations
   const [networkTitle, setNetworkTitle] = useState("Network Visualization");
 
-  // Initialize dynamic color themes with categories from nodes
-  useEffect(() => {
-    if (nodeData.length > 0 && Object.keys(dynamicColorThemes.default).length === 0) {
-      const categories = Array.from(new Set(nodeData.map(node => node.category)));
+// Initialize dynamic color themes with categories from nodes
+useEffect(() => {
+  if (nodeData.length > 0 && Object.keys(dynamicColorThemes.default).length === 0) {
+    const categories = Array.from(new Set(nodeData.map(node => node.category)));
+    
+    // Generate color palette
+    const baseColors = [
+      "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6", 
+      "#1abc9c", "#34495e", "#e67e22", "#27ae60", "#8e44ad",
+      "#16a085", "#d35400", "#2980b9", "#c0392b", "#f1c40f"
+    ];
+    
+    // For each theme, generate appropriate colors
+    const themes = {
+      // Basic themes
+      default: {} as Record<string, string>,
+      bright: {} as Record<string, string>,
+      pastel: {} as Record<string, string>,
+      ocean: {} as Record<string, string>,
+      autumn: {} as Record<string, string>,
+      monochrome: {} as Record<string, string>,
+      custom: {} as Record<string, string>,
       
-      // Generate color palette
-      const baseColors = [
-        "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6", 
-        "#1abc9c", "#34495e", "#e67e22", "#27ae60", "#8e44ad",
-        "#16a085", "#d35400", "#2980b9", "#c0392b", "#f1c40f"
-      ];
+      // Monochromatic themes
+      azureCascade: {} as Record<string, string>,
+      emeraldDepths: {} as Record<string, string>,
+      violetTwilight: {} as Record<string, string>,
+      roseReverie: {} as Record<string, string>,
+      amberGlow: {} as Record<string, string>,
       
-      // For each theme, generate appropriate colors
-      const themes = {
-        default: {} as Record<string, string>,
-        bright: {} as Record<string, string>,
-        pastel: {} as Record<string, string>,
-        ocean: {} as Record<string, string>,
-        autumn: {} as Record<string, string>,
-        monochrome: {} as Record<string, string>,
-        custom: {} as Record<string, string>
-      };
+      // Categorical themes
+      exoticPlumage: {} as Record<string, string>,
+      pixelNostalgia: {} as Record<string, string>,
+      culinaryPalette: {} as Record<string, string>,
+      urbanCanvas: {} as Record<string, string>,
       
-      // Assign colors to categories for each theme
-      categories.forEach((category, index) => {
-        const baseColor = baseColors[index % baseColors.length];
-        
-        // Default theme - base colors
-        themes.default[category] = baseColor;
-        
-        // Bright theme - lighter, more saturated colors
-        const hsl = hexToHSL(baseColor);
-        themes.bright[category] = hslToHex(hsl.h, Math.min(100, hsl.s + 20), Math.min(70, hsl.l + 15));
-        
-        // Pastel theme - higher lightness, lower saturation
-        themes.pastel[category] = hslToHex(hsl.h, Math.max(30, hsl.s - 30), Math.min(85, hsl.l + 25));
-        
-        // Ocean theme - shifted toward blues
-        themes.ocean[category] = hslToHex(
-          (hsl.h + 210) % 360, 
-          Math.min(90, 60 + index * 3), 
-          Math.max(30, 70 - index * 2)
-        );
-        
-        // Autumn theme - shifted toward oranges and browns
-        themes.autumn[category] = hslToHex(
-          (30 + index * 15) % 60, 
-          Math.min(90, 70 + index * 2), 
-          Math.max(30, 60 - index * 3)
-        );
-        
-        // Monochrome theme - grayscale variants
-        const grayValue = 20 + (index * 10) % 50;
-        themes.monochrome[category] = hslToHex(0, 0, grayValue);
-      });
+      // Divergent themes
+      elementalContrast: {} as Record<string, string>,
+      forestToDesert: {} as Record<string, string>,
+      mysticMeadow: {} as Record<string, string>,
+      cosmicDrift: {} as Record<string, string>
+    };
+    
+    // Assign colors to categories for each theme
+    categories.forEach((category, index) => {
+      const baseColor = baseColors[index % baseColors.length];
       
-      // Custom theme starts as a copy of default
-      themes.custom = {...themes.default};
+      // Default theme - base colors
+      themes.default[category] = baseColor;
       
-      setDynamicColorThemes(themes);
-    }
-  }, [nodeData, dynamicColorThemes]);
+      // Bright theme - lighter, more saturated colors
+      const hsl = hexToHSL(baseColor);
+      themes.bright[category] = hslToHex(hsl.h, Math.min(100, hsl.s + 20), Math.min(70, hsl.l + 15));
+      
+      // Pastel theme - higher lightness, lower saturation
+      themes.pastel[category] = hslToHex(hsl.h, Math.max(30, hsl.s - 30), Math.min(85, hsl.l + 25));
+      
+      // Ocean theme - shifted toward blues
+      themes.ocean[category] = hslToHex(
+        (hsl.h + 210) % 360, 
+        Math.min(90, 60 + index * 3), 
+        Math.max(30, 70 - index * 2)
+      );
+      
+      // Autumn theme - shifted toward oranges and browns
+      themes.autumn[category] = hslToHex(
+        (30 + index * 15) % 60, 
+        Math.min(90, 70 + index * 2), 
+        Math.max(30, 60 - index * 3)
+      );
+      
+      // Monochrome theme - grayscale variants
+      const grayValue = 20 + (index * 10) % 50;
+      themes.monochrome[category] = hslToHex(0, 0, grayValue);
+      
+      // Monochromatic theme variants
+      // Azure (blues)
+      themes.azureCascade[category] = hslToHex(210 + (index * 15) % 40, 70, 40 + (index * 5) % 30);
+      
+      // Emerald (greens)
+      themes.emeraldDepths[category] = hslToHex(120 + (index * 15) % 40, 70, 40 + (index * 5) % 30);
+      
+      // Violet (purples)
+      themes.violetTwilight[category] = hslToHex(270 + (index * 15) % 40, 70, 40 + (index * 5) % 30);
+      
+      // Rose (pinks)
+      themes.roseReverie[category] = hslToHex(330 + (index * 15) % 30, 70, 40 + (index * 5) % 30);
+      
+      // Amber (oranges)
+      themes.amberGlow[category] = hslToHex(30 + (index * 15) % 30, 70, 40 + (index * 5) % 30);
+      
+      // Categorical vibrant themes
+      // Exotic Plumage (vibrant tropical)
+      const exoticHue = (index * 55) % 360;
+      themes.exoticPlumage[category] = hslToHex(exoticHue, 85, 55);
+      
+      // Pixel Nostalgia (retro game colors)
+      const pixelHue = (index * 45 + 15) % 360;
+      themes.pixelNostalgia[category] = hslToHex(pixelHue, 80, 60);
+      
+      // Culinary (food-inspired colors)
+      const culinaryHues = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+      const culinaryHue = culinaryHues[index % culinaryHues.length];
+      themes.culinaryPalette[category] = hslToHex(culinaryHue, 70, 45 + (index % 3) * 10);
+      
+      // Urban (city landscape colors)
+      const urbanHue = (index * 40) % 360;
+      themes.urbanCanvas[category] = hslToHex(urbanHue, 40, 50);
+      
+      // Divergent themes
+      // Elemental Contrast (fire to ice)
+      const elementalValue = index / categories.length;
+      themes.elementalContrast[category] = hslToHex(
+        elementalValue < 0.5 ? 0 + (elementalValue * 2 * 60) : 180 + ((elementalValue - 0.5) * 2 * 60),
+        70,
+        50
+      );
+      
+      // Forest to Desert
+      themes.forestToDesert[category] = hslToHex(
+        120 - (index % categories.length) * (90 / categories.length),
+        60,
+        40 + (index % categories.length) * (20 / categories.length)
+      );
+      
+      // Mystic Meadow (purple to green)
+      themes.mysticMeadow[category] = hslToHex(
+        270 - (index % categories.length) * (150 / categories.length),
+        70,
+        50
+      );
+      
+      // Cosmic Drift (pink to blue)
+      themes.cosmicDrift[category] = hslToHex(
+        330 - (index % categories.length) * (210 / categories.length),
+        80,
+        60 - (index % categories.length) * (20 / categories.length)
+      );
+    });
+    
+    // Custom theme starts as a copy of default
+    themes.custom = {...themes.default};
+    
+    setDynamicColorThemes(themes);
+  }
+}, [nodeData, dynamicColorThemes]);
 
   const handleToggleSidebar = () => {
     setIsSidebarCollapsed(!isSidebarCollapsed);

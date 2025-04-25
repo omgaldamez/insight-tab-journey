@@ -1,35 +1,45 @@
 /* eslint-disable prefer-const */
 import { useState, useCallback, useEffect } from 'react';
 import { Node } from '@/types/networkTypes';
+import { 
+  DEFAULT_COLOR_PALETTE, 
+  CATEGORICAL_PALETTES,
+  MONOCHROMATIC_PALETTES,
+  DIVERGENT_PALETTES,
+  generateExtendedColorThemes,
+  ColorThemes,
+  getNodeColor as getThemeNodeColor
+} from '@/utils/colorThemes';
 
-// Default color palette for consistent fallback
-const DEFAULT_COLOR_PALETTE = [
-  "#e74c3c", // Red
-  "#3498db", // Blue
-  "#2ecc71", // Green
-  "#f39c12", // Orange
-  "#9b59b6", // Purple
-  "#1abc9c", // Teal
-  "#34495e", // Dark Blue
-  "#e67e22", // Dark Orange
-  "#27ae60", // Dark Green
-  "#8e44ad", // Dark Purple
-  "#16a085", // Dark Teal
-  "#d35400", // Rust
-  "#2980b9", // Royal Blue
-  "#c0392b", // Dark Red
-  "#f1c40f"  // Yellow
-];
-
-// Base themes structure
-const BASE_THEMES = {
+// Extended base themes structure with all available themes
+const EXTENDED_BASE_THEMES = {
+  // Basic themes
   default: {},
   bright: {},
   pastel: {},
   ocean: {},
   autumn: {},
   monochrome: {},
-  custom: {}
+  custom: {},
+
+  // Monochromatic themes
+  azureCascade: {},
+  emeraldDepths: {},
+  violetTwilight: {},
+  roseReverie: {},
+  amberGlow: {},
+
+  // Categorical themes
+  exoticPlumage: {},
+  pixelNostalgia: {},
+  culinaryPalette: {},
+  urbanCanvas: {},
+
+  // Divergent themes
+  elementalContrast: {},
+  forestToDesert: {},
+  mysticMeadow: {},
+  cosmicDrift: {}
 };
 
 // Interface for the hook parameters
@@ -43,7 +53,18 @@ interface UseNetworkColorsProps {
   initialBackgroundOpacity?: number;
   initialCustomNodeColors?: Record<string, string>;
   initialDynamicColorThemes?: Record<string, Record<string, string>>;
-  onChange?: (state: { colorTheme: string; nodeSize?: number; linkColor?: string; backgroundColor?: string; textColor?: string; nodeStrokeColor?: string; backgroundOpacity?: number; customNodeColors?: Record<string, string>; dynamicColorThemes?: Record<string, Record<string, string>>; activeColorTab?: string }) => void;
+  onChange?: (state: { 
+    colorTheme: string; 
+    nodeSize?: number; 
+    linkColor?: string; 
+    backgroundColor?: string; 
+    textColor?: string; 
+    nodeStrokeColor?: string; 
+    backgroundOpacity?: number; 
+    customNodeColors?: Record<string, string>; 
+    dynamicColorThemes?: Record<string, Record<string, string>>; 
+    activeColorTab?: string 
+  }) => void;
 }
 
 /**
@@ -84,7 +105,7 @@ const useNetworkColors = ({
     if (hasProperStructure) {
       return initialDynamicColorThemes;
     } else {
-      return { ...BASE_THEMES };
+      return { ...EXTENDED_BASE_THEMES };
     }
   });
 
@@ -115,35 +136,13 @@ const useNetworkColors = ({
   const generateDynamicColorThemes = useCallback((categories: string[]) => {
     console.log("Generating dynamic color themes for categories:", categories);
     
-    // Generate base themes
-    const baseThemes = { ...BASE_THEMES };
+    // Use our advanced theme generator from colorThemes.ts
+    const extendedThemes = generateExtendedColorThemes(categories, DEFAULT_COLOR_PALETTE);
     
-    // For each category, assign colors to each theme
-    categories.forEach((category, index) => {
-      // Default theme - original colors
-      baseThemes.default[category] = DEFAULT_COLOR_PALETTE[index % DEFAULT_COLOR_PALETTE.length];
-      
-      // Get HSL for color manipulation
-      const hsl = hexToHSL(baseThemes.default[category]);
-      
-      // Create variations for other themes
-      baseThemes.bright[category] = hslToHex(hsl.h, Math.min(100, hsl.s + 20), Math.min(70, hsl.l + 15));
-      baseThemes.pastel[category] = hslToHex(hsl.h, Math.max(30, hsl.s - 30), Math.min(85, hsl.l + 25));
-      baseThemes.ocean[category] = hslToHex((hsl.h + 210) % 360, Math.min(90, 60 + index * 3), Math.max(30, 70 - index * 2));
-      baseThemes.autumn[category] = hslToHex((30 + index * 15) % 60, Math.min(90, 70 + index * 2), Math.max(30, 60 - index * 3));
-      
-      // Monochrome theme - grayscale variants
-      const grayValue = 20 + (index * 10) % 50;
-      baseThemes.monochrome[category] = hslToHex(0, 0, grayValue);
-    });
+    // Update state with all available themes
+    setDynamicColorThemes(extendedThemes);
     
-    // Initialize custom theme as copy of default
-    baseThemes.custom = { ...baseThemes.default };
-    
-    // Update state
-    setDynamicColorThemes(baseThemes);
-    
-    return baseThemes;
+    return extendedThemes;
   }, []);
 
   /**
@@ -155,22 +154,13 @@ const useNetworkColors = ({
       return customNodeColors[node.id];
     }
     
-    // Priority 2: Category has a color in current theme
-    const currentTheme = dynamicColorThemes[colorTheme] || dynamicColorThemes.default || {};
-    if (currentTheme[node.category]) {
-      return currentTheme[node.category];
-    }
-    
-    // Priority 3: Category hashing for consistent fallback
-    if (node.category) {
-      const categoryHash = node.category.split('')
-        .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const index = Math.abs(categoryHash) % DEFAULT_COLOR_PALETTE.length;
-      return DEFAULT_COLOR_PALETTE[index];
-    }
-    
-    // Fallback
-    return "#95a5a6";
+    // Priority 2: Use the getNodeColor function from colorThemes.ts
+    return getThemeNodeColor(
+      node, 
+      customNodeColors, 
+      colorTheme, 
+      dynamicColorThemes
+    );
   }, [customNodeColors, colorTheme, dynamicColorThemes]);
 
   /**
@@ -245,8 +235,8 @@ const useNetworkColors = ({
     resetBackgroundColors();
   }, [resetBackgroundColors]);
 
-  // Utility functions for color manipulation
-  function hexToHSL(hex: string) {
+  // Utility function to convert hex to HSL
+  const hexToHSL = (hex: string) => {
     let r = 0, g = 0, b = 0;
     
     // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
@@ -282,9 +272,10 @@ const useNetworkColors = ({
     }
   
     return { h: h * 360, s: s * 100, l: l * 100 };
-  }
+  };
   
-  function hslToHex(h: number, s: number, l: number) {
+  // Utility function to convert HSL to hex
+  const hslToHex = (h: number, s: number, l: number) => {
     h /= 360;
     s /= 100;
     l /= 100;
@@ -318,7 +309,7 @@ const useNetworkColors = ({
     };
     
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-  }
+  };
 
   return {
     // Current state values

@@ -21,7 +21,7 @@ import {
   ZoomOut,
   Target, 
   Users,
-  Settings, // Added Settings icon
+  Settings,
   Save
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
@@ -65,7 +65,7 @@ interface NetworkSidebarProps {
     visualizationType: boolean;
     threeDControls?: boolean;
     tooltipSettings: boolean;
-    configPresets?: boolean; // Added configPresets property
+    configPresets?: boolean;
   };
   selectedNode: Node | null;
   selectedNodeConnections: {
@@ -138,6 +138,10 @@ interface NetworkSidebarProps {
   onThreeDCenterNodeChange?: (nodeId: string | null) => void;
 }
 
+// Create a mapping to store dynamicColorThemes
+// This will be a placeholder until we properly integrate with the backend
+const themesMapping: Record<string, Record<string, Record<string, string>>> = {};
+
 const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   linkDistance,
   linkStrength,
@@ -205,6 +209,57 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
   const [selectedColorValue, setSelectedColorValue] = useState('#3498db');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(title || "Untitled Network");
+  
+  // Create a dynamicColorThemes object that mimics the structure expected by NetworkColorControls
+  const [dynamicColorThemes, setDynamicColorThemes] = useState<Record<string, Record<string, string>>>(() => {
+    // If we already have a stored theme for this colorTheme, use it
+    if (themesMapping[colorTheme]) {
+      return themesMapping[colorTheme];
+    }
+    
+    // Otherwise, create a basic structure with current theme
+    const themes: Record<string, Record<string, string>> = {
+      default: {},
+      bright: {},
+      pastel: {},
+      ocean: {},
+      autumn: {},
+      monochrome: {},
+      custom: {},
+      // Add the extended theme types
+      azureCascade: {},
+      emeraldDepths: {},
+      violetTwilight: {},
+      roseReverie: {},
+      amberGlow: {},
+      exoticPlumage: {},
+      pixelNostalgia: {},
+      culinaryPalette: {},
+      urbanCanvas: {},
+      elementalContrast: {},
+      forestToDesert: {},
+      mysticMeadow: {},
+      cosmicDrift: {}
+    };
+    
+    // Populate current theme with colorThemes data
+    themes[colorTheme] = {...colorThemes};
+    
+    // Store this for future reference
+    themesMapping[colorTheme] = themes;
+    
+    return themes;
+  });
+  
+  // Update dynamicColorThemes when colorTheme or colorThemes changes
+  useEffect(() => {
+    setDynamicColorThemes(prev => {
+      const updated = {...prev};
+      updated[colorTheme] = {...colorThemes};
+      themesMapping[colorTheme] = updated;
+      return updated;
+    });
+  }, [colorTheme, colorThemes]);
   
   // Handle title editing
   const handleStartEditTitle = () => {
@@ -295,8 +350,6 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
           </button>
         </div>
       </div>
-
-
 
       {/* Scrollable content */}
       <div className="overflow-y-auto flex-1">
@@ -628,7 +681,7 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
           
           {expandedSections.colorControls && (
             <div className="mb-4 bg-gray-700 p-3 rounded-md">
-              {/* Use updated NetworkColorControls component */}
+              {/* Use updated NetworkColorControls component with full dynamicColorThemes */}
               <NetworkColorControls
                 uniqueCategories={uniqueCategories}
                 nodes={nodes}
@@ -640,8 +693,7 @@ const NetworkSidebar: React.FC<NetworkSidebarProps> = ({
                 nodeStrokeColor={nodeStrokeColor}
                 backgroundOpacity={backgroundOpacity}
                 customNodeColors={customNodeColors}
-                // Pass the complete dynamicColorThemes object, not just current theme
-                dynamicColorThemes={{}}
+                dynamicColorThemes={dynamicColorThemes}
                 onColorThemeChange={onColorThemeChange}
                 onNodeSizeChange={(value) => onParameterChange("nodeSize", value)}
                 onApplyGroupColors={onApplyGroupColors}

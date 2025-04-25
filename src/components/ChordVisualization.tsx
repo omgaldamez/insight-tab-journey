@@ -725,7 +725,7 @@ const handleDownloadGraph = (format: string) => {
       All without CSS effects
     </button>
   </div>
-</div>
+</div>y
             </div>
           </div>
         </div>
