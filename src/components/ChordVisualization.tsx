@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Node, Link, VisualizationType } from '@/types/networkTypes';
 import { useToast } from '@/components/ui/use-toast';
 import BaseVisualization from './BaseVisualization';
@@ -16,6 +16,7 @@ import useChordDiagram from '@/hooks/useChordDiagram';
 import ParticleMetricsPanel from './ParticleMetricsPanel';
 import { useConfigPresets } from '@/hooks/useConfigPresets';
 import '@/styles/visualization.css';
+import { Maximize, Download } from 'lucide-react';
 
 interface ChordVisualizationProps {
   onCreditsClick: () => void;
@@ -61,11 +62,11 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
   const contentRef = useRef<SVGGElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [controlsPanelVisible, setControlsPanelVisible] = useState(true);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showParticleMetrics, setShowParticleMetrics] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // Apply fullscreen styles
-  useFullscreenStyles();
+  // Use fullscreen styles and hooks with the enhanced triggerSvgResize function
+  const { isFullscreen, toggleFullscreen, triggerSvgResize } = useFullscreenStyles();
 
   // Use the network colors hook for color management
   const colors = useNetworkColors({
@@ -80,7 +81,6 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     initialDynamicColorThemes: dynamicColorThemes
   });
 
-
   const [localExpandedSections, setLocalExpandedSections] = useState({
     networkControls: true,
     nodeControls: true,
@@ -90,7 +90,6 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     tooltipSettings: true,
     configPresets: true
   });
-
 
   // Use the chord diagram hook for diagram state and rendering
   const chord = useChordDiagram({
@@ -118,7 +117,7 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     onNext: chord.goToNextRibbon,
     onReset: chord.resetAnimation,
     onSpeedChange: chord.changeAnimationSpeed,
-    onJumpToFrame: chord.jumpToFrame  // Add this new prop
+    onJumpToFrame: chord.jumpToFrame
   };
 
   // Toggle sidebar state handler
@@ -163,37 +162,116 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     chord.setNeedsRedraw(true);
   };
 
-  // Custom download function for Chord visualization
-  const handleDownloadGraph = (format: string) => {
-    if (!svgRef.current || !containerRef.current) {
-      toast({
-        title: "Export Error",
-        description: "Cannot download visualization - SVG not ready",
-        variant: "destructive"
-      });
-      return;
+// Custom download function for Chord visualization
+const handleDownloadGraph = (format: string) => {
+  if (!svgRef.current || !containerRef.current) {
+    toast({
+      title: "Export Error",
+      description: "Cannot download visualization - SVG not ready",
+      variant: "destructive"
+    });
+    return;
+  }
+  
+  // Parse the format to determine CSS inclusion
+  const parts = format.split(':');
+  const formatType = parts[0];
+  const exportMode = parts[1] || 'current';
+  
+  // Default to with CSS effects unless specifically requested without
+  const withCssEffects = !parts.includes('nocss');
+  
+  // For SVG format with 'nocss' specified, we want to exclude CSS effects
+  const formatToUse = formatType === 'svg' && !withCssEffects 
+    ? 'svg:current' // Force 'current' mode for consistent behavior
+    : format;
+  
+  // Display the appropriate message
+  const includesCss = withCssEffects ? "with" : "without";
+  const toastTitle = formatType === 'all' 
+    ? `Downloading All Formats` 
+    : `Downloading ${formatType.toUpperCase()}`;
+  const toastDescription = formatType === 'all'
+    ? `Preparing all formats ${includesCss} CSS effects` 
+    : `Preparing download ${includesCss} CSS effects`;
+  
+  toast({
+    title: toastTitle,
+    description: toastDescription
+  });
+  
+  downloadChordDiagram(
+    formatToUse,
+    svgRef.current,
+    containerRef.current,
+    colors.backgroundColor,
+    colors.backgroundOpacity,
+    colors.textColor,
+    chord.chordConfig.chordStrokeWidth,
+    chord.chordConfig.chordOpacity,
+    (message) => toast({
+      title: "Export Error",
+      description: message,
+      variant: "destructive"
+    }),
+    (message) => toast({
+      title: "Download Started",
+      description: message
+    }),
+    withCssEffects // Pass the CSS effects flag
+  );
+};
+  
+  // Handle fullscreen toggle with additional SVG resize/redraw
+  const handleFullscreenToggle = () => {
+    if (containerRef.current) {
+      toggleFullscreen(containerRef.current);
+      
+      // After toggling fullscreen, schedule a redraw with a slight delay
+      // to ensure the chord diagram properly centers and adapts to the new size
+      setTimeout(() => {
+        chord.setNeedsRedraw(true);
+        
+        // Force a transform update on the SVG content
+        if (svgRef.current && contentRef.current) {
+          triggerSvgResize(svgRef);
+          
+          // Ensure proper centering in case the container dimensions changed
+          const containerWidth = containerRef.current?.clientWidth || 800;
+          const containerHeight = containerRef.current?.clientHeight || 600;
+          
+          // Force a reset to default view to ensure proper centering
+          setTimeout(() => {
+            chord.handleZoomReset();
+          }, 150);
+        }
+      }, 100);
     }
-    
-    downloadChordDiagram(
-      format,
-      svgRef.current,
-      containerRef.current,
-      colors.backgroundColor,
-      colors.backgroundOpacity,
-      colors.textColor,
-      chord.chordConfig.chordStrokeWidth,
-      chord.chordConfig.chordOpacity,
-      (message) => toast({
-        title: "Export Error",
-        description: message,
-        variant: "destructive"
-      }),
-      (message) => toast({
-        title: "Download Started",
-        description: message
-      })
-    );
   };
+
+  // Listen for fullscreen changes and adjust SVG accordingly
+  useEffect(() => {
+    const handleResize = () => {
+      if (svgRef.current && containerRef.current) {
+        // Trigger a redraw when window size changes (including fullscreen)
+        chord.setNeedsRedraw(true);
+        
+        // Give time for the browser to calculate new dimensions
+        setTimeout(() => {
+          // Reset zoom to fit content properly in the new container size
+          chord.handleZoomReset();
+        }, 150);
+      }
+    };
+    
+    // Listen for resize events
+    window.addEventListener('resize', handleResize);
+    
+    // Clean up
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [chord]);
 
   // Sidebar state and handlers
   const sidebarState = {
@@ -252,7 +330,6 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     visualizationType: 'chord'
   });
 
-
   const handlers = {
     handleParameterChange: (type: string, value: number) => {
       if (type === "nodeSize") {
@@ -266,45 +343,45 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
       chord.setNeedsRedraw(true);
     },
     
-handleApplyGroupColors: (categoryColorMap: {[key: string]: string}) => {
-  // First switch to custom theme
-  colors.setColorTheme('custom');
-  
-  // Then apply each category color individually
-  Object.entries(categoryColorMap).forEach(([category, color]) => {
-    colors.updateCategoryColor(category, color);
-  });
-  
-  // Trigger a redraw of the chord diagram
-  chord.setNeedsRedraw(true);
-},
+    handleApplyGroupColors: (categoryColorMap: {[key: string]: string}) => {
+      // First switch to custom theme
+      colors.setColorTheme('custom');
+      
+      // Then apply each category color individually
+      Object.entries(categoryColorMap).forEach(([category, color]) => {
+        colors.updateCategoryColor(category, color);
+      });
+      
+      // Trigger a redraw of the chord diagram
+      chord.setNeedsRedraw(true);
+    },
 
-handleApplyIndividualColor: (nodeId: string, color: string) => {
-  // Use the correct method from useNetworkColors to apply color to a specific node
-  colors.applyIndividualColor(nodeId, color);
-  chord.setNeedsRedraw(true);
-},
+    handleApplyIndividualColor: (nodeId: string, color: string) => {
+      // Use the correct method from useNetworkColors to apply color to a specific node
+      colors.applyIndividualColor(nodeId, color);
+      chord.setNeedsRedraw(true);
+    },
 
-handleResetIndividualColor: (nodeId: string) => {
-  // Use the correct method from useNetworkColors to reset a node's custom color
-  colors.resetIndividualColor(nodeId);
-  chord.setNeedsRedraw(true);
-},
+    handleResetIndividualColor: (nodeId: string) => {
+      // Use the correct method from useNetworkColors to reset a node's custom color
+      colors.resetIndividualColor(nodeId);
+      chord.setNeedsRedraw(true);
+    },
 
-handleApplyBackgroundColors: (
-  bgColor: string, 
-  txtColor: string, 
-  lnkColor: string, 
-  opacity: number,
-  nodeStrokeColor: string
-) => {
-  colors.setBackgroundColor(bgColor);
-  colors.setTextColor(txtColor);
-  colors.setLinkColor(lnkColor);
-  colors.setBackgroundOpacity(opacity);
-  colors.setNodeStrokeColor(nodeStrokeColor);
-  chord.setNeedsRedraw(true);
-},
+    handleApplyBackgroundColors: (
+      bgColor: string, 
+      txtColor: string, 
+      lnkColor: string, 
+      opacity: number,
+      nodeStrokeColor: string
+    ) => {
+      colors.setBackgroundColor(bgColor);
+      colors.setTextColor(txtColor);
+      colors.setLinkColor(lnkColor);
+      colors.setBackgroundOpacity(opacity);
+      colors.setNodeStrokeColor(nodeStrokeColor);
+      chord.setNeedsRedraw(true);
+    },
     handleResetBackgroundColors: () => {
       colors.resetBackgroundColors();
       chord.setNeedsRedraw(true);
@@ -355,137 +432,38 @@ handleApplyBackgroundColors: (
         <div className="w-full h-full">
           <div
             ref={containerRef}
+            id="network-visualization-container"
             className="w-full h-full relative"
             style={{
               backgroundColor: `rgba(${colors.rgbBackgroundColor.r}, ${colors.rgbBackgroundColor.g}, ${colors.rgbBackgroundColor.b}, ${colors.backgroundOpacity})`,
               touchAction: "none" // Important for proper touch handling
             }}
           >
-           {/* Add a style tag for particle transitions */}
-<style>
-  {`
-  .chord-particles circle {
-    transition: opacity 300ms ease-out;
-  }
-  `}
-</style>
-<svg
-  ref={svgRef}
-  className="w-full h-full"
-  style={{ overflow: "visible" }}
-/>
-      {/* SVG Filter definition for animations and visual effects */}
-<svg className="chord-filter" style={{ position: 'absolute', width: 0, height: 0, visibility: 'hidden' }} 
-     xmlns="http://www.w3.org/2000/svg" version="1.1">
-  <defs>
-    <filter id="chordBlurFilter">
-      <feGaussianBlur id="chordBlur" stdDeviation="2.5"></feGaussianBlur>
-      <feColorMatrix type="matrix" values="1 0 0 0 0
-                   0 1 0 0 0
-                   0 0 1 0 0
-                   0 0 0 12 -8"></feColorMatrix>
-    </filter>
-  </defs>
-</svg>      
-            {/* Use the updated VisualizationControls component */}
-            <VisualizationControls
-              containerRef={containerRef}
-              nodeData={nodeData.map(node => ({
-                ...node,
-                // Add any missing properties required by NodeData here
-              }))}
-              linkData={linkData.map(link => ({
-                ...link,
-                source: typeof link.source === 'object' ? link.source.id : link.source,
-                target: typeof link.target === 'object' ? link.target.id : link.target,
-              }))}
-              visualizationType={visualizationType}
-              onDownloadData={() => {}}
-              onDownloadGraph={handleDownloadGraph}
-              onResetSelection={() => chord.setNeedsRedraw(true)}
-              showZoomControls={false}
-              onZoomIn={chord.handleZoomIn}
-              onZoomOut={chord.handleZoomOut}
-              onResetZoom={chord.handleZoomReset}
-              
-              // Basic chord controls
-              chordStrokeWidth={chord.chordConfig.chordStrokeWidth}
-              chordOpacity={chord.chordConfig.chordOpacity}
-              chordStrokeOpacity={chord.chordConfig.chordStrokeOpacity}
-              arcOpacity={chord.chordConfig.arcOpacity}
-              onChordStrokeWidthChange={(width) => chord.updateConfig({ chordStrokeWidth: width })}
-              onChordOpacityChange={(opacity) => chord.updateConfig({ chordOpacity: opacity })}
-              onChordStrokeOpacityChange={(opacity) => chord.updateConfig({ chordStrokeOpacity: opacity })}
-              onArcOpacityChange={(opacity) => chord.updateConfig({ arcOpacity: opacity })}
-              
-              // Direction-based styling
-              useDirectionalStyling={chord.chordConfig.useDirectionalStyling}
-              sourceChordOpacity={chord.chordConfig.sourceChordOpacity}
-              targetChordOpacity={chord.chordConfig.targetChordOpacity}
-              sourceChordColor={chord.chordConfig.sourceChordColor}
-              targetChordColor={chord.chordConfig.targetChordColor}
-              onToggleDirectionalStyling={(val) => chord.updateConfig({ useDirectionalStyling: val })}
-              onSourceChordOpacityChange={(val) => chord.updateConfig({ sourceChordOpacity: val })}
-              onTargetChordOpacityChange={(val) => chord.updateConfig({ targetChordOpacity: val })}
-              onSourceChordColorChange={(val) => chord.updateConfig({ sourceChordColor: val })}
-              onTargetChordColorChange={(val) => chord.updateConfig({ targetChordColor: val })}
-              
-              // Variable width
-              chordWidthVariation={chord.chordConfig.chordWidthVariation}
-              chordWidthPosition={chord.chordConfig.chordWidthPosition}
-              chordWidthCustomPosition={chord.chordConfig.chordWidthCustomPosition}
-              onChordWidthVariationChange={(val) => chord.updateConfig({ chordWidthVariation: val })}
-              onChordWidthPositionChange={(val) => chord.updateConfig({ chordWidthPosition: val })}
-              onChordWidthCustomPositionChange={(val) => chord.updateConfig({ chordWidthCustomPosition: val })}
-
-              // Particle props
-              particleMode={chord.chordConfig.particleMode}
-              particleDensity={chord.chordConfig.particleDensity}
-              particleSizeBase={chord.chordConfig.particleSize}
-              particleSizeVariation={chord.chordConfig.particleSizeVariation}
-              particleBlur={chord.chordConfig.particleBlur}
-              particleDistribution={chord.chordConfig.particleDistribution}
-              particleColor={chord.chordConfig.particleColor}
-              particleOpacity={chord.chordConfig.particleOpacity}
-              onToggleParticleMode={(val) => chord.updateConfig({ particleMode: val })}
-              onParticleDensityChange={(val) => chord.updateConfig({ particleDensity: val })}
-              onParticleSizeChange={(val) => chord.updateConfig({ particleSize: val })}
-              onParticleSizeVariationChange={(val) => chord.updateConfig({ particleSizeVariation: val })}
-              onParticleBlurChange={(val) => chord.updateConfig({ particleBlur: val })}
-              onParticleDistributionChange={(val) => chord.updateConfig({ particleDistribution: val })}
-              onParticleColorChange={(val) => chord.updateConfig({ particleColor: val })}
-              onParticleOpacityChange={(val) => chord.updateConfig({ particleOpacity: val })}
-              
-              // Stroke variation props
-              strokeWidthVariation={chord.chordConfig.strokeWidthVariation}
-              strokeWidthPosition={chord.chordConfig.strokeWidthPosition}
-              strokeWidthCustomPosition={chord.chordConfig.strokeWidthCustomPosition}
-              onStrokeWidthVariationChange={(val) => chord.updateConfig({ strokeWidthVariation: val })}
-              onStrokeWidthPositionChange={(val) => chord.updateConfig({ strokeWidthPosition: val })}
-              onStrokeWidthCustomPositionChange={(val) => chord.updateConfig({ strokeWidthCustomPosition: val })}
-              
-              // Geometric shapes
-              useGeometricShapes={chord.chordConfig.useGeometricShapes}
-              shapeType={chord.chordConfig.shapeType}
-              shapeSize={chord.chordConfig.shapeSize}
-              shapeSpacing={chord.chordConfig.shapeSpacing}
-              shapeFill={chord.chordConfig.shapeFill}
-              shapeStroke={chord.chordConfig.shapeStroke}
-              onToggleGeometricShapes={(val) => chord.updateConfig({ useGeometricShapes: val })}
-              onShapeTypeChange={(val) => chord.updateConfig({ shapeType: val })}
-              onShapeSizeChange={(val) => chord.updateConfig({ shapeSize: val })}
-              onShapeSpacingChange={(val) => chord.updateConfig({ shapeSpacing: val })}
-              onShapeFillChange={(val) => chord.updateConfig({ shapeFill: val })}
-              onShapeStrokeChange={(val) => chord.updateConfig({ shapeStroke: val })}
-              
-              // Enhanced animation
-              animationSpeed={chord.chordConfig.animationSpeed}
-              useFadeTransition={chord.chordConfig.useFadeTransition}
-              transitionDuration={chord.chordConfig.transitionDuration}
-              onAnimationSpeedChange={(val) => chord.updateConfig({ animationSpeed: val })}
-              onToggleFadeTransition={(val) => chord.updateConfig({ useFadeTransition: val })}
-              onTransitionDurationChange={(val) => chord.updateConfig({ transitionDuration: val })}
-            />
+          <style>
+            {`
+            .chord-particles circle {
+              transition: opacity 300ms ease-out;
+            }
+            `}
+          </style>
+          <svg
+            ref={svgRef}
+            className="w-full h-full"
+            style={{ overflow: "visible" }}
+          />
+          {/* SVG Filter definition for animations and visual effects */}
+          <svg className="chord-filter" style={{ position: 'absolute', width: 0, height: 0, visibility: 'hidden' }} 
+              xmlns="http://www.w3.org/2000/svg" version="1.1">
+            <defs>
+              <filter id="chordBlurFilter">
+                <feGaussianBlur id="chordBlur" stdDeviation="2.5"></feGaussianBlur>
+                <feColorMatrix type="matrix" values="1 0 0 0 0
+                            0 1 0 0 0
+                            0 0 1 0 0
+                            0 0 0 12 -8"></feColorMatrix>
+              </filter>
+            </defs>
+          </svg>      
             
             {/* NetworkTooltip component for styling consistency */}
             <NetworkTooltip
@@ -604,78 +582,151 @@ handleApplyBackgroundColors: (
               />
             </div>
             
+            {/* Particle Metrics Panel - at bottom-left */}
+            <div className="absolute bottom-4 left-4 z-50 transition-opacity cursor-move"
+                onMouseDown={(e) => {
+                  // Make the panel draggable
+                  if (e.currentTarget) {
+                    const el = e.currentTarget;
+                    const rect = el.getBoundingClientRect();
+                    const offsetX = e.clientX - rect.left;
+                    const offsetY = e.clientY - rect.top;
+                    
+                    const onMouseMove = (e: MouseEvent) => {
+                      if (containerRef.current) {
+                        const containerRect = containerRef.current.getBoundingClientRect();
+                        const x = e.clientX - offsetX - containerRect.left;
+                        const y = e.clientY - offsetY - containerRect.top;
+                        
+                        // Keep within container bounds
+                        const maxX = containerRect.width - rect.width;
+                        const maxY = containerRect.height - rect.height;
+                        
+                        el.style.left = `${Math.max(0, Math.min(maxX, x))}px`;
+                        el.style.top = `${Math.max(0, Math.min(maxY, y))}px`;
+                        el.style.right = 'auto';
+                        el.style.bottom = 'auto';
+                        el.style.transform = 'none';
+                      }
+                    };
+                    
+                    const onMouseUp = () => {
+                      document.removeEventListener('mousemove', onMouseMove);
+                      document.removeEventListener('mouseup', onMouseUp);
+                    };
+                    
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                  }
+                }}
+            >
+              <ParticleMetricsPanel 
+                isVisible={showParticleMetrics && chord.chordConfig.particleMode}
+                totalParticles={chord.particleMetrics.totalParticles}
+                totalChordsWithParticles={chord.particleMetrics.totalChordsWithParticles}
+                chordsGenerated={chord.particleMetrics.chordsGenerated}
+                totalChords={chord.particleMetrics.totalChords}
+                renderTime={chord.particleMetrics.renderTime}
+                fps={chord.particleMetrics.fps}
+                useWebGL={chord.chordConfig.useWebGLRenderer}
+                isGenerating={chord.isGeneratingParticles}
+                onCancelGeneration={chord.cancelParticleGeneration}
+              />
+            </div>
 
+            {/* Keep the ChordDiagramControls component as is */}
+            <ChordDiagramControls
+              config={chord.chordConfig}
+              onConfigChange={chord.updateConfig}
+              onLayerToggle={handleLayerToggle}
+              controlsPanelVisible={controlsPanelVisible}
+              onToggleControlPanel={() => setControlsPanelVisible(prev => !prev)}
+              particlesInitialized={chord.particlesInitialized}
+              isGeneratingParticles={chord.isGeneratingParticles}
+              onInitializeParticles={chord.initializeParticles}
+              onCancelParticleGeneration={chord.cancelParticleGeneration}
+              onToggleParticleMetrics={() => setShowParticleMetrics(prev => !prev)}
+              showParticleMetrics={showParticleMetrics}
+              onProgressiveGeneration={chord.toggleProgressiveGeneration}
+              progressiveGenerationEnabled={chord.chordConfig.progressiveGenerationEnabled}
+              particleMetrics={chord.particleMetrics}
+            />
 
-{/* Add the Particle Metrics Panel RIGHT AFTER the ConnectionInfoBox */}
-{/* Particle Metrics Panel - at bottom-left */}
-<div className="absolute bottom-4 left-4 z-50 transition-opacity cursor-move"
-    onMouseDown={(e) => {
-      // Make the panel draggable
-      if (e.currentTarget) {
-        const el = e.currentTarget;
-        const rect = el.getBoundingClientRect();
-        const offsetX = e.clientX - rect.left;
-        const offsetY = e.clientY - rect.top;
-        
-        const onMouseMove = (e: MouseEvent) => {
-          if (containerRef.current) {
-            const containerRect = containerRef.current.getBoundingClientRect();
-            const x = e.clientX - offsetX - containerRect.left;
-            const y = e.clientY - offsetY - containerRect.top;
-            
-            // Keep within container bounds
-            const maxX = containerRect.width - rect.width;
-            const maxY = containerRect.height - rect.height;
-            
-            el.style.left = `${Math.max(0, Math.min(maxX, x))}px`;
-            el.style.top = `${Math.max(0, Math.min(maxY, y))}px`;
-            el.style.right = 'auto';
-            el.style.bottom = 'auto';
-            el.style.transform = 'none';
-          }
-        };
-        
-        const onMouseUp = () => {
-          document.removeEventListener('mousemove', onMouseMove);
-          document.removeEventListener('mouseup', onMouseUp);
-        };
-        
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-      }
-    }}
->
-  <ParticleMetricsPanel 
-    isVisible={showParticleMetrics && chord.chordConfig.particleMode}
-    totalParticles={chord.particleMetrics.totalParticles}
-    totalChordsWithParticles={chord.particleMetrics.totalChordsWithParticles}
-    chordsGenerated={chord.particleMetrics.chordsGenerated}
-    totalChords={chord.particleMetrics.totalChords}
-    renderTime={chord.particleMetrics.renderTime}
-    fps={chord.particleMetrics.fps}
-    useWebGL={chord.chordConfig.useWebGLRenderer}
-    isGenerating={chord.isGeneratingParticles}
-    onCancelGeneration={chord.cancelParticleGeneration}
-  />
+            {/* Replace the top-right buttons with custom ones */}
+            <div className="absolute top-4 right-4 flex gap-2 z-50">
+              {/* Fullscreen button */}
+              <button
+                onClick={handleFullscreenToggle}
+                className="bg-white/90 text-black px-3 py-2 rounded-md shadow-md flex items-center gap-1.5 text-sm hover:bg-white"
+                title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen mode"}
+              >
+                <Maximize className="h-4 w-4" />
+                <span>{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</span>
+              </button>
+
+{/* Download dropdown */}
+<div className="relative group">
+  <button 
+    className="bg-white/90 text-black px-3 py-2 rounded-md shadow-md flex items-center gap-1.5 text-sm hover:bg-white"
+  >
+    <Download className="h-4 w-4" />
+    <span>Download</span>
+  </button>
+  <div className="absolute hidden group-hover:block right-0 top-full bg-white rounded-md shadow-lg overflow-hidden min-w-52 z-10 mt-1">
+    <div className="px-4 py-2 bg-gray-100 text-sm font-medium">Standard Formats</div>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('svg')}
+    >
+      SVG (with CSS effects)
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('svg:nocss')}
+    >
+      SVG (without CSS effects)
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('png')}
+    >
+      PNG
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('jpg')}
+    >
+      JPG
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('pdf')}
+    >
+      PDF
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('tiff')}
+    >
+      TIFF (High Quality)
+    </button>
+    <div className="border-t border-gray-200"></div>
+    <div className="px-4 py-2 bg-gray-100 text-sm font-medium">Download All</div>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('all:clean:css')}
+    >
+      All with CSS effects
+    </button>
+    <button 
+      className="block w-full text-left px-4 py-2 text-black hover:bg-gray-100 text-sm"
+      onClick={() => handleDownloadGraph('all:clean:nocss')}
+    >
+      All without CSS effects
+    </button>
+  </div>
 </div>
-
-{/* Use our updated ChordDiagramControls component with particle generation support */}
-<ChordDiagramControls
-  config={chord.chordConfig}
-  onConfigChange={chord.updateConfig}
-  onLayerToggle={handleLayerToggle}
-  controlsPanelVisible={controlsPanelVisible}
-  onToggleControlPanel={() => setControlsPanelVisible(prev => !prev)}
-  particlesInitialized={chord.particlesInitialized}
-  isGeneratingParticles={chord.isGeneratingParticles}
-  onInitializeParticles={chord.initializeParticles}
-  onCancelParticleGeneration={chord.cancelParticleGeneration}
-  onToggleParticleMetrics={() => setShowParticleMetrics(prev => !prev)}
-  showParticleMetrics={showParticleMetrics}
-  onProgressiveGeneration={chord.toggleProgressiveGeneration}
-  progressiveGenerationEnabled={chord.chordConfig.progressiveGenerationEnabled}
-  particleMetrics={chord.particleMetrics}
-/>
+            </div>
           </div>
         </div>
       }

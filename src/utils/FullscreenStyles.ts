@@ -14,8 +14,11 @@ export const fullscreenStyles = `
     z-index: 9999;
     padding: 1rem;
     margin: 0;
-    display: flex;
+    display: flex !important;
     flex-direction: column;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important;
   }
 
   /* Control positioning when in fullscreen */
@@ -28,14 +31,16 @@ export const fullscreenStyles = `
     z-index: 10000;
   }
 
-  /* Make sure SVG fills the fullscreen container */
+  /* Make sure SVG fills the fullscreen container properly */
   #network-visualization-container:fullscreen svg,
   #network-visualization-container:-webkit-full-screen svg,
   #network-visualization-container:-moz-full-screen svg,
   #network-visualization-container:-ms-fullscreen svg {
-    width: 100% !important;
+    width: calc(100vw - 2rem) !important;
     height: calc(100vh - 2rem) !important;
     display: block;
+    margin: 0 auto;
+    transform-origin: center center !important;
   }
 
   /* Ensure the tooltip shows up in fullscreen mode */
@@ -54,5 +59,37 @@ export const fullscreenStyles = `
     bottom: 1rem !important;
     left: 50% !important;
     z-index: 10000;
+  }
+
+  /* Improved centering for SVG content */
+  #network-visualization-container:fullscreen svg g,
+  #network-visualization-container:-webkit-full-screen svg g,
+  #network-visualization-container:-moz-full-screen svg g,
+  #network-visualization-container:-ms-fullscreen svg g {
+    transform-origin: center center !important;
+  }
+  
+  /* Force the transform to be re-evaluated on fullscreen */
+  #network-visualization-container:fullscreen svg g[transform],
+  #network-visualization-container:-webkit-full-screen svg g[transform],
+  #network-visualization-container:-moz-full-screen svg g[transform],
+  #network-visualization-container:-ms-fullscreen svg g[transform] {
+    transition: transform 0.15s ease-out;
+  }
+  
+  /* Make sure animations and effects still work in fullscreen */
+  #network-visualization-container:fullscreen .combined-effects,
+  #network-visualization-container:-webkit-full-screen .combined-effects,
+  #network-visualization-container:-moz-full-screen .combined-effects,
+  #network-visualization-container:-ms-fullscreen .combined-effects,
+  #network-visualization-container:fullscreen .blur-effect,
+  #network-visualization-container:-webkit-full-screen .blur-effect,
+  #network-visualization-container:-moz-full-screen .blur-effect,
+  #network-visualization-container:-ms-fullscreen .blur-effect,
+  #network-visualization-container:fullscreen .glow-effect,
+  #network-visualization-container:-webkit-full-screen .glow-effect,
+  #network-visualization-container:-moz-full-screen .glow-effect,
+  #network-visualization-container:-ms-fullscreen .glow-effect {
+    filter: var(--combined-filter, none) !important;
   }
 `;

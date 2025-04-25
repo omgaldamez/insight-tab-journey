@@ -6,6 +6,8 @@ import { jsPDF } from 'jspdf';
 import { saveAs } from 'file-saver';
 import { dataURItoBlob } from '@/utils/visualizationUtils';
 
+
+
 /**
  * Prepare SVG for export by fixing viewBox and other attributes
  */
@@ -17,7 +19,9 @@ export const fixSvgForExport = (
   textColor: string,
   chordStrokeWidth: number,
   chordOpacity: number,
-  exportMode: 'current' | 'clean' = 'current'
+  exportMode: 'current' | 'clean' = 'current',
+  preserveStyles: boolean = true,
+  withCssEffects: boolean = true
 ): SVGSVGElement | null => {
   if (!svgRef) return null;
   
@@ -75,6 +79,46 @@ export const fixSvgForExport = (
   } else {
     // For current view, preserve the existing transform
     // This is already handled by the existing code that captures transforms
+    
+    // But if preserveStyles is true, we want to keep animation and effect classes
+    if (preserveStyles && withCssEffects) {
+      // Preserve animation classes on groups
+      const animatedGroups = svgClone.querySelectorAll('.animated');
+      animatedGroups.forEach(group => {
+        group.classList.add('exported-with-animation');
+      });
+      
+      // Preserve glow effect classes
+      const glowEffects = svgClone.querySelectorAll('.glow-effect');
+      glowEffects.forEach(elem => {
+        elem.classList.add('exported-with-glow');
+      });
+      
+      // Preserve blur effect classes
+      const blurEffects = svgClone.querySelectorAll('.blur-effect');
+      blurEffects.forEach(elem => {
+        elem.classList.add('exported-with-blur');
+      });
+
+      // Include filter definitions in the SVG
+      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      defs.innerHTML = `
+        <filter id="exported-blur-filter">
+          <feGaussianBlur stdDeviation="2.5"></feGaussianBlur>
+          <feColorMatrix type="matrix" values="1 0 0 0 0
+                       0 1 0 0 0
+                       0 0 1 0 0
+                       0 0 0 12 -8"></feColorMatrix>
+        </filter>
+        <filter id="exported-glow-filter">
+          <feGaussianBlur stdDeviation="3" result="blur"></feGaussianBlur>
+          <feFlood flood-color="#00aaff" flood-opacity="0.8"></feFlood>
+          <feComposite in="flood" in2="blur" operator="in"></feComposite>
+          <feComposite in="SourceGraphic"></feComposite>
+        </filter>
+      `;
+      svgClone.insertBefore(defs, svgClone.firstChild);
+    }
   }
 
   // Get dimensions
@@ -131,10 +175,233 @@ export const fixSvgForExport = (
     text[text-anchor="end"] { text-anchor: end; }
     text[text-anchor="middle"] { text-anchor: middle; }
     .chord-particles circle { opacity: ${chordOpacity * 0.7}; }
+    
+    ${withCssEffects ? `
+    /* Animation keyframes */
+    @keyframes ribbonWave {
+      from, to { transform: translateX(0) scale(1); }
+      50% { transform: translateX(3px) scale(1.02); }
+    }
+    
+    @keyframes arcPulse {
+      from, to { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+    
+    @keyframes particlePulse {
+      from, to { transform: scale(1); opacity: 0.7; }
+      50% { transform: scale(1.05); opacity: 0.9; }
+    }
+    
+    @keyframes rotation {
+      to { --angle: 360deg; }
+    }
+    
+    /* Animation classes */
+    .chord-ribbons.animated path, .exported-with-animation {
+      animation: ribbonWave 3s ease-in-out infinite;
+    }
+    
+    .chord-arcs.animated path {
+      animation: arcPulse 4s ease-in-out infinite;
+    }
+    
+    .chord-particles.animated circle {
+      animation: particlePulse 2s ease-in-out infinite;
+    }
+    
+    .rotate-animation {
+      animation: rotation 12s linear infinite;
+    }
+    
+    /* Effects */
+    .exported-with-blur, .blur-effect {
+      filter: url(#exported-blur-filter);
+    }
+    
+    .exported-with-glow, .glow-effect {
+      filter: url(#exported-glow-filter);
+    }
+    ` : ''}
   `;
   svgClone.insertBefore(style, svgClone.firstChild);
   
   return svgClone;
+};
+
+/**
+ * Download all formats in a ZIP file
+ */
+export const downloadAllFormats = async (
+  svgRef: SVGSVGElement | null,
+  containerRef: HTMLDivElement | null,
+  backgroundColor: string,
+  backgroundOpacity: number,
+  textColor: string,
+  chordStrokeWidth: number,
+  chordOpacity: number,
+  onError: (message: string) => void,
+  onSuccess: (message: string) => void,
+  withCssEffects: boolean = true
+) => {
+  try {
+    // Attempt to dynamically import JSZip
+    let JSZip;
+    try {
+      JSZip = (await import('jszip')).default;
+    } catch (error) {
+      console.error("Error importing JSZip:", error);
+      onError("JSZip library is required for this feature but couldn't be loaded");
+      return;
+    }
+    
+    if (!svgRef || !containerRef) {
+      onError("Cannot download visualization - SVG not ready");
+      return;
+    }
+    
+    // Create a new ZIP file
+    const zip = new JSZip();
+    
+    // Generate base file name
+    const baseFileName = `chord-diagram`;
+    onSuccess("Preparing all formats for download. This may take a moment...");
+    
+    // Create an array of formats to generate
+    const formats = [
+      { type: 'svg', mode: 'current', withCss: true },
+      { type: 'svg', mode: 'current', withCss: false },
+      { type: 'svg', mode: 'clean', withCss: false },
+      { type: 'png', mode: 'current', withCss: true },
+      { type: 'png', mode: 'clean', withCss: false },
+      { type: 'jpg', mode: 'current', withCss: true },
+      { type: 'jpg', mode: 'clean', withCss: false },
+      { type: 'pdf', mode: 'current', withCss: true },
+      { type: 'pdf', mode: 'clean', withCss: false },
+    ];
+
+    // Filter based on withCssEffects parameter
+    const filteredFormats = withCssEffects 
+      ? formats 
+      : formats.filter(f => !f.withCss);
+    
+    // Process each format
+    for (const format of filteredFormats) {
+      try {
+        const { type, mode, withCss } = format;
+        const cssText = withCss ? '-with-css' : '-no-css';
+        const fileName = `${baseFileName}-${mode}${cssText}.${type}`;
+        
+        // Create a custom SVG for export that captures the entire visualization
+        const exportSvg = fixSvgForExport(
+          svgRef,
+          containerRef,
+          backgroundColor,
+          backgroundOpacity,
+          textColor,
+          chordStrokeWidth,
+          chordOpacity,
+          mode as 'current' | 'clean',
+          true,
+          withCss
+        );
+        
+        if (!exportSvg) continue;
+        
+        // Get dimensions
+        const width = containerRef.clientWidth;
+        const height = containerRef.clientHeight;
+        
+        // Serialize SVG for export
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(exportSvg);
+        
+        if (type === 'svg') {
+          // Add SVG directly to ZIP
+          zip.file(fileName, svgString);
+        } else {
+          // Convert to image format
+          const svgBase64 = btoa(unescape(encodeURIComponent(svgString)));
+          const imgSrc = `data:image/svg+xml;base64,${svgBase64}`;
+          
+          // Create canvas for rendering
+          const canvas = document.createElement('canvas');
+          // Use a larger scale for better quality
+          const scale = 2;
+          canvas.width = width * scale;
+          canvas.height = height * scale;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            throw new Error("Could not get canvas context");
+          }
+          
+          // Fill background
+          ctx.fillStyle = backgroundColor;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // Create a Promise to handle the image loading
+          await new Promise<void>((resolve, reject) => {
+            // Load SVG into image
+            const img = new Image();
+            
+            img.onload = () => {
+              // Draw SVG on canvas
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              
+              // Handle different export formats
+              if (type === 'png') {
+                const dataUrl = canvas.toDataURL('image/png');
+                const data = dataURItoBlob(dataUrl);
+                zip.file(fileName, data);
+              } else if (type === 'jpg' || type === 'jpeg') {
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                const data = dataURItoBlob(dataUrl);
+                zip.file(fileName, data);
+              } else if (type === 'pdf') {
+                try {
+                  const imgData = canvas.toDataURL('image/png');
+                  const pdf = new jsPDF({
+                    orientation: width > height ? 'landscape' : 'portrait',
+                    unit: 'px',
+                    format: [width, height]
+                  });
+                  pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+                  
+                  // Get PDF as blob and add to ZIP
+                  const pdfData = pdf.output('blob');
+                  zip.file(fileName, pdfData);
+                } catch (pdfError) {
+                  console.error("PDF creation error:", pdfError);
+                  // Continue with other formats
+                }
+              }
+              resolve();
+            };
+            
+            img.onerror = (error) => {
+              console.error("Error loading SVG for export:", error);
+              reject(error);
+            };
+            
+            img.src = imgSrc;
+          });
+        }
+      } catch (formatError) {
+        console.error(`Error processing ${format.type} (${format.mode}):`, formatError);
+        // Continue with other formats
+      }
+    }
+    
+    // Generate ZIP file and trigger download
+    const zipBlob = await zip.generateAsync({type: 'blob'});
+    saveAs(zipBlob, `${baseFileName}-all-formats.zip`);
+    
+    onSuccess("All visualization formats downloaded as ZIP file");
+  } catch (error) {
+    console.error("Error creating ZIP file:", error);
+    onError(`Failed to create ZIP file: ${error instanceof Error ? error.message : String(error)}`);
+  }
 };
 
 /**
@@ -150,7 +417,8 @@ export const downloadChordDiagram = (
   chordStrokeWidth: number,
   chordOpacity: number,
   onError: (message: string) => void,
-  onSuccess: (message: string) => void
+  onSuccess: (message: string) => void,
+  withCssEffects: boolean = true
 ) => {
   if (!svgRef || !containerRef) {
     onError("Cannot download visualization - SVG not ready");
@@ -159,7 +427,26 @@ export const downloadChordDiagram = (
   
   try {
     // Parse format string to get format type and export mode
-    const [formatType, exportMode = 'current'] = format.split(':');
+    const parts = format.split(':');
+    const formatType = parts[0];
+    const exportMode = parts[1] || 'current';
+    
+    // Special case for 'all' format - download all formats as ZIP
+    if (formatType === 'all') {
+      downloadAllFormats(
+        svgRef,
+        containerRef,
+        backgroundColor,
+        backgroundOpacity,
+        textColor,
+        chordStrokeWidth,
+        chordOpacity,
+        onError,
+        onSuccess,
+        withCssEffects
+      );
+      return;
+    }
     
     // Create a custom SVG for export that captures the entire visualization
     const exportSvg = fixSvgForExport(
@@ -170,7 +457,9 @@ export const downloadChordDiagram = (
       textColor, 
       chordStrokeWidth, 
       chordOpacity,
-      exportMode as 'current' | 'clean'
+      exportMode as 'current' | 'clean',
+      true,
+      withCssEffects
     );
     
     if (!exportSvg) return;
@@ -183,8 +472,9 @@ export const downloadChordDiagram = (
     const serializer = new XMLSerializer();
     const svgString = serializer.serializeToString(exportSvg);
     
-// Generate filename with export mode included
-const fileName = `chord-diagram-${exportMode}`;
+    // Generate filename with export mode included
+    const cssLabel = withCssEffects ? '-with-css' : '-no-css';
+    const fileName = `chord-diagram-${exportMode}${cssLabel}`;
     
     if (formatType === 'svg') {
       // Download as SVG
@@ -226,6 +516,49 @@ const fileName = `chord-diagram-${exportMode}`;
         } else if (formatType  === 'jpg' || format === 'jpeg') {
           const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
           saveAs(dataURItoBlob(dataUrl), `${fileName}.jpg`);
+        } else if (formatType  === 'tiff') {
+          // Show warning for TIFF export
+          if (window.confirm("TIFF export may take longer for large diagrams. Do you want to proceed?")) {
+            try {
+              // Generate high-resolution canvas for TIFF
+              const highResScale = 4; // Use 4x scaling for high quality
+              const highResCanvas = document.createElement('canvas');
+              highResCanvas.width = width * highResScale;
+              highResCanvas.height = height * highResScale;
+              const highResCtx = highResCanvas.getContext('2d');
+              
+              if (!highResCtx) {
+                throw new Error("Could not get high resolution canvas context");
+              }
+              
+              // Fill background
+              highResCtx.fillStyle = backgroundColor;
+              highResCtx.fillRect(0, 0, highResCanvas.width, highResCanvas.height);
+              
+              // Create a high-res image
+              const highResImg = new Image();
+              highResImg.onload = () => {
+                // Draw on high-res canvas
+                highResCtx.drawImage(highResImg, 0, 0, highResCanvas.width, highResCanvas.height);
+                
+                // Get PNG data at highest quality (will be saved as TIFF)
+                const highResDataUrl = highResCanvas.toDataURL('image/png', 1.0);
+                saveAs(dataURItoBlob(highResDataUrl), `${fileName}.tiff`);
+                
+                onSuccess(`High-quality visualization downloading as TIFF (${exportMode} view)`);
+              };
+              
+              // Load the original SVG again for higher resolution
+              highResImg.src = imgSrc;
+            } catch (tiffError) {
+              console.error("TIFF creation error:", tiffError);
+              onError("Could not create TIFF file");
+              return;
+            }
+          } else {
+            onError("TIFF export cancelled");
+            return;
+          }
         } else if (formatType  === 'pdf') {
           try {
             const imgData = canvas.toDataURL('image/png');
@@ -243,7 +576,9 @@ const fileName = `chord-diagram-${exportMode}`;
           }
         }
         
-        onSuccess(`Visualization downloading as ${formatType.toUpperCase()}`);
+        if (formatType !== 'tiff') {
+          onSuccess(`Visualization downloading as ${formatType.toUpperCase()}`);
+        }
       };
       
       img.onerror = (error) => {
