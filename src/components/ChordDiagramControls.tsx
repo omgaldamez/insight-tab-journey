@@ -30,7 +30,7 @@ interface ChordDiagramControlsProps {
 }
 
 // Tab options for the controls panel
-type ControlTab = 'display' | 'ribbons' | 'particles' | 'animation' | '3d';
+type ControlTab = 'display' | 'arcs' | 'ribbons' | 'particles' | 'animation' | '3d';
 
 const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
   config,
@@ -93,6 +93,7 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
   // State for active tab
   const [activeTab, setActiveTab] = useState<ControlTab>('display');
 
+  
 // In the ChordDiagramControls component
 const handleToggleChange = (field: keyof ChordDiagramConfig) => {
   if ((field === 'showParticlesLayer' || field === 'showGeometricShapesLayer') && onLayerToggle) {
@@ -145,7 +146,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
   const showWebGLRecommendation = particleMode && !useWebGLRenderer && particleMetrics.totalParticles > 2000;
 
   return (
-    <div className="absolute bottom-4 left-4 z-10 max-w-xs">
+    <div className="absolute bottom-4 left-4 z-10 max-w-xs overflow-auto min-w-0">
       {/* Collapsible panel */}
       <div 
         className={`bg-black/70 text-white rounded-md transition-all duration-300 overflow-hidden ${
@@ -157,6 +158,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
           className="px-3 py-2 flex justify-between items-center cursor-pointer sticky top-0 bg-black/90 z-10 border-b border-white/10"
           onClick={onToggleControlPanel}
         >
+  
           <span className="text-sm font-medium">Chord Controls</span>
           <button className="text-white/70 hover:text-white">
             {controlsPanelVisible ? 
@@ -194,14 +196,21 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
           )}
           
           {/* Tabs navigation */}
-          <div className="flex border-b border-white/10">
+          <div className="flex flex-wrap border-b border-white/10">
             <button 
-              className={`flex-1 py-2 px-1 text-xs font-medium flex items-center justify-center ${activeTab === 'display' ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/10'}`}
-              onClick={() => setActiveTab('display')}
+  className={`w-1/3 sm:w-1/4 py-2 px-1 text-xs font-medium flex items-center justify-center ${activeTab === 'display' ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/10'}`}
+  onClick={() => setActiveTab('display')}
             >
               <LayoutDashboard className="w-3 h-3 mr-1" />
               Display
             </button>
+            <button 
+  className={`flex-1 py-2 px-1 text-xs font-medium flex items-center justify-center ${activeTab === 'arcs' ? 'bg-orange-500/20 text-orange-300' : 'hover:bg-white/10'}`}
+  onClick={() => setActiveTab('arcs')}
+>
+  <Circle className="w-3 h-3 mr-1" />
+  Arcs
+</button>
             <button 
               className={`flex-1 py-2 px-1 text-xs font-medium flex items-center justify-center ${activeTab === 'ribbons' ? 'bg-purple-500/20 text-purple-300' : 'hover:bg-white/10'}`}
               onClick={() => setActiveTab('ribbons')}
@@ -236,7 +245,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
           </div>
           
           {/* Scrollable tab content */}
-          <div className="overflow-y-auto max-h-[16rem] px-3 py-2">
+          <div className="overflow-y-auto max-h-[16rem] px-3 py-2 overflow-x-hidden">
             {/* Display Tab */}
             {activeTab === 'display' && (
               <div className="space-y-3">
@@ -305,232 +314,302 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                     </label>
                   </div>
                 </div>
-                
-                {/* Opacity & Width Controls */}
-                <div className="border-t border-white/10 mt-2 pt-2">
-                  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Opacity & Width</h3>
-                  
-                  {/* Arc Opacity Control */}
-                  <div className="flex items-center justify-between mt-1.5 text-xs">
-                    <label>Arc: {arcOpacity.toFixed(2)}</label>
-                    <input
-                      type="range"
-                      min="0.1"
-                      max="1.0"
-                      step="0.05"
-                      value={arcOpacity}
-                      onChange={(e) => handleRangeChange('arcOpacity', parseFloat(e.target.value))}
-                      className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                </div>
               </div>
             )}
+
+{activeTab === 'arcs' && (
+  <div className="space-y-3">
+    <h3 className="text-xs font-semibold mb-1.5 text-white/80">Arc Appearance</h3>
+    
+    {/* Arc Opacity Control */}
+    <div className="flex items-center justify-between mt-1.5 text-xs">
+      <label>Opacity: {config.arcOpacity.toFixed(2)}</label>
+      <input
+        type="range"
+        min="0.1"
+        max="1.0"
+        step="0.05"
+        value={config.arcOpacity}
+        onChange={(e) => onConfigChange({ arcOpacity: parseFloat(e.target.value) })}
+        className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+    
+    {/* Arc Stroke Width Control */}
+    <div className="flex items-center justify-between mt-2 text-xs">
+      <label>Stroke Width: {config.arcStrokeWidth?.toFixed(1) || "1.0"}</label>
+      <input
+        type="range"
+        min="0.1"
+        max="3.0"
+        step="0.1"
+        value={config.arcStrokeWidth || 1.0}
+        onChange={(e) => onConfigChange({ arcStrokeWidth: parseFloat(e.target.value) })}
+        className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+    
+    {/* Arc Stroke Color Control */}
+    <div className="flex items-center mt-2 justify-between text-xs">
+      <label>Stroke Color:</label>
+      <div className="flex items-center">
+        <input
+          type="color"
+          value={config.arcStrokeColor || '#ffffff'}
+          onChange={(e) => onConfigChange({ arcStrokeColor: e.target.value })}
+          className="w-6 h-6 rounded cursor-pointer"
+        />
+        <div 
+          className="ml-2 w-4 h-4 rounded" 
+          style={{backgroundColor: config.arcStrokeColor || '#ffffff'}}
+        />
+      </div>
+    </div>
+    
+    {/* Arc Corner Radius Control */}
+    <div className="flex items-center justify-between mt-2 text-xs">
+      <label>Corner Radius: {(config.arcCornerRadius || 0).toFixed(1)}</label>
+      <input
+        type="range"
+        min="0"
+        max="10"
+        step="0.5"
+        value={config.arcCornerRadius || 0}
+        onChange={(e) => onConfigChange({ arcCornerRadius: parseFloat(e.target.value) })}
+        className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+  </div>
+)}
             
-            {/* Ribbons Tab */}
-            {activeTab === 'ribbons' && (
-              <div className="space-y-3">
-                {/* Ribbon Style Controls */}
-                <div className="mb-2">
-                  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Ribbon Styling</h3>
-                  
-                  {/* Colored Ribbons Control */}
-                  <div className="flex items-center mt-1.5">
-                    <label className="flex items-center cursor-pointer">
-                      <div className="relative mr-2">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={useColoredRibbons}
-                          onChange={() => handleToggleChange('useColoredRibbons')}
-                        />
-                        <div className={`w-8 h-4 rounded-full transition-colors ${useColoredRibbons ? 'bg-pink-500' : 'bg-gray-500'}`}></div>
-                        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${useColoredRibbons ? 'translate-x-4' : ''}`}></div>
-                      </div>
-                      <span className="text-xs">Colored Ribbons</span>
-                    </label>
-                  </div>
-                  
-                  {/* Ribbon Fill Control */}
-                  <div className="flex items-center mt-1.5">
-                    <label className="flex items-center cursor-pointer">
-                      <div className="relative mr-2">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={ribbonFillEnabled}
-                          onChange={() => handleToggleChange('ribbonFillEnabled')}
-                        />
-                        <div className={`w-8 h-4 rounded-full transition-colors ${ribbonFillEnabled ? 'bg-indigo-500' : 'bg-gray-500'}`}></div>
-                        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${ribbonFillEnabled ? 'translate-x-4' : ''}`}></div>
-                      </div>
-                      <span className="text-xs">Filled Ribbons</span>
-                    </label>
-                  </div>
-                  
-                  {/* Directional Styling Control */}
-                  <div className="flex items-center mt-1.5">
-                    <label className="flex items-center cursor-pointer">
-                      <div className="relative mr-2">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={useDirectionalStyling}
-                          onChange={() => handleToggleChange('useDirectionalStyling')}
-                        />
-                        <div className={`w-8 h-4 rounded-full transition-colors ${useDirectionalStyling ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
-                        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${useDirectionalStyling ? 'translate-x-4' : ''}`}></div>
-                      </div>
-                      <span className="text-xs">Direction Styling</span>
-                    </label>
-                  </div>
-                </div>
-                
-                {/* Fill Opacity Control - only enabled when filled ribbons is on */}
-                <div className="flex items-center justify-between mt-1.5 text-xs">
-                  <label className={ribbonFillEnabled ? '' : 'text-gray-500'}>Fill: {chordOpacity.toFixed(2)}</label>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="1.0"
-                    step="0.05"
-                    value={chordOpacity}
-                    disabled={!ribbonFillEnabled}
-                    onChange={(e) => handleRangeChange('chordOpacity', parseFloat(e.target.value))}
-                    className={`w-28 h-2 ${ribbonFillEnabled ? 'bg-gray-600' : 'bg-gray-700'} rounded-lg appearance-none cursor-pointer`}
-                  />
-                </div>
-                
-                {/* Stroke Opacity Control */}
-                <div className="flex items-center justify-between mt-1.5 text-xs">
-                  <label>Stroke: {chordStrokeOpacity.toFixed(2)}</label>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="1.0"
-                    step="0.05"
-                    value={chordStrokeOpacity}
-                    onChange={(e) => handleRangeChange('chordStrokeOpacity', parseFloat(e.target.value))}
-                    className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-                
-                {/* Stroke Width Control */}
-                <div className="flex items-center justify-between mt-1.5 text-xs">
-                  <label>Width: {chordStrokeWidth.toFixed(1)}</label>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="3.0"
-                    step="0.1"
-                    value={chordStrokeWidth}
-                    onChange={(e) => handleRangeChange('chordStrokeWidth', parseFloat(e.target.value))}
-                    className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-                
-                {/* Directional Styling Controls (when enabled) */}
-                {useDirectionalStyling && (
-                  <div className="border-t border-white/10 mt-2 pt-2">
-                    <h3 className="text-xs font-semibold mb-1.5 text-white/80">Direction Colors</h3>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1 text-xs">
-                        <label>Source:</label>
-                        <input
-                          type="color"
-                          value={sourceChordColor}
-                          onChange={(e) => handleColorChange('sourceChordColor', e.target.value)}
-                          className="w-4 h-4 rounded cursor-pointer"
-                        />
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="1.0"
-                          step="0.05"
-                          value={sourceChordOpacity}
-                          onChange={(e) => handleRangeChange('sourceChordOpacity', parseFloat(e.target.value))}
-                          className="w-16 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer ml-1"
-                        />
-                        <span className="text-xs ml-1">{sourceChordOpacity.toFixed(1)}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-1 text-xs">
-                        <label>Target:</label>
-                        <input
-                          type="color"
-                          value={targetChordColor}
-                          onChange={(e) => handleColorChange('targetChordColor', e.target.value)}
-                          className="w-4 h-4 rounded cursor-pointer"
-                        />
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="1.0"
-                          step="0.05"
-                          value={targetChordOpacity}
-                          onChange={(e) => handleRangeChange('targetChordOpacity', parseFloat(e.target.value))}
-                          className="w-16 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer ml-1"
-                        />
-                        <span className="text-xs ml-1">{targetChordOpacity.toFixed(1)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Width Variation Controls */}
-                <div className="border-t border-white/10 mt-2 pt-2">
-                  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Width Variation</h3>
-                  
-                  {/* Width Variation Control */}
-                  <div className="flex items-center justify-between text-xs mt-1.5">
-                    <label>Variation: {chordWidthVariation.toFixed(1)}x</label>
-                    <input
-                      type="range"
-                      min="1.0"
-                      max="5.0"
-                      step="0.1"
-                      value={chordWidthVariation}
-                      onChange={(e) => handleRangeChange('chordWidthVariation', parseFloat(e.target.value))}
-                      className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                  
-                  {/* Width Position Control */}
-                  <div className="mt-2">
-                    <div className="text-xs mb-1">Position:</div>
-                    <div className="grid grid-cols-4 gap-1">
-                      {['start', 'middle', 'end', 'custom'].map((pos) => (
-                        <button
-                          key={pos}
-                          className={`text-xs py-1 rounded-sm ${chordWidthPosition === pos ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'}`}
-                          onClick={() => handleSelectChange('chordWidthPosition', pos as any)}
-                        >
-                          {pos.charAt(0).toUpperCase() + pos.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                    
-                    {/* Custom Position Slider (only visible when 'custom' is selected) */}
-                    {chordWidthPosition === 'custom' && (
-                      <div className="mt-2 space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <label>Custom: {(chordWidthCustomPosition * 100).toFixed(0)}%</label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={chordWidthCustomPosition}
-                            onChange={(e) => handleRangeChange('chordWidthCustomPosition', parseFloat(e.target.value))}
-                            className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+{/* Ribbons Tab */}
+{activeTab === 'ribbons' && (
+  <div className="space-y-3">
+    {/* Main Ribbon Toggles */}
+    <div className="mb-2">
+      <h3 className="text-xs font-semibold mb-1.5 text-white/80">Ribbon Display</h3>
+      
+      {/* Show Ribbons Toggle */}
+      <div className="flex items-center mt-1.5">
+        <label className="flex items-center cursor-pointer">
+          <div className="relative mr-2">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={config.showChordRibbons}
+              onChange={() => handleToggleChange('showChordRibbons')}
+            />
+            <div className={`w-8 h-4 rounded-full transition-colors ${config.showChordRibbons ? 'bg-blue-500' : 'bg-gray-500'}`}></div>
+            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showChordRibbons ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="text-xs">Show Chord Ribbons</span>
+        </label>
+      </div>
+      
+      {/* Colored Ribbons Control */}
+      <div className="flex items-center mt-1.5">
+        <label className="flex items-center cursor-pointer">
+          <div className="relative mr-2">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={useColoredRibbons}
+              onChange={() => handleToggleChange('useColoredRibbons')}
+            />
+            <div className={`w-8 h-4 rounded-full transition-colors ${useColoredRibbons ? 'bg-pink-500' : 'bg-gray-500'}`}></div>
+            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${useColoredRibbons ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="text-xs">Colored Ribbons</span>
+        </label>
+      </div>
+      
+      {/* Ribbon Fill Control */}
+      <div className="flex items-center mt-1.5">
+        <label className="flex items-center cursor-pointer">
+          <div className="relative mr-2">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={ribbonFillEnabled}
+              onChange={() => handleToggleChange('ribbonFillEnabled')}
+            />
+            <div className={`w-8 h-4 rounded-full transition-colors ${ribbonFillEnabled ? 'bg-indigo-500' : 'bg-gray-500'}`}></div>
+            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${ribbonFillEnabled ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="text-xs">Filled Ribbons</span>
+        </label>
+      </div>
+      
+      {/* Real Connections Only Toggle */}
+      <div className="flex items-center mt-1.5">
+        <label className="flex items-center cursor-pointer">
+          <div className="relative mr-2">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={config.showOnlyRealConnectionsRibbons}
+              onChange={() => handleToggleChange('showOnlyRealConnectionsRibbons')}
+            />
+            <div className={`w-8 h-4 rounded-full transition-colors ${config.showOnlyRealConnectionsRibbons ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
+            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsRibbons ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="text-xs">Real Connections Only</span>
+        </label>
+      </div>
+    </div>
+    
+   {/* Ribbon Style Controls - wrap in a grid for better layout */}
+   <div className="border-t border-white/10 mt-2 pt-2">
+      <h3 className="text-xs font-semibold mb-1.5 text-white/80">Ribbon Appearance</h3>
+      
+      <div className="grid grid-cols-1 gap-2">
+      {/* Fill Color Control - Only when not using colored ribbons */}
+      {!useColoredRibbons && (
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Fill Color:</label>
+          <div className="flex items-center">
+            <input
+              type="color"
+              value={config.ribbonFillColor}
+              onChange={(e) => onConfigChange({ ribbonFillColor: e.target.value })}
+              className="w-6 h-6 rounded cursor-pointer"
+            />
+            <div 
+              className="ml-2 w-4 h-4 rounded" 
+              style={{backgroundColor: config.ribbonFillColor}}
+            />
+          </div>
+        </div>
+      )}
+      
+      {/* Stroke Color Control */}
+      <div className="flex items-center justify-between mt-2 text-xs">
+        <label>Stroke Color:</label>
+        <div className="flex items-center">
+          <input
+            type="color"
+            value={config.ribbonStrokeColor}
+            onChange={(e) => onConfigChange({ ribbonStrokeColor: e.target.value })}
+            className="w-6 h-6 rounded cursor-pointer"
+          />
+          <div 
+            className="ml-2 w-4 h-4 rounded" 
+            style={{backgroundColor: config.ribbonStrokeColor}}
+          />
+        </div>
+      </div>
+      
+      {/* Fill Opacity Control - only enabled when filled ribbons is on */}
+      <div className="flex items-center justify-between mt-2 text-xs">
+        <label className={ribbonFillEnabled ? '' : 'text-gray-500'}>
+          Fill Opacity: {chordOpacity.toFixed(2)}
+        </label>
+        <input
+          type="range"
+          min="0.1"
+          max="1.0"
+          step="0.05"
+          value={chordOpacity}
+          disabled={!ribbonFillEnabled}
+          onChange={(e) => handleRangeChange('chordOpacity', parseFloat(e.target.value))}
+          className={`w-28 h-2 ${ribbonFillEnabled ? 'bg-gray-600' : 'bg-gray-700'} rounded-lg appearance-none cursor-pointer`}
+        />
+      </div>
+      
+      {/* Global Ribbon Opacity Control */}
+      <div className="flex items-center justify-between mt-2 text-xs">
+        <label>Ribbon Opacity: {config.ribbonOpacity.toFixed(2)}</label>
+        <input
+          type="range"
+          min="0.05"
+          max="1.0"
+          step="0.05"
+          value={config.ribbonOpacity}
+          onChange={(e) => handleRangeChange('ribbonOpacity', parseFloat(e.target.value))}
+          className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
+      
+      {/* Stroke Width Control */}
+      <div className="flex items-center justify-between mt-2 text-xs">
+        <label>Stroke Width: {chordStrokeWidth.toFixed(1)}</label>
+        <input
+          type="range"
+          min="0.1"
+          max="3.0"
+          step="0.1"
+          value={chordStrokeWidth}
+          onChange={(e) => handleRangeChange('chordStrokeWidth', parseFloat(e.target.value))}
+          className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
+      
+      {/* Stroke Opacity Control */}
+      <div className="flex items-center justify-between mt-2 text-xs">
+        <label>Stroke Opacity: {chordStrokeOpacity.toFixed(2)}</label>
+        <input
+          type="range"
+          min="0.1"
+          max="1.0"
+          step="0.05"
+          value={chordStrokeOpacity}
+          onChange={(e) => handleRangeChange('chordStrokeOpacity', parseFloat(e.target.value))}
+          className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
+
+    </div>
+    
+    {/* Connection Type Styling - Keep your existing section */}
+    <div className="border-t border-white/10 mt-4 pt-2">
+      <h3 className="text-xs font-semibold mb-1.5 text-white/80">Connection Type Styling</h3>
+      
+      <div className="bg-gray-700/50 p-2 rounded-md mb-2">
+        {/* Real Connections styling - Keep existing controls */}
+        {/* ... */}
+      </div>
+      
+      <div className="bg-gray-700/50 p-2 rounded-md mt-3">
+        {/* Minimal Connections styling - Keep existing controls */}
+        {/* ... */}
+      </div>
+    </div>
+    
+    {/* Directional Styling Controls */}
+    <div className="border-t border-white/10 mt-2 pt-2">
+      <div className="flex items-center mt-1.5">
+        <label className="flex items-center cursor-pointer">
+          <div className="relative mr-2">
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={useDirectionalStyling}
+              onChange={() => handleToggleChange('useDirectionalStyling')}
+            />
+            <div className={`w-8 h-4 rounded-full transition-colors ${useDirectionalStyling ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
+            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${useDirectionalStyling ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="text-xs">Direction Styling</span>
+        </label>
+      </div>
+      
+      {/* Keep your existing directional styling controls when enabled */}
+      {useDirectionalStyling && (
+        <div className="mt-2 pt-2">
+          <h3 className="text-xs font-semibold mb-1.5 text-white/80">Direction Colors</h3>
+          {/* ... existing directional controls ... */}
+        </div>
+      )}
+    </div>
+    
+    {/* Width Variation Controls - Keep your existing section */}
+    <div className="border-t border-white/10 mt-2 pt-2">
+      <h3 className="text-xs font-semibold mb-1.5 text-white/80">Width Variation</h3>
+      {/* ... existing width variation controls ... */}
+    </div>
+  </div>
+  </div>
+)}
             
             {/* Particles Tab */}
             {activeTab === 'particles' && (
@@ -581,20 +660,25 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                     </button>
                     
                     <button
-                      onClick={() => {
-                        if (useGeometricShapes) {
-                          // If switching from shapes to particles, confirm
-                          if (window.confirm("Switching to particles will disable geometric shapes. Continue?")) {
-                            onConfigChange({ 
-                              useGeometricShapes: false,
-                              particleMode: true 
-                            });
-                          }
-                        } else {
-                          // Just toggle particle mode if shapes not active
-                          onConfigChange({ particleMode: !particleMode });
-                        }
-                      }}
+  onClick={() => {
+    if (useGeometricShapes) {
+      // If switching from shapes to particles, confirm
+      if (window.confirm("Switching to particles will disable geometric shapes. Continue?")) {
+        onConfigChange({ 
+          useGeometricShapes: false,
+          particleMode: true,
+          showParticlesLayer: true  // Ensure the layer is also enabled
+        });
+      }
+    } else {
+      // Just toggle particle mode if shapes not active
+      const newParticleMode = !particleMode;
+      onConfigChange({ 
+        particleMode: newParticleMode,
+        showParticlesLayer: newParticleMode  // Keep layer state in sync
+      });
+    }
+  }}
                       className={`py-2 px-3 rounded-md flex flex-col items-center justify-center ${
                         particleMode ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                       }`}
@@ -635,13 +719,39 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
 
                 {/* Use ParticleControlsWithApply when particle mode is enabled */}
                 {particleMode && (
-                  <ParticleControlsWithApply 
-                    config={config}
-                    onConfigChange={onConfigChange}
-                    particlesInitialized={particlesInitialized}
-                    onInitializeParticles={onInitializeParticles}
-                  />
-                )}
+  <div>
+    {!particlesInitialized && !isGeneratingParticles && (
+      <div className="mb-3 p-2 bg-blue-500/20 rounded-md border border-blue-500/30">
+        <button
+          onClick={onInitializeParticles}
+          className="w-full py-1.5 bg-blue-600/70 hover:bg-blue-500/70 rounded text-xs font-medium"
+        >
+          Initialize Particles
+        </button>
+      </div>
+    )}
+
+<div className="flex items-center justify-between mt-1.5 text-xs">
+  <label>Max Particles Per Chord: {config.maxParticlesPerChord}</label>
+  <input
+    type="range"
+    min="50"
+    max="500"
+    step="50"
+    value={config.maxParticlesPerChord}
+    onChange={(e) => onConfigChange({ maxParticlesPerChord: parseInt(e.target.value) })}
+    className="w-28 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+  />
+</div>
+
+    <ParticleControlsWithApply 
+      config={config}
+      onConfigChange={onConfigChange}
+      particlesInitialized={particlesInitialized}
+      onInitializeParticles={onInitializeParticles}
+    />
+  </div>
+)}
                 
                 {/* Geometric Shapes Controls - only shown when shapes are enabled */}
                 {useGeometricShapes && (
@@ -906,6 +1016,108 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
     You can show multiple layer types simultaneously for interesting visual effects.
   </div>
 </div>
+
+{/* New Connection Filtering Section */}
+<div className="border-t border-white/10 mt-4 pt-2">
+  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Connection Filtering</h3>
+  
+  <div className="text-xs mb-2 text-white/70">
+    Control which connections are shown across all layers.
+  </div>
+  
+  {/* Master toggle for all layers */}
+  <div className="flex items-center mt-2">
+    <label className="flex items-center cursor-pointer">
+      <div className="relative mr-2">
+        <input
+          type="checkbox"
+          className="sr-only"
+          checked={config.filterRealConnectionsOnly}
+          onChange={() => onConfigChange({ 
+            filterRealConnectionsOnly: !config.filterRealConnectionsOnly,
+            // Apply to all layers for consistency when enabling
+            showOnlyRealConnectionsRibbons: !config.filterRealConnectionsOnly,
+            showOnlyRealConnectionsShapes: !config.filterRealConnectionsOnly,
+            particlesOnlyRealConnections: !config.filterRealConnectionsOnly
+          })}
+        />
+        <div className={`w-8 h-4 rounded-full transition-colors ${config.filterRealConnectionsOnly ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
+        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.filterRealConnectionsOnly ? 'translate-x-4' : ''}`}></div>
+      </div>
+      <span className="text-xs font-medium">Show real connections only</span>
+      <span className="text-xs ml-1 text-gray-400">(all layers)</span>
+    </label>
+  </div>
+  
+  {/* Individual layer overrides - only shown when master filter is active */}
+  {config.filterRealConnectionsOnly && (
+    <div className="mt-2 pl-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs">Ribbons:</label>
+        <div className="relative inline-block w-8 h-4">
+          <input
+            type="checkbox"
+            className="sr-only"
+            checked={config.showOnlyRealConnectionsRibbons}
+            onChange={() => onConfigChange({ showOnlyRealConnectionsRibbons: !config.showOnlyRealConnectionsRibbons })}
+            id="ribbon-connections-toggle"
+          />
+          <label 
+            htmlFor="ribbon-connections-toggle"
+            className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.showOnlyRealConnectionsRibbons ? 'bg-blue-500' : 'bg-gray-500'}`}
+          >
+            <span 
+              className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsRibbons ? 'translate-x-4' : ''}`}
+            ></span>
+          </label>
+        </div>
+      </div>
+      
+      <div className="flex items-center justify-between">
+        <label className="text-xs">Shapes:</label>
+        <div className="relative inline-block w-8 h-4">
+          <input
+            type="checkbox"
+            className="sr-only"
+            checked={config.showOnlyRealConnectionsShapes}
+            onChange={() => onConfigChange({ showOnlyRealConnectionsShapes: !config.showOnlyRealConnectionsShapes })}
+            id="shapes-connections-toggle"
+          />
+          <label 
+            htmlFor="shapes-connections-toggle"
+            className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.showOnlyRealConnectionsShapes ? 'bg-purple-500' : 'bg-gray-500'}`}
+          >
+            <span 
+              className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsShapes ? 'translate-x-4' : ''}`}
+            ></span>
+          </label>
+        </div>
+      </div>
+      
+      <div className="flex items-center justify-between">
+        <label className="text-xs">Particles:</label>
+        <div className="relative inline-block w-8 h-4">
+          <input
+            type="checkbox"
+            className="sr-only"
+            checked={config.particlesOnlyRealConnections}
+            onChange={() => onConfigChange({ particlesOnlyRealConnections: !config.particlesOnlyRealConnections })}
+            id="particles-connections-toggle"
+          />
+          <label 
+            htmlFor="particles-connections-toggle"
+            className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.particlesOnlyRealConnections ? 'bg-green-500' : 'bg-gray-500'}`}
+          >
+            <span 
+              className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.particlesOnlyRealConnections ? 'translate-x-4' : ''}`}
+            ></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+
             {/* 3D/WebGL Tab */}
             {activeTab === '3d' && (
               <div className="space-y-3">

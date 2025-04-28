@@ -130,17 +130,23 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     
     // Handle specific layer toggles with special behavior
     if (layerName === 'showParticlesLayer') {
+      // First update config
       chord.updateConfig({ 
         showParticlesLayer: value,
         particleMode: value // Keep particle mode in sync with layer visibility
       });
       
-      // If enabling particles and they haven't been initialized, do so
+      // If enabling particles and they haven't been initialized, do so with safer approach
       if (value && !chord.particlesInitialized && !chord.isGeneratingParticles) {
-        // Use a short delay to ensure the config update is applied first
-        setTimeout(() => {
-          chord.initializeParticles();
-        }, 100);
+        try {
+          // Use a longer delay to ensure the config update is fully applied
+          setTimeout(() => {
+            console.log('[PARTICLE-INIT] Delayed initialization starting...');
+            chord.initializeParticles();
+          }, 300);
+        } catch (err) {
+          console.error('[PARTICLE-INIT] Error initializing particles:', err);
+        }
       }
     } 
     else if (layerName === 'showGeometricShapesLayer') {
@@ -725,7 +731,7 @@ const handleDownloadGraph = (format: string) => {
       All without CSS effects
     </button>
   </div>
-</div>y
+</div>
             </div>
           </div>
         </div>

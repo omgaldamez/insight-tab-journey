@@ -675,74 +675,73 @@ export const createCustomRibbon = (
     return chordStrokeWidth * variationFactor;
   };
 
-  // Custom ribbon generator function
-  return (d: any, isAnimation = false) => {
-    // Standard d3 ribbon generator
-    const standardRibbon = d3.ribbon()
+// Custom ribbon generator function
+return (d: any, isAnimation = false) => {
+  // Standard d3 ribbon generator
+  const standardRibbon = d3.ribbon()
     .radius(baseRadius);
-    
-    // If animation with fade is enabled, we need custom path generation
-    if (isAnimation && useFadeTransition) {
-      // Create a custom path for source-to-target animation
-      const source = d.source;
-      const target = d.target;
-      
-      // Calculate progress based on current animation index
-      const progress = Math.min(1, currentAnimatedIndex / totalRibbonCount);
-      
-      // Generate standard path
-      let path = '';
-      try {
-        const result = standardRibbon(d);
-        if (result !== undefined && typeof result === 'string') path = result;
-      } catch (e) {
-        // Fallback for error
-      }
-      
-      // For animation, just return the standard path
-      return path;
+  
+  // For animation - simplified approach
+  if (isAnimation) {
+    let standardPath = '';
+    try {
+      const result = standardRibbon(d);
+      if (result !== undefined && typeof result === 'string') standardPath = result;
+    } catch (e) {
+      console.error("Error generating standard path:", e);
     }
     
-    // If we're using geometric shapes instead of ribbons
-    if (useGeometricShapes) {
-      // Get the standard path from d3
-      let standardPath = '';
-      try {
-        const result = standardRibbon(d);
-        if (result !== undefined && typeof result === 'string') standardPath = result;
-      } catch (e) {
-        console.error("Error generating standard path:", e);
-      }
-      
-      // Return standard path for non-animated rendering
-      // Shapes will be added after paths are created
+    // For animation with fade transition
+    if (useFadeTransition) {
+      // Calculate progress based on current animation index
+      const progress = Math.min(1, currentAnimatedIndex / totalRibbonCount);
       return standardPath;
     }
     
-    // If we're not using variable width, return standard ribbon
-    if (chordWidthVariation <= 1.0) {
-      try {
-        const result = standardRibbon(d);
-        return (result !== undefined && typeof result === 'string') ? result : '';
-      } catch (e) {
-        console.error("Error generating standard ribbon:", e);
-        return '';
-      }
+    // For animation without fade
+    return standardPath;
+  }
+  
+  // If we're using geometric shapes instead of ribbons
+  if (useGeometricShapes) {
+    // Get the standard path from d3
+    let standardPath = '';
+    try {
+      const result = standardRibbon(d);
+      if (result !== undefined && typeof result === 'string') standardPath = result;
+    } catch (e) {
+      console.error("Error generating standard path:", e);
     }
     
-    // For variable width ribbon, we need to craft a custom path
-    // This simplified implementation just adjusts the radius parameter
-    const variableRibbon = d3.ribbon()
-      .radius(baseRadius * chordWidthVariation);
-    
+    // Return standard path for non-animated rendering
+    // Shapes will be added after paths are created
+    return standardPath;
+  }
+  
+  // If we're not using variable width, return standard ribbon
+  if (chordWidthVariation <= 1.0) {
     try {
-      const result = variableRibbon(d);
+      const result = standardRibbon(d);
       return (result !== undefined && typeof result === 'string') ? result : '';
     } catch (e) {
-      console.error("Error generating variable ribbon:", e);
+      console.error("Error generating standard ribbon:", e);
       return '';
     }
-  };
+  }
+  
+  // For variable width ribbon, we need to craft a custom path
+  // This simplified implementation just adjusts the radius parameter
+  const variableRibbon = d3.ribbon()
+    .radius(baseRadius * chordWidthVariation);
+  
+  try {
+    const result = variableRibbon(d);
+    return (result !== undefined && typeof result === 'string') ? result : '';
+  } catch (e) {
+    console.error("Error generating variable ribbon:", e);
+    return '';
+  }
+};
 };
 
 /**
