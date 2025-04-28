@@ -76,13 +76,6 @@ minimalConnectionRibbonStrokeColor: string;
 minimalConnectionRibbonStrokeWidth: number;
 minimalConnectionRibbonStrokeOpacity: number;
   
-  // Directional styling
-  useDirectionalStyling: boolean;
-  sourceChordOpacity: number;
-  targetChordOpacity: number;
-  sourceChordColor: string;
-  targetChordColor: string;
-  
   // Variable width
   chordWidthVariation: number;
   chordWidthPosition: 'start' | 'middle' | 'end' | 'custom';
@@ -186,6 +179,14 @@ glowEffectDarkMode: boolean;
 useIndividualGlowColors: boolean;
 categoryGlowColors: Record<string, string>; // Map category names to glow colors
 
+// New properties for connection visualization
+hideRealConnections: boolean;
+hideMinimalConnections: boolean;
+realConnectionThreshold: number;
+
+// More intuitive connection display properties
+showRealConnections: boolean;
+showMinimalConnections: boolean;
 }
 
 export interface ChordDiagramHookProps {
@@ -291,13 +292,7 @@ minimalConnectionRibbonStrokeColor: '#dddddd',
 minimalConnectionRibbonStrokeWidth: 0.3,
 minimalConnectionRibbonStrokeOpacity: 0.5,
     
-    // Directional styling
-    useDirectionalStyling: false,
-    sourceChordOpacity: 0.8,
-    targetChordOpacity: 0.6,
-    sourceChordColor: '#3498db',
-    targetChordColor: '#e74c3c',
-    
+
     // Variable width
     chordWidthVariation: 1.0,
     chordWidthPosition: 'middle',
@@ -397,6 +392,16 @@ glowEffectDarkMode: false,
 // Group/ribbon individual glow settings
 useIndividualGlowColors: false,
 categoryGlowColors: {}, // Will be populated from categories
+
+// New connection display properties
+hideRealConnections: false,
+hideMinimalConnections: false,
+realConnectionThreshold: 0.2, // Default threshold
+
+// Connection display properties with intuitive names
+showRealConnections: true,
+showMinimalConnections: true,
+
   });
   
   // Animation state
@@ -411,7 +416,6 @@ categoryGlowColors: {}, // Will be populated from categories
   // Extract all config properties
   const {
     chordStrokeWidth, chordOpacity, chordStrokeOpacity, arcOpacity,
-    useDirectionalStyling, sourceChordOpacity, targetChordOpacity, sourceChordColor, targetChordColor,
     chordWidthVariation, chordWidthPosition, chordWidthCustomPosition,
     strokeWidthVariation, strokeWidthPosition, strokeWidthCustomPosition,
     useGeometricShapes, shapeType, shapeSize, shapeSpacing, shapeFill, shapeStroke,
@@ -1540,7 +1544,6 @@ const toggleAnimation = useCallback(() => {
     }
   }, [isAnimating, startAnimation]);
 
-
 // Helper function to consistently determine if a connection is "real"
 const isRealConnection = useCallback((d: any): boolean => {
   const sourceIndex = d.source.index;
@@ -1558,8 +1561,184 @@ const isRealConnection = useCallback((d: any): boolean => {
     }
   }
   
-  return connectionValue > 0.2;
-}, [showDetailedView, detailedMatrix, categoryMatrix]);
+  // Use configurable threshold
+  return connectionValue > chordConfig.realConnectionThreshold;
+}, [showDetailedView, detailedMatrix, categoryMatrix, chordConfig.realConnectionThreshold]);
+
+// Efficient update functions for different parts of the visualization
+const updateRibbonAppearance = useCallback(() => {
+  if (!svgRef.current) return;
+  
+  console.log('[CHORD-UPDATE] Updating ribbon appearance without full redraw');
+  
+  const ribbonGroup = d3.select(svgRef.current).select('.chord-ribbons');
+  
+  // Update visibility based on connection filtering
+  ribbonGroup.classed('hide-minimal-connections', chordConfig.showOnlyRealConnectionsRibbons);
+  
+  // Update CSS variables for connection opacities
+  ribbonGroup
+    .style('--real-connection-opacity', chordConfig.realConnectionRibbonOpacity)
+    .style('--minimal-connection-opacity', chordConfig.minimalConnectionRibbonOpacity);
+  
+  // Update individual ribbon properties
+  ribbonGroup.selectAll('path')
+    .attr("fill", d => {
+      // First check if this is a real connection
+      const isRealConn = isRealConnection(d);
+      
+      // If using monochrome ribbons, use connection-specific colors
+      if (!chordConfig.useColoredRibbons) {
+        return isRealConn ? 
+          chordConfig.realConnectionRibbonColor : 
+          chordConfig.minimalConnectionRibbonColor;
+      }
+      
+      // Otherwise use category colors
+      if (showDetailedView) {
+        // For detailed view, use source node's category
+        if ((d as { source: { index: number } }).source.index < detailedNodeData.length) {
+          const sourceNode = detailedNodeData[(d as { source: { index: number } }).source.index];
+          return getNodeColor({ id: "", category: sourceNode.category });
+        }
+        return "#999"; // Fallback
+      } else {
+        // For category view, use source category color
+        const sourceCategory = uniqueCategories[(d as { source: { index: number } }).source.index];
+        return getNodeColor({ id: "", category: sourceCategory });
+      }
+    })
+    .attr("stroke", d => {
+      // Use connection-specific stroke color
+      const isRealConn = isRealConnection(d);
+      
+
+      
+      // For monochrome mode, use connection-specific stroke color
+      if (!chordConfig.useColoredRibbons) {
+        return isRealConn ? 
+          chordConfig.realConnectionRibbonStrokeColor : 
+          chordConfig.minimalConnectionRibbonStrokeColor;
+      }
+        
+      // Otherwise, apply a slightly darker stroke color based on the fill
+      if (showDetailedView && (d as d3.Chord).source.index < detailedNodeData.length) {
+        const sourceNode = detailedNodeData[(d as d3.Chord).source.index];
+        const baseColor = getNodeColor({ id: "", category: sourceNode.category });
+        // Darken the color for stroke - simple approach
+        return d3.rgb(baseColor).darker(0.8).toString();
+      } else {
+        const baseColor = getNodeColor({ id: "", category: uniqueCategories[(d as d3.Chord).source.index] });
+        return d3.rgb(baseColor).darker(0.8).toString();
+      }
+    })
+    .attr("stroke-width", d => {
+      // Use connection-specific stroke width
+      const isRealConn = isRealConnection(d);
+      return isRealConn ? 
+        chordConfig.realConnectionRibbonStrokeWidth : 
+        chordConfig.minimalConnectionRibbonStrokeWidth;
+    })
+    .attr("stroke-opacity", d => {
+      // Use connection-specific stroke opacity
+      const isRealConn = isRealConnection(d);
+      return isRealConn ?
+        chordConfig.realConnectionRibbonStrokeOpacity :
+        chordConfig.minimalConnectionRibbonStrokeOpacity;
+    });
+  
+  return true;
+}, [
+  svgRef, 
+  chordConfig,
+  isRealConnection,
+  showDetailedView, 
+  uniqueCategories, 
+  detailedNodeData, 
+  getNodeColor
+]);
+
+const updateArcAppearance = useCallback(() => {
+  if (!svgRef.current) return;
+  
+  console.log('[CHORD-UPDATE] Updating arc appearance without full redraw');
+  
+  // Make sure we're selecting the correct group
+  const arcGroup = d3.select(svgRef.current).select('.chord-arcs');
+  
+  if (arcGroup.empty()) {
+    console.warn('[CHORD-UPDATE] Arc group not found in SVG');
+    return false;
+  }
+  
+  // Debug message to see if we're finding paths
+  const arcPaths = arcGroup.selectAll('path');
+  console.log(`[CHORD-UPDATE] Found ${arcPaths.size()} arc paths to update`);
+  
+  // Update arc style with more explicit selections
+  arcPaths
+    .attr("fill", function(d: any) {
+      try {
+        if (showDetailedView) {
+          // For detailed view, get the node's category
+          if (d.index < detailedNodeData.length) {
+            const node = detailedNodeData[d.index];
+            return getNodeColor({ id: "", category: node.category });
+          }
+          return "#999"; // Fallback
+        } else {
+          // For category view - use the index from the data point itself
+          const category = uniqueCategories[d.index];
+          return getNodeColor({ id: "", category: category });
+        }
+      } catch (err) {
+        console.error('[CHORD-UPDATE] Error getting arc fill color:', err);
+        return "#999"; // Fallback on error
+      }
+    })
+    .attr("stroke", chordConfig.arcStrokeColor)
+    .attr("stroke-width", chordConfig.arcStrokeWidth)
+    .attr("opacity", chordConfig.arcOpacity);
+  
+  console.log('[CHORD-UPDATE] Arc styles updated successfully');
+  return true;
+}, [
+  svgRef,
+  chordConfig,
+  showDetailedView,
+  detailedNodeData,
+  uniqueCategories,
+  getNodeColor
+]);
+
+const updateAnimationClasses = useCallback(() => {
+  if (!svgRef.current) return;
+  
+  console.log('[CHORD-UPDATE] Updating animation classes');
+  
+  const ribbonGroup = d3.select(svgRef.current).select('.chord-ribbons');
+  const arcGroup = d3.select(svgRef.current).select('.chord-arcs');
+  
+  // Update animation classes
+  ribbonGroup.classed('animated', chordConfig.ribbonAnimationEnabled);
+  arcGroup.classed('animated', chordConfig.arcAnimationEnabled);
+  
+  // Apply animation speed from CSS variable
+  d3.select(svgRef.current)
+    .style('--chord-animation-speed', chordConfig.animationSpeedMultiplier);
+  
+  // Apply specific animation effect
+  const mainGroup = d3.select(svgRef.current).select('g');
+  mainGroup.classed('rotate-animation', chordConfig.animationEffect === 'rotate');
+  
+  return true;
+}, [
+  svgRef,
+  chordConfig.ribbonAnimationEnabled,
+  chordConfig.arcAnimationEnabled,
+  chordConfig.animationSpeedMultiplier,
+  chordConfig.animationEffect
+]);
 
 // Enhanced update function that handles all property types more effectively
 const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
@@ -1669,74 +1848,65 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
     }
   }
   
-// For arc-only updates with particles, attempt to update existing arcs rather than redraw
+// For arc-only updates with particles, use the new update function
 if (updates_by_category.arc.length > 0 && 
   updates_by_category.position.length === 0) {
-  console.log('[CONFIG-UPDATE] Updating arc styles without particle regeneration');
+console.log('[CONFIG-UPDATE] Using optimized arc update');
 
-  // Directly update arc attributes
-  const arcGroup = d3.select(svgRef.current).select('.chord-arcs');
+// Update config first
+setChordConfig(prev => ({
+  ...prev,
+  ...updates
+}));
 
-  // Update opacity
-  if ('arcOpacity' in updates) {
-    arcGroup.selectAll('path').attr('opacity', updates.arcOpacity);
-  }
+// Use the new update function with clear feedback
+const arcUpdateResult = updateArcAppearance();
+console.log(`[CONFIG-UPDATE] Arc update result: ${arcUpdateResult ? 'success' : 'failed'}`);
 
-  // Update stroke width
-  if ('arcStrokeWidth' in updates) {
-    arcGroup.selectAll('path').attr('stroke-width', updates.arcStrokeWidth);
-  }
+// Don't trigger full redraw if successful
+if (arcUpdateResult) return;
 
-  // Update stroke color
-  if ('arcStrokeColor' in updates) {
-    arcGroup.selectAll('path').attr('stroke', updates.arcStrokeColor);
-  }
-    
-  // For corner radius, we need a more complex approach as it requires path recalculation
-  if ('arcCornerRadius' in updates && updates.arcCornerRadius !== chordConfig.arcCornerRadius) {
-    try {
-        // We'll need to update the arc generator and reapply it to existing paths
-        const outerRadius = Math.min(
-          svgRef.current.clientWidth, 
-          svgRef.current.clientHeight
-        ) * 0.5 - 60;
-        const innerRadius = outerRadius - 20;
-        
-        // Create new arc generator with the corner radius
-        const arc = d3.arc()
-          .innerRadius(innerRadius)
-          .outerRadius(outerRadius)
-          .cornerRadius(updates.arcCornerRadius); // Apply the new corner radius
-        
-        // Update each arc path with the new generator
-        arcGroup.selectAll('path').each(function(d: any) {
-          const pathElement = this as SVGPathElement;
-          try {
-            // Apply new path data with the updated arc generator
-            const newPath = arc(d);
-            if (newPath) {
-              d3.select(pathElement).attr('d', newPath);
-            }
-          } catch (e) {
-            console.error('[ARC-UPDATE] Error updating arc path:', e);
-          }
-        });
-      } catch (e) {
-        console.error('[ARC-UPDATE] Error creating arc generator:', e);
-      }
-    }
-    
-    // Update config without triggering a full redraw
-    setChordConfig(prev => ({
-      ...prev,
-      ...updates
-    }));
-    
-    // Only exit early if we're not updating other properties
-    if (Object.keys(updates).every(key => key.startsWith('arc'))) {
-      return; // Exit early to avoid full redraw only if these are arc-only updates
-    }
-  }
+// If update failed, fall through to full redraw
+console.log('[CONFIG-UPDATE] Falling back to full redraw for arc update');
+}
+
+// For ribbon-specific updates without position changes
+if (updates_by_category.ribbon.length > 0 && 
+  updates_by_category.position.length === 0) {
+console.log('[CONFIG-UPDATE] Using optimized ribbon update');
+
+// Update config first
+setChordConfig(prev => ({
+  ...prev,
+  ...updates
+}));
+
+// Use the new update function
+updateRibbonAppearance();
+
+// Don't trigger full redraw
+return;
+}
+
+// For animation-only updates
+if (updates_by_category.animation.length > 0 && 
+  updates_by_category.position.length === 0 &&
+  updates_by_category.ribbon.length === 0 &&
+  updates_by_category.arc.length === 0) {
+console.log('[CONFIG-UPDATE] Using optimized animation update');
+
+// Update config first
+setChordConfig(prev => ({
+  ...prev,
+  ...updates
+}));
+
+// Use the new update function
+updateAnimationClasses();
+
+// Don't trigger full redraw
+return;
+}
   
 // Handle ribbon-specific updates
 if (updates_by_category.ribbon.length > 0 && updates_by_category.position.length === 0) {
@@ -2755,6 +2925,27 @@ if (!isAnimating) {
         .data(chordResult)
         .join("path")
         .attr("d", d => customRibbon(d, false))
+        // Add connection type classification
+.attr("data-connection-type", d => isRealConnection(d) ? "real" : "minimal")
+.attr("class", d => `chord-ribbon ${isRealConnection(d) ? "real-connection" : "minimal-connection"}`)
+.attr("data-source-index", d => d.source.index)
+.attr("data-target-index", d => d.target.index)
+.attr("data-connection-value", d => {
+  // Store actual connection value
+  const sourceIndex = d.source.index;
+  const targetIndex = d.target.index;
+  
+  if (showDetailedView) {
+    if (sourceIndex < detailedMatrix.length && targetIndex < detailedMatrix[0].length) {
+      return detailedMatrix[sourceIndex][targetIndex];
+    }
+  } else {
+    if (sourceIndex < categoryMatrix.length && targetIndex < categoryMatrix[0].length) {
+      return categoryMatrix[sourceIndex][targetIndex];
+    }
+  }
+  return 0;
+})
         .attr("fill", d => {
           // Apply individual glow filters if enabled
 if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
@@ -2808,11 +2999,6 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
                // First check if this is a real connection
                const isRealConn = isRealConnection(d);
                
-               // If directional styling is enabled, use source/target colors
-               if (useDirectionalStyling) {
-                 return sourceChordColor;
-               }
-               
                // If using monochrome ribbons, use connection-specific colors
                if (!useColoredRibbons) {
                  return isRealConn ? 
@@ -2837,11 +3023,6 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
         .attr("stroke", d => {
           // Use connection-specific stroke color
           const isRealConn = isRealConnection(d);
-          
-          // If directional styling is enabled, use darker source color for stroke
-          if (useDirectionalStyling) {
-            return d3.rgb(sourceChordColor).darker(0.8).toString();
-          }
           
           // For monochrome mode, use connection-specific stroke color
           if (!useColoredRibbons) {
@@ -2894,11 +3075,6 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
             // Apply real connections filter if enabled
             if (chordConfig.showOnlyRealConnectionsRibbons && !isRealConnection) {
               return 0; // Hide if it's not a real connection
-            }
-            
-            // If directional styling is enabled, use source opacity
-            if (useDirectionalStyling) {
-              return sourceChordOpacity;
             }
             
             // In stroke-only mode, ensure better visibility
@@ -3376,33 +3552,6 @@ if (particleMode && svgRef.current?.particleGroupsToRestore && svgRef.current.pa
   }
 }
         
-        // If directional styling is enabled, add a second set of ribbons for target styling
-        if (useDirectionalStyling) {
-          // Create reversed ribbons with target styling
-          ribbonGroup.selectAll(".target-ribbon")
-            .data(chordResult)
-            .join("path")
-            .attr("class", "target-ribbon")
-            .attr("d", d => {
-              // Create a simplified path with just a line from target to source
-              // Add bounds checking to prevent errors in detailed view
-              try {
-                return customRibbon(d, false);
-              } catch (error) {
-                console.warn("Error creating target ribbon:", error);
-                return ""; // Return empty path on error
-              }
-            })
-            .attr("fill", targetChordColor)
-            .attr("stroke", d3.rgb(targetChordColor).darker(0.8).toString())
-            .attr("stroke-width", chordStrokeWidth * 0.8) // Slightly thinner
-            .attr("stroke-opacity", chordStrokeOpacity)
-            .style("opacity", targetChordOpacity)
-            .style("mix-blend-mode", "multiply") // Blend with source ribbons
-            .attr("cursor", "pointer")
-            .attr("transform", "scale(0.95)") // Scale slightly to nest inside source ribbons
-            .lower(); // Move to back
-        }
       } else {
         // For animation mode, we'll add chords dynamically 
         
@@ -3465,10 +3614,6 @@ d3.select(this).style("display", isVisible ? "block" : "none");
     .join("path")
     .attr("d", d => customRibbon(d, true))
           .attr("fill", d => {
-            // If directional styling is enabled, use source color
-            if (useDirectionalStyling) {
-              return sourceChordColor;
-            }
             
             // If using monochrome ribbons, return a neutral color
             if (!useColoredRibbons) {
@@ -3490,11 +3635,6 @@ d3.select(this).style("display", isVisible ? "block" : "none");
             }
           })
           .attr("stroke", d => {
-            // If directional styling is enabled, use darker source color
-            if (useDirectionalStyling) {
-              return d3.rgb(sourceChordColor).darker(0.8).toString();
-            }
-            
             // For monochrome mode, use a darker gray for stroke
             if (!useColoredRibbons) {
               return d3.rgb("#777777").toString();
@@ -3537,11 +3677,6 @@ d3.select(this).style("display", isVisible ? "block" : "none");
             // Apply real connections filter if enabled
             if (chordConfig.showOnlyRealConnectionsRibbons && !isRealConnection) {
               return 0; // Hide if it's not a real connection
-            }
-            
-            // If directional styling is enabled, use source opacity
-            if (useDirectionalStyling) {
-              return sourceChordOpacity;
             }
             
             // In stroke-only mode, ensure better visibility by using a higher opacity
@@ -3693,52 +3828,10 @@ d3.select(this).style("display", isVisible ? "block" : "none");
             latestChord
               .style("opacity", 0) // Start invisible
               .transition()
-              .duration(transitionDuration) // Use configurable duration
-              .style("opacity", useDirectionalStyling ? sourceChordOpacity : 1); // Fade in
+              .duration(transitionDuration); // Use configurable duration
             
-            // If directional styling is enabled, add a target ribbon with special animation
-            if (useDirectionalStyling && currentAnimatedIndex > 0) {
-              const latestChordData = chordResult[currentAnimatedIndex - 1];
-              
-              // Create target ribbon with delayed appearance
-              ribbonGroup.append("path")
-                .datum(latestChordData)
-                .attr("class", "target-ribbon animated")
-                .attr("d", customRibbon(latestChordData, true))
-                .attr("fill", targetChordColor)
-                .attr("stroke", d3.rgb(targetChordColor).darker(0.8).toString())
-                .attr("stroke-width", chordStrokeWidth * 0.8)
-                .attr("stroke-opacity", chordStrokeOpacity)
-                .style("opacity", 0) // Start invisible
-                .style("mix-blend-mode", "multiply")
-                .attr("transform", "scale(0.95)") // Scale slightly
-                .transition()
-                .delay(transitionDuration * 0.6) // Delay appearance
-                .duration(transitionDuration * 0.7) // Shorter duration
-                .style("opacity", targetChordOpacity); // Fade in
-            }
           }
-        } else {
-          // Without fade transition, just set opacity directly
-          animatedPaths.style("opacity", useDirectionalStyling ? sourceChordOpacity : 1);
-          
-          // If directional styling is enabled, add target ribbons
-          if (useDirectionalStyling) {
-            ribbonGroup.selectAll(".target-ribbon")
-              .data(animatedChords)
-              .join("path")
-              .attr("class", "target-ribbon")
-              .attr("d", d => customRibbon(d, false))
-              .attr("fill", targetChordColor)
-              .attr("stroke", d3.rgb(targetChordColor).darker(0.8).toString())
-              .attr("stroke-width", chordStrokeWidth * 0.8)
-              .attr("stroke-opacity", chordStrokeOpacity)
-              .style("opacity", targetChordOpacity)
-              .style("mix-blend-mode", "multiply")
-              .attr("transform", "scale(0.95)")
-              .lower();
-          }
-        }
+        } 
         
         // WebGL rendering mode (when enabled)
         if (useWebGLRenderer && chordConfig.showParticlesLayer && particleMode) {
@@ -4030,11 +4123,6 @@ window.preserveParticlesDuringAnimation = false;
     chordOpacity,
     chordStrokeOpacity,
     arcOpacity,
-    useDirectionalStyling,
-    sourceChordOpacity,
-    targetChordOpacity,
-    sourceChordColor,
-    targetChordColor,
     chordWidthVariation,
     chordWidthPosition,
     chordWidthCustomPosition,

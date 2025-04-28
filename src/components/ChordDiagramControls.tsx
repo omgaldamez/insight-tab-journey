@@ -54,11 +54,6 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
     chordOpacity,
     chordStrokeOpacity,
     arcOpacity,
-    useDirectionalStyling,
-    sourceChordOpacity,
-    targetChordOpacity,
-    sourceChordColor,
-    targetChordColor,
     chordWidthVariation,
     chordWidthPosition,
     chordWidthCustomPosition,
@@ -560,47 +555,232 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
 
     </div>
     
-    {/* Connection Type Styling - Keep your existing section */}
-    <div className="border-t border-white/10 mt-4 pt-2">
-      <h3 className="text-xs font-semibold mb-1.5 text-white/80">Connection Type Styling</h3>
+{/* Connection Type Styling */}
+<div className="border-t border-white/10 mt-4 pt-2">
+  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Connection Type Styling</h3>
+  
+  {/* Real Connections styling */}
+  <div className="bg-gray-700/50 p-2 rounded-md mb-2">
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-medium">Real Connections</span>
       
-      <div className="bg-gray-700/50 p-2 rounded-md mb-2">
-        {/* Real Connections styling - Keep existing controls */}
-        {/* ... */}
-      </div>
-      
-      <div className="bg-gray-700/50 p-2 rounded-md mt-3">
-        {/* Minimal Connections styling - Keep existing controls */}
-        {/* ... */}
+      {/* Toggle to show/hide real connections */}
+      <div className="relative inline-block w-8 h-4">
+        <input
+          type="checkbox"
+          className="sr-only"
+          checked={!config.hideRealConnections} // New config property
+          onChange={() => onConfigChange({ hideRealConnections: !config.hideRealConnections })}
+          id="real-connections-toggle"
+        />
+        <label 
+          htmlFor="real-connections-toggle"
+          className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+            !config.hideRealConnections ? 'bg-blue-500' : 'bg-gray-500'
+          }`}
+        >
+          <span 
+            className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+              !config.hideRealConnections ? 'translate-x-4' : ''
+            }`}
+          ></span>
+        </label>
       </div>
     </div>
     
-    {/* Directional Styling Controls */}
-    <div className="border-t border-white/10 mt-2 pt-2">
-      <div className="flex items-center mt-1.5">
-        <label className="flex items-center cursor-pointer">
-          <div className="relative mr-2">
+    {/* Only show these controls if real connections are visible */}
+    {!config.hideRealConnections && (
+      <div className="mt-2">
+        {/* Real connection color control */}
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Color:</label>
+          <div className="flex items-center">
             <input
-              type="checkbox"
-              className="sr-only"
-              checked={useDirectionalStyling}
-              onChange={() => handleToggleChange('useDirectionalStyling')}
+              type="color"
+              value={config.realConnectionRibbonColor}
+              onChange={(e) => onConfigChange({ realConnectionRibbonColor: e.target.value })}
+              className="w-6 h-6 rounded cursor-pointer"
             />
-            <div className={`w-8 h-4 rounded-full transition-colors ${useDirectionalStyling ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
-            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${useDirectionalStyling ? 'translate-x-4' : ''}`}></div>
           </div>
-          <span className="text-xs">Direction Styling</span>
+        </div>
+        
+        {/* Real connection opacity control */}
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Opacity: {config.realConnectionRibbonOpacity.toFixed(2)}</label>
+          <input
+            type="range"
+            min="0.1"
+            max="1.0"
+            step="0.05"
+            value={config.realConnectionRibbonOpacity}
+            onChange={(e) => onConfigChange({ realConnectionRibbonOpacity: parseFloat(e.target.value) })}
+            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+        
+        {/* Real connection stroke properties */}
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Stroke Color:</label>
+          <div className="flex items-center">
+            <input
+              type="color"
+              value={config.realConnectionRibbonStrokeColor}
+              onChange={(e) => onConfigChange({ realConnectionRibbonStrokeColor: e.target.value })}
+              className="w-6 h-6 rounded cursor-pointer"
+            />
+          </div>
+        </div>
+        
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Stroke Width: {config.realConnectionRibbonStrokeWidth.toFixed(1)}</label>
+          <input
+            type="range"
+            min="0.1"
+            max="3.0"
+            step="0.1"
+            value={config.realConnectionRibbonStrokeWidth}
+            onChange={(e) => onConfigChange({ realConnectionRibbonStrokeWidth: parseFloat(e.target.value) })}
+            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+        
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Stroke Opacity: {config.realConnectionRibbonStrokeOpacity.toFixed(2)}</label>
+          <input
+            type="range"
+            min="0.1"
+            max="1.0"
+            step="0.05"
+            value={config.realConnectionRibbonStrokeOpacity}
+            onChange={(e) => onConfigChange({ realConnectionRibbonStrokeOpacity: parseFloat(e.target.value) })}
+            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+      </div>
+    )}
+  </div>
+  
+  {/* Minimal Connections styling */}
+  <div className="bg-gray-700/50 p-2 rounded-md mt-3">
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-medium">Minimal Connections</span>
+      
+      {/* Toggle to show/hide minimal connections */}
+      <div className="relative inline-block w-8 h-4">
+        <input
+          type="checkbox"
+          className="sr-only"
+          checked={!config.hideMinimalConnections} // New config property
+          onChange={() => onConfigChange({ hideMinimalConnections: !config.hideMinimalConnections })}
+          id="minimal-connections-toggle"
+        />
+        <label 
+          htmlFor="minimal-connections-toggle"
+          className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
+            !config.hideMinimalConnections ? 'bg-blue-500' : 'bg-gray-500'
+          }`}
+        >
+          <span 
+            className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
+              !config.hideMinimalConnections ? 'translate-x-4' : ''
+            }`}
+          ></span>
         </label>
       </div>
-      
-      {/* Keep your existing directional styling controls when enabled */}
-      {useDirectionalStyling && (
-        <div className="mt-2 pt-2">
-          <h3 className="text-xs font-semibold mb-1.5 text-white/80">Direction Colors</h3>
-          {/* ... existing directional controls ... */}
-        </div>
-      )}
     </div>
+    
+    {/* Only show these controls if minimal connections are visible */}
+    {!config.hideMinimalConnections && (
+      <div className="mt-2">
+        {/* Minimal connection color control */}
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Color:</label>
+          <div className="flex items-center">
+            <input
+              type="color"
+              value={config.minimalConnectionRibbonColor}
+              onChange={(e) => onConfigChange({ minimalConnectionRibbonColor: e.target.value })}
+              className="w-6 h-6 rounded cursor-pointer"
+            />
+          </div>
+        </div>
+        
+        {/* Minimal connection opacity control */}
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Opacity: {config.minimalConnectionRibbonOpacity.toFixed(2)}</label>
+          <input
+            type="range"
+            min="0.05"
+            max="0.5"
+            step="0.05"
+            value={config.minimalConnectionRibbonOpacity}
+            onChange={(e) => onConfigChange({ minimalConnectionRibbonOpacity: parseFloat(e.target.value) })}
+            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+        
+        {/* Minimal connection stroke properties */}
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Stroke Color:</label>
+          <div className="flex items-center">
+            <input
+              type="color"
+              value={config.minimalConnectionRibbonStrokeColor}
+              onChange={(e) => onConfigChange({ minimalConnectionRibbonStrokeColor: e.target.value })}
+              className="w-6 h-6 rounded cursor-pointer"
+            />
+          </div>
+        </div>
+        
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Stroke Width: {config.minimalConnectionRibbonStrokeWidth.toFixed(1)}</label>
+          <input
+            type="range"
+            min="0.1"
+            max="1.0"
+            step="0.1"
+            value={config.minimalConnectionRibbonStrokeWidth}
+            onChange={(e) => onConfigChange({ minimalConnectionRibbonStrokeWidth: parseFloat(e.target.value) })}
+            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+        
+        <div className="flex items-center justify-between mt-1.5 text-xs">
+          <label>Stroke Opacity: {config.minimalConnectionRibbonStrokeOpacity.toFixed(2)}</label>
+          <input
+            type="range"
+            min="0.1"
+            max="0.5"
+            step="0.05"
+            value={config.minimalConnectionRibbonStrokeOpacity}
+            onChange={(e) => onConfigChange({ minimalConnectionRibbonStrokeOpacity: parseFloat(e.target.value) })}
+            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+      </div>
+    )}
+  </div>
+  
+  {/* Connection threshold control */}
+  <div className="mt-3">
+    <div className="flex items-center justify-between text-xs">
+      <label>Real Connection Threshold: {config.realConnectionThreshold.toFixed(2)}</label>
+      <input
+        type="range"
+        min="0.05"
+        max="1.0"
+        step="0.05"
+        value={config.realConnectionThreshold}
+        onChange={(e) => onConfigChange({ realConnectionThreshold: parseFloat(e.target.value) })}
+        className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+      />
+    </div>
+    <div className="text-xs text-gray-400 mt-1">
+      Connections with values above this threshold are considered "real"
+    </div>
+  </div>
+</div>
+    
     
     {/* Width Variation Controls - Keep your existing section */}
     <div className="border-t border-white/10 mt-2 pt-2">

@@ -130,23 +130,17 @@ const ChordVisualization: React.FC<ChordVisualizationProps> = ({
     
     // Handle specific layer toggles with special behavior
     if (layerName === 'showParticlesLayer') {
-      // First update config
       chord.updateConfig({ 
         showParticlesLayer: value,
         particleMode: value // Keep particle mode in sync with layer visibility
       });
       
-      // If enabling particles and they haven't been initialized, do so with safer approach
+      // If enabling particles and they haven't been initialized, do so
       if (value && !chord.particlesInitialized && !chord.isGeneratingParticles) {
-        try {
-          // Use a longer delay to ensure the config update is fully applied
-          setTimeout(() => {
-            console.log('[PARTICLE-INIT] Delayed initialization starting...');
-            chord.initializeParticles();
-          }, 300);
-        } catch (err) {
-          console.error('[PARTICLE-INIT] Error initializing particles:', err);
-        }
+        // Use a short delay to ensure the config update is applied first
+        setTimeout(() => {
+          chord.initializeParticles();
+        }, 100);
       }
     } 
     else if (layerName === 'showGeometricShapesLayer') {

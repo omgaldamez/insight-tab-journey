@@ -290,3 +290,46 @@ svg {
 .combined-effects.animated {
   animation: combinedEffectPulse 3s ease-in-out infinite;
 }
+
+/* Connection Type Specific Styles */
+.chord-ribbon.real-connection {
+  /* Base styles for real connections */
+  stroke-opacity: 0.9;
+  fill-opacity: var(--real-connection-opacity, 0.75);
+}
+
+.chord-ribbon.minimal-connection {
+  /* Base styles for minimal connections */
+  stroke-opacity: 0.5;
+  fill-opacity: var(--minimal-connection-opacity, 0.3);
+}
+
+/* Connection-specific animations */
+.chord-ribbons.animated path.real-connection {
+  animation: ribbonWave calc(3s * var(--chord-animation-speed)) ease-in-out infinite;
+}
+
+.chord-ribbons.animated path.minimal-connection {
+  animation: ribbonWaveSlow calc(5s * var(--chord-animation-speed)) ease-in-out infinite;
+  animation-delay: calc(0.3s * var(--chord-animation-speed));
+}
+
+/* Define a slower animation for minimal connections */
+@keyframes ribbonWaveSlow {
+  from, to {
+    transform: translateX(0) scale(1);
+  }
+  50% {
+    transform: translateX(calc(var(--wave-distance, 3px) * 0.7)) scale(1.01);
+  }
+}
+
+/* Class for hiding minimal connections */
+.chord-ribbons.hide-minimal-connections path.minimal-connection {
+  display: none;
+}
+
+/* Class for hiding real connections */
+.chord-ribbons.hide-real-connections path.real-connection {
+  display: none;
+}
