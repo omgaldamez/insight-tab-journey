@@ -526,16 +526,32 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                             />
                           </div>
                           
-                          {/* Forced Connection Color */}
+                          {/* Forced Connection Color Mode */}
                           <div className="flex items-center justify-between text-xs">
-                            <label>Color:</label>
-                            <input
-                              type="color"
-                              value={config.minimalConnectionColor}
-                              onChange={(e) => onConfigChange({ minimalConnectionColor: e.target.value })}
-                              className="w-8 h-4 rounded border-none cursor-pointer"
-                            />
+                            <label>Color Mode:</label>
+                            <select
+                              value={config.minimalConnectionColorMode}
+                              onChange={(e) => onConfigChange({ minimalConnectionColorMode: e.target.value as 'theme' | 'custom' | 'category' })}
+                              className="bg-gray-600 text-white text-xs rounded px-1 py-0.5"
+                            >
+                              <option value="theme">Current Theme</option>
+                              <option value="category">Per Category</option>
+                              <option value="custom">Custom Color</option>
+                            </select>
                           </div>
+                          
+                          {/* Custom Color Control - only show when custom mode selected */}
+                          {config.minimalConnectionColorMode === 'custom' && (
+                            <div className="flex items-center justify-between text-xs">
+                              <label>Custom Color:</label>
+                              <input
+                                type="color"
+                                value={config.minimalConnectionCustomColor}
+                                onChange={(e) => onConfigChange({ minimalConnectionCustomColor: e.target.value })}
+                                className="w-8 h-4 rounded border-none cursor-pointer"
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -877,106 +893,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
     )}
   </div>
   
-  {/* Minimal Connections styling */}
-  <div className="bg-gray-700/50 p-2 rounded-md mt-3">
-    <div className="flex items-center justify-between">
-      <span className="text-xs font-medium">Minimal Connections</span>
-      
-      {/* Toggle to show/hide minimal connections */}
-      <div className="relative inline-block w-8 h-4">
-        <input
-          type="checkbox"
-          className="sr-only"
-          checked={!config.hideMinimalConnections} // New config property
-          onChange={() => onConfigChange({ hideMinimalConnections: !config.hideMinimalConnections })}
-          id="minimal-connections-toggle"
-        />
-        <label 
-          htmlFor="minimal-connections-toggle"
-          className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${
-            !config.hideMinimalConnections ? 'bg-blue-500' : 'bg-gray-500'
-          }`}
-        >
-          <span 
-            className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${
-              !config.hideMinimalConnections ? 'translate-x-4' : ''
-            }`}
-          ></span>
-        </label>
-      </div>
-    </div>
-    
-    {/* Only show these controls if minimal connections are visible */}
-    {!config.hideMinimalConnections && (
-      <div className="mt-2">
-        {/* Minimal connection color control */}
-        <div className="flex items-center justify-between mt-1.5 text-xs">
-          <label>Color:</label>
-          <div className="flex items-center">
-            <input
-              type="color"
-              value={config.minimalConnectionRibbonColor}
-              onChange={(e) => onConfigChange({ minimalConnectionRibbonColor: e.target.value })}
-              className="w-6 h-6 rounded cursor-pointer"
-            />
-          </div>
-        </div>
-        
-        {/* Minimal connection opacity control */}
-        <div className="flex items-center justify-between mt-1.5 text-xs">
-          <label>Opacity: {config.minimalConnectionRibbonOpacity.toFixed(2)}</label>
-          <input
-            type="range"
-            min="0.05"
-            max="0.5"
-            step="0.05"
-            value={config.minimalConnectionRibbonOpacity}
-            onChange={(e) => onConfigChange({ minimalConnectionRibbonOpacity: parseFloat(e.target.value) })}
-            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-          />
-        </div>
-        
-        {/* Minimal connection stroke properties */}
-        <div className="flex items-center justify-between mt-1.5 text-xs">
-          <label>Stroke Color:</label>
-          <div className="flex items-center">
-            <input
-              type="color"
-              value={config.minimalConnectionRibbonStrokeColor}
-              onChange={(e) => onConfigChange({ minimalConnectionRibbonStrokeColor: e.target.value })}
-              className="w-6 h-6 rounded cursor-pointer"
-            />
-          </div>
-        </div>
-        
-        <div className="flex items-center justify-between mt-1.5 text-xs">
-          <label>Stroke Width: {config.minimalConnectionRibbonStrokeWidth.toFixed(1)}</label>
-          <input
-            type="range"
-            min="0.1"
-            max="1.0"
-            step="0.1"
-            value={config.minimalConnectionRibbonStrokeWidth}
-            onChange={(e) => onConfigChange({ minimalConnectionRibbonStrokeWidth: parseFloat(e.target.value) })}
-            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-          />
-        </div>
-        
-        <div className="flex items-center justify-between mt-1.5 text-xs">
-          <label>Stroke Opacity: {config.minimalConnectionRibbonStrokeOpacity.toFixed(2)}</label>
-          <input
-            type="range"
-            min="0.1"
-            max="0.5"
-            step="0.05"
-            value={config.minimalConnectionRibbonStrokeOpacity}
-            onChange={(e) => onConfigChange({ minimalConnectionRibbonStrokeOpacity: parseFloat(e.target.value) })}
-            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-          />
-        </div>
-      </div>
-    )}
-  </div>
+  {/* Note: Minimal Connections styling moved to Connection Types section for better organization */}
   
   {/* Connection threshold control */}
   <div className="mt-3">

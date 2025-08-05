@@ -198,7 +198,8 @@ maxWidth: number;                  // Maximum connection width (1.0-10.0)
 // Minimal connection customization
 minimalConnectionWidth: number;         // Base width for minimal connections (0.05-1.0)
 minimalConnectionWidthScaling: number;  // Scaling factor for minimal connections (0.1-3.0)
-minimalConnectionColor: string;         // Color for minimal connections
+minimalConnectionColorMode: 'theme' | 'custom' | 'category';  // Color mode: use current theme, custom color, or per-category
+minimalConnectionCustomColor: string;   // Custom color when colorMode is 'custom'
 minimalConnectionOpacity: number;       // Opacity for minimal connections (0.1-1.0)
 }
 
@@ -426,7 +427,8 @@ maxWidth: 5.0,                   // Default: reasonable maximum width
 // Minimal connection customization defaults - subtle background elements
 minimalConnectionWidth: 0.05,         // Very thin for background forced connections
 minimalConnectionWidthScaling: 0.3,   // Much smaller scaling than real connections
-minimalConnectionColor: '#e8e8e8',    // Light gray for subtle background
+minimalConnectionColorMode: 'theme',  // Default to using current color theme
+minimalConnectionCustomColor: '#e8e8e8',    // Fallback custom color
 minimalConnectionOpacity: 0.2,        // Very transparent background element
 
   });
@@ -972,6 +974,31 @@ const getThemeColor = useCallback((category: string): string => {
   // Final fallback
   return "#3498db";
 }, [colorTheme, customNodeColors, dynamicColorThemes]);
+
+// Function to get minimal connection color based on mode and category
+const getMinimalConnectionColor = useCallback((category?: string): string => {
+  switch (chordConfig.minimalConnectionColorMode) {
+    case 'theme':
+      // Use current color theme but with reduced saturation for subtleness
+      if (category) {
+        const themeColor = getThemeColor(category);
+        return d3.rgb(themeColor).copy({ opacity: 0.3 }).toString();
+      }
+      return d3.rgb(getThemeColor('default')).copy({ opacity: 0.3 }).toString();
+    
+    case 'category':
+      // Use category-specific colors from theme
+      if (category) {
+        return getThemeColor(category);
+      }
+      return getThemeColor('default');
+    
+    case 'custom':
+    default:
+      // Use the custom color
+      return chordConfig.minimalConnectionCustomColor;
+  }
+}, [chordConfig.minimalConnectionColorMode, chordConfig.minimalConnectionCustomColor, getThemeColor]);
 
 const initializeParticles = useCallback(() => {
   try {
@@ -1626,7 +1653,13 @@ const updateRibbonAppearance = useCallback(() => {
       if (!chordConfig.useColoredRibbons) {
         return isRealConn ? 
           chordConfig.realConnectionRibbonColor : 
-          (chordConfig.minimalConnectionColor || chordConfig.minimalConnectionRibbonColor);
+          (() => {
+            // Get category for this connection
+            const sourceCategory = showDetailedView && d.source.index < detailedNodeData.length
+              ? detailedNodeData[d.source.index].category
+              : uniqueCategories[d.source.index];
+            return getMinimalConnectionColor(sourceCategory);
+          })();
       }
       
       // Otherwise use category colors
@@ -1636,7 +1669,7 @@ const updateRibbonAppearance = useCallback(() => {
           const sourceNode = detailedNodeData[(d as { source: { index: number } }).source.index];
           return getNodeColor({ id: "", category: sourceNode.category });
         }
-        return "#999"; // Fallback
+        return getThemeColor('default'); // Use theme fallback
       } else {
         // For category view, use source category color
         const sourceCategory = uniqueCategories[(d as { source: { index: number } }).source.index];
@@ -1720,7 +1753,7 @@ const updateArcAppearance = useCallback(() => {
             const node = detailedNodeData[d.index];
             return getNodeColor({ id: "", category: node.category });
           }
-          return "#999"; // Fallback
+          return getThemeColor('default'); // Use theme fallback
         } else {
           // For category view - use the index from the data point itself
           const category = uniqueCategories[d.index];
@@ -1728,7 +1761,7 @@ const updateArcAppearance = useCallback(() => {
         }
       } catch (err) {
         console.error('[CHORD-UPDATE] Error getting arc fill color:', err);
-        return "#999"; // Fallback on error
+        return getThemeColor('default'); // Use theme fallback on error
       }
     })
     .attr("stroke", chordConfig.arcStrokeColor)
@@ -1797,7 +1830,8 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
     'ribbonFillColor', 'ribbonStrokeColor', 'ribbonOpacity',
     'widthScaling', 'minWidth', 'maxWidth', 'uniformWidth',
     'minimalConnectionWidth', 'minimalConnectionWidthScaling',
-    'minimalConnectionOpacity', 'realConnectionOpacity', 'realConnectionThreshold'
+    'minimalConnectionOpacity', 'minimalConnectionColorMode', 'minimalConnectionCustomColor',
+    'realConnectionOpacity', 'realConnectionThreshold'
   ];
   
   const arcStyleProps = [
@@ -2861,7 +2895,7 @@ groups.append("path")
         const color = getThemeColor(node.category);
         return color;
       }
-      return "#999"; // Fallback
+      return getThemeColor('default'); // Use theme fallback
     } else {
       // For category view - use the index from the data point itself
       const category = uniqueCategories[d.index];
@@ -3069,7 +3103,13 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
                if (!useColoredRibbons) {
                  return isRealConn ? 
                    chordConfig.realConnectionRibbonColor : 
-                   (chordConfig.minimalConnectionColor || chordConfig.minimalConnectionRibbonColor);
+                   (() => {
+                     // Get category for this connection
+                     const sourceCategory = showDetailedView && d.source.index < detailedNodeData.length
+                       ? detailedNodeData[d.source.index].category
+                       : uniqueCategories[d.source.index];
+                     return getMinimalConnectionColor(sourceCategory);
+                   })();
                }
           
           // Otherwise use category colors
@@ -3079,7 +3119,7 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
               const sourceNode = detailedNodeData[d.source.index];
               return getNodeColor({ id: "", category: sourceNode.category });
             }
-            return "#999"; // Fallback
+            return getThemeColor('default'); // Use theme fallback
           } else {
             // For category view, use source category color
             const sourceCategory = uniqueCategories[d.source.index];
@@ -3160,7 +3200,7 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
             d3.select(this)
               .style("opacity", 1)
               .attr("stroke-width", chordStrokeWidth * 1.5)
-              .attr("stroke", "#ffffff");
+              .attr("stroke", chordConfig.arcStrokeColor);
           
             // Get tooltip details based on view mode
             let tooltipContent = "";
@@ -3683,7 +3723,7 @@ d3.select(this).style("display", isVisible ? "block" : "none");
             
             // If using monochrome ribbons, return a neutral color
             if (!useColoredRibbons) {
-              return "#999999"; // Neutral gray for monochrome mode
+              return chordConfig.ribbonFillColor; // Use configured ribbon color
             }
             
             // Otherwise use category colors
@@ -3693,7 +3733,7 @@ d3.select(this).style("display", isVisible ? "block" : "none");
                 const sourceNode = detailedNodeData[d.source.index];
                 return getNodeColor({ id: "", category: sourceNode.category });
               }
-              return "#999"; // Fallback
+              return getThemeColor('default'); // Use theme fallback
             } else {
               // For category view, use source category color
               const sourceCategory = uniqueCategories[d.source.index];
@@ -3703,7 +3743,7 @@ d3.select(this).style("display", isVisible ? "block" : "none");
           .attr("stroke", d => {
             // For monochrome mode, use a darker gray for stroke
             if (!useColoredRibbons) {
-              return d3.rgb("#777777").toString();
+              return d3.rgb(chordConfig.ribbonFillColor).darker(0.3).toString();
             }
             
             // Otherwise, apply a slightly darker stroke color based on the fill
@@ -4086,7 +4126,7 @@ else if (particleMode && !useWebGLRenderer && chordConfig.showParticlesLayer && 
         
         // Highlight this arc
         d3.select(this).select("path")
-          .attr("stroke", "#ffffff")
+          .attr("stroke", chordConfig.arcStrokeColor)
           .attr("stroke-width", chordStrokeWidth * 1.5);
           
         // Enhanced tooltip for group hovering
