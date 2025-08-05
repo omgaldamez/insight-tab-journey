@@ -283,7 +283,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                     </label>
                   </div>
                   
-                  {/* Show All Nodes Control */}
+                  {/* Show All Nodes Control - context-aware description */}
                   <div className="flex items-center mt-1.5">
                     <label className="flex items-center cursor-pointer">
                       <div className="relative mr-2">
@@ -296,7 +296,17 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                         <div className={`w-8 h-4 rounded-full transition-colors ${showAllNodes ? 'bg-green-500' : 'bg-gray-500'}`}></div>
                         <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${showAllNodes ? 'translate-x-4' : ''}`}></div>
                       </div>
-                      <span className="text-xs">Show All Nodes</span>
+                      <div className="flex flex-col">
+                        <span className="text-xs">
+                          {showDetailedView ? 'Force All Connections' : 'Show All Categories'}
+                        </span>
+                        <span className="text-xs text-white/50">
+                          {showDetailedView 
+                            ? 'Create connections between all node pairs'
+                            : 'Include categories without connections'
+                          }
+                        </span>
+                      </div>
                     </label>
                   </div>
                   
@@ -406,85 +416,119 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                     </div>
                   )}
                   
-                  {/* Minimal Connection Customization */}
-                  <div className="border-t border-white/5 mt-2 pt-2">
-                    <h4 className="text-xs font-medium mb-1.5 text-white/70">Forced Connections</h4>
-                    
-                    {/* Show Minimal Connections Toggle */}
-                    <div className="flex items-center mt-1.5">
-                      <label className="flex items-center cursor-pointer">
-                        <div className="relative mr-2">
-                          <input
-                            type="checkbox"
-                            className="sr-only"
-                            checked={config.showMinimalConnections}
-                            onChange={() => onConfigChange({ showMinimalConnections: !config.showMinimalConnections })}
-                          />
-                          <div className={`w-8 h-4 rounded-full transition-colors ${config.showMinimalConnections ? 'bg-gray-400' : 'bg-gray-600'}`}></div>
-                          <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showMinimalConnections ? 'translate-x-4' : ''}`}></div>
-                        </div>
-                        <span className="text-xs">Show Forced</span>
-                      </label>
-                    </div>
-                    
-                    {/* Minimal Connection Controls - only show when enabled */}
-                    {config.showMinimalConnections && (
-                      <div className="ml-2 mt-2 space-y-2">
-                        {/* Minimal Connection Width */}
-                        <div className="flex items-center justify-between text-xs">
-                          <label>Width: {config.minimalConnectionWidth.toFixed(2)}</label>
-                          <input
-                            type="range"
-                            min="0.05"
-                            max="1.0"
-                            step="0.01"
-                            value={config.minimalConnectionWidth}
-                            onChange={(e) => onConfigChange({ minimalConnectionWidth: parseFloat(e.target.value) })}
-                            className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                        
-                        {/* Minimal Connection Width Scaling */}
-                        <div className="flex items-center justify-between text-xs">
-                          <label>Scaling: {config.minimalConnectionWidthScaling.toFixed(1)}x</label>
-                          <input
-                            type="range"
-                            min="0.1"
-                            max="3.0"
-                            step="0.1"
-                            value={config.minimalConnectionWidthScaling}
-                            onChange={(e) => onConfigChange({ minimalConnectionWidthScaling: parseFloat(e.target.value) })}
-                            className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-                        
-                        {/* Minimal Connection Color */}
-                        <div className="flex items-center justify-between text-xs">
-                          <label>Color:</label>
-                          <input
-                            type="color"
-                            value={config.minimalConnectionColor}
-                            onChange={(e) => onConfigChange({ minimalConnectionColor: e.target.value })}
-                            className="w-8 h-4 rounded border-none cursor-pointer"
-                          />
-                        </div>
-                        
-                        {/* Minimal Connection Opacity */}
-                        <div className="flex items-center justify-between text-xs">
-                          <label>Opacity: {(config.minimalConnectionOpacity * 100).toFixed(0)}%</label>
-                          <input
-                            type="range"
-                            min="0.1"
-                            max="1.0"
-                            step="0.05"
-                            value={config.minimalConnectionOpacity}
-                            onChange={(e) => onConfigChange({ minimalConnectionOpacity: parseFloat(e.target.value) })}
-                            className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
+                  {/* Connection Type Management - Only show in detailed mode */}
+                  {showDetailedView && (
+                    <div className="border-t border-white/5 mt-2 pt-2">
+                      <h4 className="text-xs font-medium mb-1.5 text-white/70">Connection Types</h4>
+                      <div className="text-xs mb-2 text-white/60">
+                        Detailed mode shows individual nodes. Control which connection types to display:
                       </div>
-                    )}
-                  </div>
+                      
+                      {/* Show Real Connections Toggle - controls all layers */}
+                      <div className="flex items-center mt-1.5">
+                        <label className="flex items-center cursor-pointer">
+                          <div className="relative mr-2">
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={config.showRealConnections}
+                              onChange={() => onConfigChange({ 
+                                showRealConnections: !config.showRealConnections,
+                                // Keep existing filtering states for other layers for now
+                                // (they can be controlled independently if needed)
+                              })}
+                            />
+                            <div className={`w-8 h-4 rounded-full transition-colors ${config.showRealConnections ? 'bg-blue-500' : 'bg-gray-600'}`}></div>
+                            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showRealConnections ? 'translate-x-4' : ''}`}></div>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs">Show Real Connections</span>
+                            <span className="text-xs text-blue-300">From actual data</span>
+                          </div>
+                        </label>
+                      </div>
+                      
+                      {/* Show Forced Connections Toggle */}
+                      <div className="flex items-center mt-1.5">
+                        <label className="flex items-center cursor-pointer">
+                          <div className="relative mr-2">
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={config.showMinimalConnections}
+                              onChange={() => onConfigChange({ showMinimalConnections: !config.showMinimalConnections })}
+                            />
+                            <div className={`w-8 h-4 rounded-full transition-colors ${config.showMinimalConnections ? 'bg-red-500' : 'bg-gray-600'}`}></div>
+                            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showMinimalConnections ? 'translate-x-4' : ''}`}></div>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs">Show Forced Connections</span>
+                            <span className="text-xs text-red-300">Artificial connections</span>
+                          </div>
+                        </label>
+                      </div>
+                      
+                      {/* Forced Connection Styling - only show when enabled */}
+                      {config.showMinimalConnections && (
+                        <div className="ml-4 mt-2 space-y-2 p-2 bg-white/5 rounded">
+                          <div className="text-xs font-medium text-red-300">Forced Connection Styling</div>
+                          
+                          {/* Forced Connection Width */}
+                          <div className="flex items-center justify-between text-xs">
+                            <label>Width: {config.minimalConnectionWidth.toFixed(2)}</label>
+                            <input
+                              type="range"
+                              min="0.05"
+                              max="2.0"
+                              step="0.01"
+                              value={config.minimalConnectionWidth}
+                              onChange={(e) => onConfigChange({ minimalConnectionWidth: parseFloat(e.target.value) })}
+                              className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                            />
+                          </div>
+                          
+                          {/* Forced Connection Scaling */}
+                          <div className="flex items-center justify-between text-xs">
+                            <label>Scaling: {config.minimalConnectionWidthScaling.toFixed(1)}x</label>
+                            <input
+                              type="range"
+                              min="0.1"
+                              max="5.0"
+                              step="0.1"
+                              value={config.minimalConnectionWidthScaling}
+                              onChange={(e) => onConfigChange({ minimalConnectionWidthScaling: parseFloat(e.target.value) })}
+                              className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                            />
+                          </div>
+                          
+                          {/* Forced Connection Color */}
+                          <div className="flex items-center justify-between text-xs">
+                            <label>Color:</label>
+                            <input
+                              type="color"
+                              value={config.minimalConnectionColor}
+                              onChange={(e) => onConfigChange({ minimalConnectionColor: e.target.value })}
+                              className="w-8 h-4 rounded border-none cursor-pointer"
+                            />
+                          </div>
+                          
+                          {/* Forced Connection Opacity */}
+                          <div className="flex items-center justify-between text-xs">
+                            <label>Opacity: {(config.minimalConnectionOpacity * 100).toFixed(0)}%</label>
+                            <input
+                              type="range"
+                              min="0.1"
+                              max="1.0"
+                              step="0.05"
+                              value={config.minimalConnectionOpacity}
+                              onChange={(e) => onConfigChange({ minimalConnectionOpacity: parseFloat(e.target.value) })}
+                              className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -612,22 +656,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
         </label>
       </div>
       
-      {/* Real Connections Only Toggle */}
-      <div className="flex items-center mt-1.5">
-        <label className="flex items-center cursor-pointer">
-          <div className="relative mr-2">
-            <input
-              type="checkbox"
-              className="sr-only"
-              checked={config.showOnlyRealConnectionsRibbons}
-              onChange={() => handleToggleChange('showOnlyRealConnectionsRibbons')}
-            />
-            <div className={`w-8 h-4 rounded-full transition-colors ${config.showOnlyRealConnectionsRibbons ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
-            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsRibbons ? 'translate-x-4' : ''}`}></div>
-          </div>
-          <span className="text-xs">Real Connections Only</span>
-        </label>
-      </div>
+      {/* Ribbon filtering is now handled in Display tab Connection Types */}
     </div>
     
    {/* Ribbon Style Controls - wrap in a grid for better layout */}
@@ -1266,22 +1295,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
         />
       </div>
       
-      {/* Real Connections Only for Ribbons */}
-      <div className="flex items-center mt-1.5 pl-6">
-        <label className="flex items-center cursor-pointer">
-          <div className="relative mr-2">
-            <input
-              type="checkbox"
-              className="sr-only"
-              checked={config.showOnlyRealConnectionsRibbons}
-              onChange={() => handleToggleChange('showOnlyRealConnectionsRibbons')}
-            />
-            <div className={`w-8 h-4 rounded-full transition-colors ${config.showOnlyRealConnectionsRibbons ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
-            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsRibbons ? 'translate-x-4' : ''}`}></div>
-          </div>
-          <span className="text-xs">Real connections only</span>
-        </label>
-      </div>
+      {/* Connection filtering moved to Display tab for coherence */}
     </>
   )}
   
@@ -1304,22 +1318,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
   
   {config.showGeometricShapesLayer && (
     <>
-      {/* Real Connections Only for Shapes */}
-      <div className="flex items-center mt-1.5 pl-6">
-        <label className="flex items-center cursor-pointer">
-          <div className="relative mr-2">
-            <input
-              type="checkbox"
-              className="sr-only"
-              checked={config.showOnlyRealConnectionsShapes}
-              onChange={() => handleToggleChange('showOnlyRealConnectionsShapes')}
-            />
-            <div className={`w-8 h-4 rounded-full transition-colors ${config.showOnlyRealConnectionsShapes ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
-            <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsShapes ? 'translate-x-4' : ''}`}></div>
-          </div>
-          <span className="text-xs">Real connections only</span>
-        </label>
-      </div>
+      {/* Shape filtering moved to Display tab for coherence */}
 
 {/* Ribbon Color Controls - Only show when Chord Ribbons are enabled */}
 {config.showChordRibbons && (
@@ -1374,106 +1373,7 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
   </div>
 </div>
 
-{/* New Connection Filtering Section */}
-<div className="border-t border-white/10 mt-4 pt-2">
-  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Connection Filtering</h3>
-  
-  <div className="text-xs mb-2 text-white/70">
-    Control which connections are shown across all layers.
-  </div>
-  
-  {/* Master toggle for all layers */}
-  <div className="flex items-center mt-2">
-    <label className="flex items-center cursor-pointer">
-      <div className="relative mr-2">
-        <input
-          type="checkbox"
-          className="sr-only"
-          checked={config.filterRealConnectionsOnly}
-          onChange={() => onConfigChange({ 
-            filterRealConnectionsOnly: !config.filterRealConnectionsOnly,
-            // Apply to all layers for consistency when enabling
-            showOnlyRealConnectionsRibbons: !config.filterRealConnectionsOnly,
-            showOnlyRealConnectionsShapes: !config.filterRealConnectionsOnly,
-            particlesOnlyRealConnections: !config.filterRealConnectionsOnly
-          })}
-        />
-        <div className={`w-8 h-4 rounded-full transition-colors ${config.filterRealConnectionsOnly ? 'bg-yellow-500' : 'bg-gray-500'}`}></div>
-        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.filterRealConnectionsOnly ? 'translate-x-4' : ''}`}></div>
-      </div>
-      <span className="text-xs font-medium">Show real connections only</span>
-      <span className="text-xs ml-1 text-gray-400">(all layers)</span>
-    </label>
-  </div>
-  
-  {/* Individual layer overrides - only shown when master filter is active */}
-  {config.filterRealConnectionsOnly && (
-    <div className="mt-2 pl-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-xs">Ribbons:</label>
-        <div className="relative inline-block w-8 h-4">
-          <input
-            type="checkbox"
-            className="sr-only"
-            checked={config.showOnlyRealConnectionsRibbons}
-            onChange={() => onConfigChange({ showOnlyRealConnectionsRibbons: !config.showOnlyRealConnectionsRibbons })}
-            id="ribbon-connections-toggle"
-          />
-          <label 
-            htmlFor="ribbon-connections-toggle"
-            className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.showOnlyRealConnectionsRibbons ? 'bg-blue-500' : 'bg-gray-500'}`}
-          >
-            <span 
-              className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsRibbons ? 'translate-x-4' : ''}`}
-            ></span>
-          </label>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-between">
-        <label className="text-xs">Shapes:</label>
-        <div className="relative inline-block w-8 h-4">
-          <input
-            type="checkbox"
-            className="sr-only"
-            checked={config.showOnlyRealConnectionsShapes}
-            onChange={() => onConfigChange({ showOnlyRealConnectionsShapes: !config.showOnlyRealConnectionsShapes })}
-            id="shapes-connections-toggle"
-          />
-          <label 
-            htmlFor="shapes-connections-toggle"
-            className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.showOnlyRealConnectionsShapes ? 'bg-purple-500' : 'bg-gray-500'}`}
-          >
-            <span 
-              className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showOnlyRealConnectionsShapes ? 'translate-x-4' : ''}`}
-            ></span>
-          </label>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-between">
-        <label className="text-xs">Particles:</label>
-        <div className="relative inline-block w-8 h-4">
-          <input
-            type="checkbox"
-            className="sr-only"
-            checked={config.particlesOnlyRealConnections}
-            onChange={() => onConfigChange({ particlesOnlyRealConnections: !config.particlesOnlyRealConnections })}
-            id="particles-connections-toggle"
-          />
-          <label 
-            htmlFor="particles-connections-toggle"
-            className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition ${config.particlesOnlyRealConnections ? 'bg-green-500' : 'bg-gray-500'}`}
-          >
-            <span 
-              className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.particlesOnlyRealConnections ? 'translate-x-4' : ''}`}
-            ></span>
-          </label>
-        </div>
-      </div>
-    </div>
-  )}
-</div>
+{/* Connection filtering is now centralized in the Display tab Connection Types section */}
 
             {/* 3D/WebGL Tab */}
             {activeTab === '3d' && (
