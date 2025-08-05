@@ -1152,7 +1152,8 @@ export const prepareChordMatrix = (
   showRealConnections: boolean = true,
   showMinimalConnections: boolean = true,
   minimalConnectionWidth: number = 0.1,
-  minimalConnectionWidthScaling: number = 1.0
+  minimalConnectionWidthScaling: number = 1.0,
+  realConnectionThreshold: number = 0.2
 ): { matrix: number[][], connectionTypes: string[][] } => {
   if (!categoryMatrix.length) return { matrix: [], connectionTypes: [] };
   
@@ -1196,7 +1197,7 @@ export const prepareChordMatrix = (
     // Initialize connection types for category view
     connectionTypes = categoryMatrix.map((row, i) => 
       row.map((value, j) => {
-        return value > 0.2 ? 'real' : (value > 0 ? 'minimal' : 'none');
+        return value > realConnectionThreshold ? 'real' : (value > 0 ? 'minimal' : 'none');
       })
     );
   }
@@ -1206,12 +1207,12 @@ export const prepareChordMatrix = (
     // For category view with even distribution
     matrixToUse = matrixToUse.map((row, i) => {
       const rowSum = row.reduce((a, b) => a + b, 0);
-      if (rowSum <= 0.2 * (uniqueCategories.length - 1)) {
+      if (rowSum <= realConnectionThreshold * (uniqueCategories.length - 1)) {
         // If just minimal connections, enhance them slightly for visibility
         return row.map((val, j) => {
           if (val === 0) return 0;
-          const newVal = val <= 0.2 ? 0.3 : val;
-          connectionTypes[i][j] = val <= 0.2 ? 'minimal' : 'real';
+          const newVal = val <= realConnectionThreshold ? 0.3 : val;
+          connectionTypes[i][j] = val <= realConnectionThreshold ? 'minimal' : 'real';
           return newVal;
         });
       }
@@ -1221,8 +1222,8 @@ export const prepareChordMatrix = (
         // Keep diagonal at 0
         if (i === j) return 0;
         // Scale other values - ensure minimal values stay visible
-        const newVal = val <= 0.2 ? 0.3 : Math.max(1, val / rowSum * 10);
-        connectionTypes[i][j] = val <= 0.2 ? 'minimal' : 'real';
+        const newVal = val <= realConnectionThreshold ? 0.3 : Math.max(1, val / rowSum * 10);
+        connectionTypes[i][j] = val <= realConnectionThreshold ? 'minimal' : 'real';
         return newVal;
       });
     });
@@ -1248,11 +1249,11 @@ export const prepareChordMatrix = (
             }
           } else {
             // For connected-only view, zero out minimal connections
-            if (matrixToUse[i][j] <= 0.2) {
+            if (matrixToUse[i][j] <= realConnectionThreshold) {
               matrixToUse[i][j] = 0;
               connectionTypes[i][j] = 'none';
             }
-            if (matrixToUse[j][i] <= 0.2) {
+            if (matrixToUse[j][i] <= realConnectionThreshold) {
               matrixToUse[j][i] = 0;
               connectionTypes[j][i] = 'none';
             }

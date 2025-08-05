@@ -98,6 +98,21 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
 const handleToggleChange = (field: keyof ChordDiagramConfig) => {
   if ((field === 'showParticlesLayer' || field === 'showGeometricShapesLayer') && onLayerToggle) {
     onLayerToggle(field, !config[field]);
+  } else if (field === 'showDetailedView') {
+    // Special handling for detailed view toggle
+    const newDetailedView = !showDetailedView;
+    onConfigChange({ 
+      [field]: newDetailedView,
+      // When entering detailed view, automatically enable forced connections as background
+      ...(newDetailedView && {
+        showMinimalConnections: true,  // Show forced connections as background
+        showRealConnections: true,     // Keep real connections visible
+      })
+    });
+    // Also trigger the layer toggle for showAllNodes to force all connections
+    if (newDetailedView && onLayerToggle) {
+      onLayerToggle('showAllNodes', true);
+    }
   } else {
     onConfigChange({ [field]: !config[field] });
   }
@@ -332,7 +347,14 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                 
                 {/* Connection Width Controls */}
                 <div className="border-t border-white/10 mt-2 pt-2">
-                  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Connection Width</h3>
+                  <h3 className="text-xs font-semibold mb-1.5 text-white/80">
+                    {showDetailedView ? 'Real Connection Appearance' : 'Connection Width'}
+                  </h3>
+                  {showDetailedView && (
+                    <div className="text-xs mb-2 text-blue-300">
+                      Controls apply only to real connections (from actual data)
+                    </div>
+                  )}
                   
                   {/* Uniform Width Control */}
                   <div className="flex items-center mt-1.5">
@@ -468,18 +490,21 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                         </label>
                       </div>
                       
-                      {/* Forced Connection Styling - only show when enabled */}
+                      {/* Forced connections customization */}
                       {config.showMinimalConnections && (
-                        <div className="ml-4 mt-2 space-y-2 p-2 bg-white/5 rounded">
-                          <div className="text-xs font-medium text-red-300">Forced Connection Styling</div>
+                        <div className="ml-4 mt-2 space-y-2 p-2 bg-gray-800/20 rounded border border-gray-600">
+                          <div className="text-xs font-medium text-gray-300">Forced Connection Appearance</div>
+                          <div className="text-xs text-gray-400 mb-2">
+                            Customize the background forced connections
+                          </div>
                           
                           {/* Forced Connection Width */}
                           <div className="flex items-center justify-between text-xs">
                             <label>Width: {config.minimalConnectionWidth.toFixed(2)}</label>
                             <input
                               type="range"
-                              min="0.05"
-                              max="2.0"
+                              min="0.01"
+                              max="0.5"
                               step="0.01"
                               value={config.minimalConnectionWidth}
                               onChange={(e) => onConfigChange({ minimalConnectionWidth: parseFloat(e.target.value) })}
@@ -487,16 +512,16 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                             />
                           </div>
                           
-                          {/* Forced Connection Scaling */}
+                          {/* Forced Connection Opacity */}
                           <div className="flex items-center justify-between text-xs">
-                            <label>Scaling: {config.minimalConnectionWidthScaling.toFixed(1)}x</label>
+                            <label>Opacity: {(config.minimalConnectionOpacity * 100).toFixed(0)}%</label>
                             <input
                               type="range"
-                              min="0.1"
-                              max="5.0"
-                              step="0.1"
-                              value={config.minimalConnectionWidthScaling}
-                              onChange={(e) => onConfigChange({ minimalConnectionWidthScaling: parseFloat(e.target.value) })}
+                              min="0.05"
+                              max="0.8"
+                              step="0.05"
+                              value={config.minimalConnectionOpacity}
+                              onChange={(e) => onConfigChange({ minimalConnectionOpacity: parseFloat(e.target.value) })}
                               className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
                             />
                           </div>
@@ -509,20 +534,6 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                               value={config.minimalConnectionColor}
                               onChange={(e) => onConfigChange({ minimalConnectionColor: e.target.value })}
                               className="w-8 h-4 rounded border-none cursor-pointer"
-                            />
-                          </div>
-                          
-                          {/* Forced Connection Opacity */}
-                          <div className="flex items-center justify-between text-xs">
-                            <label>Opacity: {(config.minimalConnectionOpacity * 100).toFixed(0)}%</label>
-                            <input
-                              type="range"
-                              min="0.1"
-                              max="1.0"
-                              step="0.05"
-                              value={config.minimalConnectionOpacity}
-                              onChange={(e) => onConfigChange({ minimalConnectionOpacity: parseFloat(e.target.value) })}
-                              className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
                             />
                           </div>
                         </div>

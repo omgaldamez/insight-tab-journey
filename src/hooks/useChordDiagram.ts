@@ -423,11 +423,11 @@ symmetricConnections: false,      // Default: maintain directional differences
 minWidth: 0.1,                   // Default: minimal visible width
 maxWidth: 5.0,                   // Default: reasonable maximum width
 
-// Minimal connection customization defaults
-minimalConnectionWidth: 0.3,          // More visible width for forced connections
-minimalConnectionWidthScaling: 1.0,   // Same scaling as regular connections initially
-minimalConnectionColor: '#ff6b6b',    // Bright red for forced connections (more visible)
-minimalConnectionOpacity: 0.7,        // More opaque than before
+// Minimal connection customization defaults - subtle background elements
+minimalConnectionWidth: 0.05,         // Very thin for background forced connections
+minimalConnectionWidthScaling: 0.3,   // Much smaller scaling than real connections
+minimalConnectionColor: '#e8e8e8',    // Light gray for subtle background
+minimalConnectionOpacity: 0.2,        // Very transparent background element
 
   });
   
@@ -648,7 +648,7 @@ const processCalculationBatch = (startIdx: number) => {
       }
       
       totalConnectionValue += connectionValue;
-      const isRealConnection = connectionValue > 0.2;
+      const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
       
       // Only calculate if we should add particles
       const shouldAddParticles = chordConfig.particleMode && 
@@ -1614,7 +1614,7 @@ const updateRibbonAppearance = useCallback(() => {
   // Update CSS variables for connection opacities
   ribbonGroup
     .style('--real-connection-opacity', chordConfig.realConnectionRibbonOpacity)
-    .style('--minimal-connection-opacity', chordConfig.minimalConnectionRibbonOpacity);
+    .style('--minimal-connection-opacity', chordConfig.minimalConnectionOpacity);
   
   // Update individual ribbon properties
   ribbonGroup.selectAll('path')
@@ -1794,7 +1794,10 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
     'minimalConnectionRibbonOpacity', 'minimalConnectionRibbonColor',
     'minimalConnectionRibbonStrokeColor', 'minimalConnectionRibbonStrokeWidth',
     'showOnlyRealConnectionsRibbons', 'filterRealConnectionsOnly', 
-    'ribbonFillColor', 'ribbonStrokeColor', 'ribbonOpacity'
+    'ribbonFillColor', 'ribbonStrokeColor', 'ribbonOpacity',
+    'widthScaling', 'minWidth', 'maxWidth', 'uniformWidth',
+    'minimalConnectionWidth', 'minimalConnectionWidthScaling',
+    'minimalConnectionOpacity', 'realConnectionOpacity', 'realConnectionThreshold'
   ];
   
   const arcStyleProps = [
@@ -2304,7 +2307,7 @@ useEffect(() => {
     // Set a flag to force particle regeneration on next redraw
     window.forceParticleRegeneration = true;
   }
-}, [showDetailedView, showAllNodes, evenDistribution, chordConfig.uniformWidth, chordConfig.symmetricConnections, chordConfig.widthScaling, chordConfig.showRealConnections, chordConfig.showMinimalConnections, chordConfig.minimalConnectionWidth, chordConfig.minimalConnectionWidthScaling]);
+}, [showDetailedView, showAllNodes, evenDistribution, chordConfig.uniformWidth, chordConfig.symmetricConnections, chordConfig.widthScaling, chordConfig.showRealConnections, chordConfig.showMinimalConnections, chordConfig.minimalConnectionWidth, chordConfig.minimalConnectionWidthScaling, chordConfig.realConnectionThreshold]);
 
   // Use useMemo to calculate the matrix for rendering to avoid recalculation on every render
   const preparedMatrixData = useMemo(() => {
@@ -2323,7 +2326,8 @@ useEffect(() => {
       chordConfig.showRealConnections,
       chordConfig.showMinimalConnections,
       chordConfig.minimalConnectionWidth,
-      chordConfig.minimalConnectionWidthScaling
+      chordConfig.minimalConnectionWidthScaling,
+      chordConfig.realConnectionThreshold
     );
   }, [
     categoryMatrix, 
@@ -2340,7 +2344,8 @@ useEffect(() => {
     chordConfig.showRealConnections,
     chordConfig.showMinimalConnections,
     chordConfig.minimalConnectionWidth,
-    chordConfig.minimalConnectionWidthScaling
+    chordConfig.minimalConnectionWidthScaling,
+    chordConfig.realConnectionThreshold
   ]);
 
   // Extract matrix for easier use
@@ -3131,7 +3136,7 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
               }
             }
             
-            const isRealConnection = connectionValue > 0.2;
+            const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
             
             // Apply real connections filter if enabled
             if (chordConfig.showOnlyRealConnectionsRibbons && !isRealConnection) {
@@ -3146,7 +3151,7 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
             // Use connection-specific opacity
             return isRealConnection ? 
               chordConfig.realConnectionRibbonOpacity : 
-              (chordConfig.minimalConnectionOpacity || chordConfig.minimalConnectionRibbonOpacity);
+              chordConfig.minimalConnectionOpacity;
           })
           .on("click", function(event, d) {
             event.stopPropagation(); // Stop event propagation
@@ -3359,7 +3364,7 @@ else {
         }
       }
       
-      const isRealConnection = connectionValue > 0.2;
+      const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
       
       // Add shapes if enabled and passes the real connection filter
       if (showShapes && (!chordConfig.showOnlyRealConnectionsShapes || isRealConnection)) {
@@ -3473,7 +3478,7 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
         }
       }
       
-      if (connectionValue > 0.2) {
+      if (connectionValue > chordConfig.realConnectionThreshold) {
         totalChordsWithParticles++;
       }
     });
@@ -3497,7 +3502,7 @@ else if (useGeometricShapes || (particleMode && !useWebGLRenderer)) {
     }
     
     // Determine if this is a real connection (value > 0.2)
-    const isRealConnection = connectionValue > 0.2;
+    const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
     
     // Only add particles if this setting allows it
     const shouldAddParticles = particleMode && 
@@ -3733,7 +3738,7 @@ d3.select(this).style("display", isVisible ? "block" : "none");
               }
             }
             
-            const isRealConnection = connectionValue > 0.2;
+            const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
             
             // Apply real connections filter if enabled
             if (chordConfig.showOnlyRealConnectionsRibbons && !isRealConnection) {
@@ -3756,7 +3761,9 @@ d3.select(this).style("display", isVisible ? "block" : "none");
               // For category matrix, scale opacity based on connection strength
               if (d.source.index < categoryMatrix.length && d.target.index < categoryMatrix[0].length) {
                 const value = categoryMatrix[d.source.index][d.target.index];
-                if (value <= 0.2) return 0.5; // Minimal connections get base opacity
+                if (value <= chordConfig.realConnectionThreshold) {
+                  return chordConfig.minimalConnectionOpacity; // Use configurable minimal connection opacity
+                }
                 // Scale between 0.6 and 0.9 for actual connections
                 return Math.max(0.6, Math.min(0.9, 0.6 + value / 20));
               }
@@ -3797,7 +3804,7 @@ d3.select(this).style("display", isVisible ? "block" : "none");
           }
         }
         
-        const isRealConnection = connectionValue > 0.2;
+        const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
         
         // Only add particles if they pass the filtering conditions
         const shouldAddParticles = (!chordConfig.particlesOnlyRealConnections || 
@@ -3919,7 +3926,7 @@ d3.select(this).style("display", isVisible ? "block" : "none");
                 }
               }
               
-              const isRealConnection = connectionValue > 0.2;
+              const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
               
               // Only include this path if it's a real connection
               if (isRealConnection && i < allPathElements.length) {
@@ -3963,7 +3970,7 @@ d3.select(this).style("display", isVisible ? "block" : "none");
               }
             }
             
-            const isRealConnection = connectionValue > 0.2;
+            const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
             
             // Only add shapes if the filter conditions are met
             const shouldAddShapes = (!chordConfig.showOnlyRealConnectionsShapes || 
@@ -4034,7 +4041,7 @@ else if (particleMode && !useWebGLRenderer && chordConfig.showParticlesLayer && 
         }
       }
       
-      const isRealConnection = connectionValue > 0.2;
+      const isRealConnection = connectionValue > chordConfig.realConnectionThreshold;
       
       // Only show particles if they pass the filtering conditions
       const shouldShowParticles = (!chordConfig.particlesOnlyRealConnections || 
