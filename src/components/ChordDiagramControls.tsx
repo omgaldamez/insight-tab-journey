@@ -51,7 +51,7 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
   // Destructure all config values for easier access
   const {
     chordStrokeWidth,
-    chordOpacity,
+    ribbonOpacity,
     chordStrokeOpacity,
     arcOpacity,
     chordWidthVariation,
@@ -730,16 +730,16 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
       {/* Fill Opacity Control - only enabled when filled ribbons is on */}
       <div className="flex items-center justify-between mt-2 text-xs">
         <label className={ribbonFillEnabled ? '' : 'text-gray-500'}>
-          Fill Opacity: {chordOpacity.toFixed(2)}
+          Fill Opacity: {ribbonOpacity.toFixed(2)}
         </label>
         <input
           type="range"
           min="0.1"
           max="1.0"
           step="0.05"
-          value={chordOpacity}
+          value={ribbonOpacity}
           disabled={!ribbonFillEnabled}
-          onChange={(e) => handleRangeChange('chordOpacity', parseFloat(e.target.value))}
+          onChange={(e) => handleRangeChange('ribbonOpacity', parseFloat(e.target.value))}
           className={`w-28 h-2 ${ribbonFillEnabled ? 'bg-gray-600' : 'bg-gray-700'} rounded-lg appearance-none cursor-pointer`}
         />
       </div>

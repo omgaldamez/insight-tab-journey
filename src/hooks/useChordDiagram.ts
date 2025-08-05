@@ -41,7 +41,7 @@ export interface ConnectionInfo {
 export interface ChordDiagramConfig {
   // Basic styling
   chordStrokeWidth: number;
-  chordOpacity: number;
+  // chordOpacity removed - use ribbonOpacity instead for clarity
   chordStrokeOpacity: number;
   arcOpacity: number;
 
@@ -273,7 +273,7 @@ export const useChordDiagram = ({
   const [chordConfig, setChordConfig] = useState<ChordDiagramConfig>({
     // Basic styling
     chordStrokeWidth: 0.5,
-    chordOpacity: 0.75,
+    // chordOpacity: 0.75, // Removed - use ribbonOpacity instead
     chordStrokeOpacity: 1.0,
     arcOpacity: 0.8,
 
@@ -444,7 +444,7 @@ minimalConnectionOpacity: 0.2,        // Very transparent background element
   
   // Extract all config properties
   const {
-    chordStrokeWidth, chordOpacity, chordStrokeOpacity, arcOpacity,
+    chordStrokeWidth, chordStrokeOpacity, arcOpacity, ribbonOpacity,
     chordWidthVariation, chordWidthPosition, chordWidthCustomPosition,
     strokeWidthVariation, strokeWidthPosition, strokeWidthCustomPosition,
     useGeometricShapes, shapeType, shapeSize, shapeSpacing, shapeFill, shapeStroke,
@@ -1821,7 +1821,7 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
   ];
   
   const ribbonStyleProps = [
-    'chordOpacity', 'chordStrokeWidth', 'chordStrokeOpacity',
+    'chordStrokeWidth', 'chordStrokeOpacity',
     'realConnectionRibbonOpacity', 'realConnectionRibbonColor',
     'realConnectionRibbonStrokeColor', 'realConnectionRibbonStrokeWidth',
     'minimalConnectionRibbonOpacity', 'minimalConnectionRibbonColor',
@@ -1872,20 +1872,19 @@ const updateConfig = useCallback((updates: Partial<ChordDiagramConfig>) => {
     console.log('[CONFIG-UPDATE] Position-affecting properties changed:', updates_by_category.position.join(', '));
   }
   
+  // UNIFIED STATE UPDATE - Apply all updates once at the beginning
+  setChordConfig(prev => ({
+    ...prev,
+    ...updates,
+    // Special synchronization for particle mode
+    ...(updates.particleMode && { showParticlesLayer: true }),
+    // Special synchronization for geometric shapes
+    ...(updates.useGeometricShapes && { showGeometricShapesLayer: true })
+  }));
+  
   // Special handling for particle mode toggle
   if ('particleMode' in updates) {
     console.log(`[CONFIG-UPDATE] Particle mode toggled: ${updates.particleMode}`);
-    
-    // If turning on particles, also synchronize showParticlesLayer
-    if (updates.particleMode) {
-      updates.showParticlesLayer = true;
-    }
-    
-    // Apply updates first
-    setChordConfig(prev => ({
-      ...prev,
-      ...updates
-    }));
     
     // Need to redraw
     setNeedsRedraw(true);
@@ -1925,12 +1924,6 @@ if (updates_by_category.arc.length > 0 &&
   updates_by_category.position.length === 0) {
 console.log('[CONFIG-UPDATE] Using optimized arc update');
 
-// Update config first
-setChordConfig(prev => ({
-  ...prev,
-  ...updates
-}));
-
 // Use the new update function with clear feedback
 const arcUpdateResult = updateArcAppearance();
 console.log(`[CONFIG-UPDATE] Arc update result: ${arcUpdateResult ? 'success' : 'failed'}`);
@@ -1947,12 +1940,6 @@ if (updates_by_category.ribbon.length > 0 &&
   updates_by_category.position.length === 0) {
 console.log('[CONFIG-UPDATE] Using optimized ribbon update');
 
-// Update config first
-setChordConfig(prev => ({
-  ...prev,
-  ...updates
-}));
-
 // Use the new update function
 updateRibbonAppearance();
 
@@ -1966,12 +1953,6 @@ if (updates_by_category.animation.length > 0 &&
   updates_by_category.ribbon.length === 0 &&
   updates_by_category.arc.length === 0) {
 console.log('[CONFIG-UPDATE] Using optimized animation update');
-
-// Update config first
-setChordConfig(prev => ({
-  ...prev,
-  ...updates
-}));
 
 // Use the new update function
 updateAnimationClasses();
@@ -1989,9 +1970,9 @@ if (updates_by_category.ribbon.length > 0 && updates_by_category.position.length
     const ribbonGroup = d3.select(svgRef.current).select('.chord-ribbons');
     
     // Update ribbon opacity
-    if ('ribbonOpacity' in updates || 'chordOpacity' in updates) {
-      const opacity = updates.ribbonOpacity || updates.chordOpacity || chordConfig.ribbonOpacity;
-      ribbonGroup.selectAll('path').style('fill-opacity', chordConfig.ribbonFillEnabled ? opacity : 0);
+    if ('ribbonOpacity' in updates) {
+      const ribbonFillEnabled = updates.ribbonFillEnabled !== undefined ? updates.ribbonFillEnabled : chordConfig.ribbonFillEnabled;
+      ribbonGroup.selectAll('path').style('fill-opacity', ribbonFillEnabled ? updates.ribbonOpacity : 0);
     }
     
     // Update stroke width
@@ -2004,12 +1985,6 @@ if (updates_by_category.ribbon.length > 0 && updates_by_category.position.length
       ribbonGroup.selectAll('path').attr('stroke-opacity', updates.chordStrokeOpacity);
     }
     
-    // Update config without triggering full redraw
-    setChordConfig(prev => ({
-      ...prev,
-      ...updates
-    }));
-    
     return; // Avoid unnecessary redraw
   } catch (error) {
     console.error('[RIBBON-UPDATE] Error updating ribbons:', error);
@@ -2017,11 +1992,7 @@ if (updates_by_category.ribbon.length > 0 && updates_by_category.position.length
   }
 }
 
-  // Update the configuration state
-  setChordConfig(prev => ({
-    ...prev,
-    ...updates
-  }));
+  // Configuration state already updated at the beginning
   
   // Directly update particles in SVG if relevant
   if (updates_by_category.particle.length > 0 && !chordConfig.useWebGLRenderer && svgRef.current && particlesInitialized) {
@@ -4228,7 +4199,7 @@ window.preserveParticlesDuringAnimation = false;
     needsRedraw,
     preparedMatrix,
     chordStrokeWidth,
-    chordOpacity,
+    ribbonOpacity,
     chordStrokeOpacity,
     arcOpacity,
     chordWidthVariation,
