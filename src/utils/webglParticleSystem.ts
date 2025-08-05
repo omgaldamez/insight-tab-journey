@@ -253,16 +253,36 @@ export class WebGLParticleSystem {
     // Reset existing path data
     this.pathData = [];
     
-    // IMPORTANT DEBUGGING - Log source paths
+    // IMPORTANT DEBUGGING - Log source paths and SVG context
     if (svgPaths.length > 0) {
       console.log('[WEBGL-PARTICLES-DEBUG] First path length:', svgPaths[0].getTotalLength());
       const bbox = svgPaths[0].getBBox();
       console.log('[WEBGL-PARTICLES-DEBUG] First path bounding box:', bbox);
+      
+      // Get SVG root element and its viewBox for better coordinate mapping
+      const svgRoot = svgPaths[0].closest('svg');
+      if (svgRoot) {
+        const viewBox = svgRoot.getAttribute('viewBox');
+        const svgBounds = svgRoot.getBoundingClientRect();
+        console.log(`[WEBGL-PARTICLES-DEBUG] SVG viewBox: ${viewBox}`);
+        console.log(`[WEBGL-PARTICLES-DEBUG] SVG element bounds:`, svgBounds);
+      }
     }
     
     // Get SVG transform - we need this to correctly position particles
-    const svgContentElement = svgPaths.length > 0 ? svgPaths[0].closest('g') : null;
-    const svgTransform = svgContentElement ? svgContentElement.getAttribute('transform') || '' : '';
+    // Look for the chord diagram's main content group transform
+    const svgContentElement = svgPaths.length > 0 ? svgPaths[0].closest('svg') : null;
+    let svgTransform = '';
+    
+    // Try to find the main content group (typically has a class or is the first g element)
+    if (svgContentElement) {
+      const contentGroups = svgContentElement.querySelectorAll('g[transform]');
+      if (contentGroups.length > 0) {
+        // Use the transform from the main content group (usually the first transformed group)
+        svgTransform = contentGroups[0].getAttribute('transform') || '';
+      }
+    }
+    
     console.log(`[WEBGL-PARTICLES-DEBUG] SVG transform: ${svgTransform}`);
     
     // Parse transform values
@@ -303,21 +323,30 @@ export class WebGLParticleSystem {
         const t = i / (numSamples - 1);
         const pointOnPath = path.getPointAtLength(t * pathLength);
         
-        // IMPORTANT: Get point coordinates BEFORE any transformation
+        // IMPORTANT: Get point coordinates from SVG path
         const svgX = pointOnPath.x;
         const svgY = pointOnPath.y;
         
-        // Apply the SVG transform to the point coordinates
-        // The chord diagram is likely already centered, so we need to adjust
-        // to work in the WebGL coordinate system properly
-        
-        // WebGL coordinates have (0,0) at center, Y+ is up
+        // FIXED COORDINATE SYSTEM TRANSFORMATION:
         // SVG coordinates have (0,0) at top-left, Y+ is down
-        const x = (svgX - containerWidth/2) * scale;
-        const y = (containerHeight/2 - svgY) * scale;
+        // WebGL coordinates have (0,0) at center, Y+ is up
+        // The SVG chord diagram is typically centered in its container
+        
+        // Apply SVG's translate transform first, then convert to WebGL coordinates
+        const transformedSvgX = (svgX * scale) + translateX;
+        const transformedSvgY = (svgY * scale) + translateY;
+        
+        // Convert to WebGL coordinate system (center-origin, Y-up)
+        const x = transformedSvgX - containerWidth/2;
+        const y = containerHeight/2 - transformedSvgY;
         
         if (idx === 0 && i === 0) {
-          console.log(`[WEBGL-PARTICLES-DEBUG] First point: SVG(${svgX}, ${svgY}) -> WebGL(${x}, ${y})`);
+          console.log(`[WEBGL-PARTICLES-DEBUG] Coordinate transformation:`);
+          console.log(`  - Original SVG: (${svgX}, ${svgY})`);
+          console.log(`  - After scale: (${svgX * scale}, ${svgY * scale})`);
+          console.log(`  - After SVG translate: (${transformedSvgX}, ${transformedSvgY})`);
+          console.log(`  - Final WebGL: (${x}, ${y})`);
+          console.log(`  - Container: ${containerWidth}x${containerHeight}`);
         }
         
         points.push(new Vector3(x, y, 0));
@@ -487,6 +516,16 @@ export class WebGLParticleSystem {
     this.particleGeometry.setAttribute('customColor', new Float32BufferAttribute(this.particleColors, 3));
     this.particleGeometry.setAttribute('size', new Float32BufferAttribute(this.particleSizes, 1));
     this.particleGeometry.setAttribute('opacity', new Float32BufferAttribute(this.particleOpacities, 1));
+    
+    // Calculate bounding box of particles for debugging
+    this.particleGeometry.computeBoundingBox();
+    const bbox = this.particleGeometry.boundingBox;
+    if (bbox) {
+      console.log(`[WEBGL-PARTICLES-DEBUG] Particle bounding box:`);
+      console.log(`  - Min: (${bbox.min.x.toFixed(2)}, ${bbox.min.y.toFixed(2)}, ${bbox.min.z.toFixed(2)})`);
+      console.log(`  - Max: (${bbox.max.x.toFixed(2)}, ${bbox.max.y.toFixed(2)}, ${bbox.max.z.toFixed(2)})`);
+      console.log(`  - Camera frustum: left=${this.camera.left}, right=${this.camera.right}, top=${this.camera.top}, bottom=${this.camera.bottom}`);
+    }
     
     console.log(`[WEBGL-PARTICLES] Created ${particleIndex} particles`);
     
@@ -701,14 +740,15 @@ public applyTransform(transform: string): void {
     const containerWidth = this.container.clientWidth;
     const containerHeight = this.container.clientHeight;
     
-    // IMPORTANT FIX: Don't apply container center offset here since we already 
-    // did that in setPathsFromSVG. Just apply the relative transform.
-    const webglX = 0;
-    const webglY = 0;
+    // IMPROVED TRANSFORM APPLICATION:
+    // Convert SVG translate to WebGL coordinates
+    // SVG translate is relative to top-left, WebGL needs center-relative
+    const webglX = translateX;
+    const webglY = -translateY; // Flip Y axis for WebGL
     
-    console.log(`[WEBGL-PARTICLES-DEBUG] Applied transform: Scale ${scale}`);
+    console.log(`[WEBGL-PARTICLES-DEBUG] Applied transform: Translate(${webglX}, ${webglY}) Scale(${scale})`);
     
-    // Just apply scale since position is already correct in the points
+    // Apply both translation and scale to match SVG exactly
     this.particleSystem.position.set(webglX, webglY, 0);
     this.particleSystem.scale.set(scale, scale, 1);
     
