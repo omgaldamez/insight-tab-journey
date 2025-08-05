@@ -1143,38 +1143,87 @@ export const prepareChordMatrix = (
   showDetailedView: boolean,
   evenDistribution: boolean,
   uniqueCategories: string[],
-  showAllNodes: boolean
-): number[][] => {
-  if (!categoryMatrix.length) return [];
+  showAllNodes: boolean,
+  uniformWidth: boolean = false,
+  widthScaling: number = 1.0,
+  symmetricConnections: boolean = false,
+  minWidth: number = 0.1,
+  maxWidth: number = 5.0,
+  showRealConnections: boolean = true,
+  showMinimalConnections: boolean = true,
+  minimalConnectionWidth: number = 0.1,
+  minimalConnectionWidthScaling: number = 1.0
+): { matrix: number[][], connectionTypes: string[][] } => {
+  if (!categoryMatrix.length) return { matrix: [], connectionTypes: [] };
   
   let matrixToUse: number[][] = [];
+  let connectionTypes: string[][] = []; // Track whether each connection is 'real', 'minimal', or 'none'
   
   if (showDetailedView) {
-    // For detailed view, directly use the detailed matrix with some enhancements
-    matrixToUse = detailedMatrix.map(row => 
-      row.map(value => value === 0 ? 0.1 : value) // Add minimal values to ensure all connections
+    // For detailed view, handle real and minimal connections separately
+    matrixToUse = detailedMatrix.map((row, i) => 
+      row.map((value, j) => {
+        if (value === 0) {
+          // This is a potential minimal connection - show if minimal connections are enabled
+          if (showMinimalConnections) {
+            return minimalConnectionWidth * minimalConnectionWidthScaling;
+          }
+          return 0;
+        } else {
+          // This is a real connection - show if real connections are enabled
+          if (showRealConnections) {
+            return value;
+          }
+          return 0;
+        }
+      })
+    );
+    
+    // Track connection types for styling
+    connectionTypes = detailedMatrix.map((row, i) => 
+      row.map((value, j) => {
+        if (value === 0) {
+          return showMinimalConnections ? 'minimal' : 'none';
+        } else {
+          return showRealConnections ? 'real' : 'none';
+        }
+      })
     );
   } else {
     // Start with the category matrix including our minimal connection values
     matrixToUse = [...categoryMatrix.map(row => [...row])]; // Deep copy
+    
+    // Initialize connection types for category view
+    connectionTypes = categoryMatrix.map((row, i) => 
+      row.map((value, j) => {
+        return value > 0.2 ? 'real' : (value > 0 ? 'minimal' : 'none');
+      })
+    );
   }
   
   // Apply even distribution if selected
   if (evenDistribution && !showDetailedView) {
     // For category view with even distribution
-    matrixToUse = matrixToUse.map(row => {
+    matrixToUse = matrixToUse.map((row, i) => {
       const rowSum = row.reduce((a, b) => a + b, 0);
       if (rowSum <= 0.2 * (uniqueCategories.length - 1)) {
         // If just minimal connections, enhance them slightly for visibility
-        return row.map(val => val === 0 ? 0 : (val <= 0.2 ? 0.3 : val));
+        return row.map((val, j) => {
+          if (val === 0) return 0;
+          const newVal = val <= 0.2 ? 0.3 : val;
+          connectionTypes[i][j] = val <= 0.2 ? 'minimal' : 'real';
+          return newVal;
+        });
       }
       
       // Calculate a base value for distribution
-      return row.map((val, idx) => {
+      return row.map((val, j) => {
         // Keep diagonal at 0
-        if (row === matrixToUse[idx]) return 0;
+        if (i === j) return 0;
         // Scale other values - ensure minimal values stay visible
-        return val <= 0.2 ? 0.3 : Math.max(1, val / rowSum * 10);
+        const newVal = val <= 0.2 ? 0.3 : Math.max(1, val / rowSum * 10);
+        connectionTypes[i][j] = val <= 0.2 ? 'minimal' : 'real';
+        return newVal;
       });
     });
   }
@@ -1188,20 +1237,87 @@ export const prepareChordMatrix = (
             // Ensure both directions have some value when either has a value
             const maxVal = Math.max(matrixToUse[i][j], matrixToUse[j][i]);
             if (maxVal > 0) {
-              if (matrixToUse[i][j] === 0) matrixToUse[i][j] = 0.1;
-              if (matrixToUse[j][i] === 0) matrixToUse[j][i] = 0.1;
+              if (matrixToUse[i][j] === 0) {
+                matrixToUse[i][j] = 0.1;
+                connectionTypes[i][j] = 'minimal';
+              }
+              if (matrixToUse[j][i] === 0) {
+                matrixToUse[j][i] = 0.1;
+                connectionTypes[j][i] = 'minimal';
+              }
             }
           } else {
             // For connected-only view, zero out minimal connections
-            if (matrixToUse[i][j] <= 0.2) matrixToUse[i][j] = 0;
-            if (matrixToUse[j][i] <= 0.2) matrixToUse[j][i] = 0;
+            if (matrixToUse[i][j] <= 0.2) {
+              matrixToUse[i][j] = 0;
+              connectionTypes[i][j] = 'none';
+            }
+            if (matrixToUse[j][i] <= 0.2) {
+              matrixToUse[j][i] = 0;
+              connectionTypes[j][i] = 'none';
+            }
           }
         }
       }
     }
   }
   
-  return matrixToUse;
+  // Apply new width control transformations
+  
+  // 1. Apply symmetric connections if enabled
+  if (symmetricConnections) {
+    for (let i = 0; i < matrixToUse.length; i++) {
+      for (let j = 0; j < matrixToUse.length; j++) {
+        if (i !== j) {
+          // Make both directions identical by using the maximum value
+          const maxValue = Math.max(matrixToUse[i][j], matrixToUse[j][i]);
+          matrixToUse[i][j] = maxValue;
+          matrixToUse[j][i] = maxValue;
+          // Update connection types to match
+          if (maxValue > 0) {
+            const connectionType = connectionTypes[i][j] === 'real' || connectionTypes[j][i] === 'real' ? 'real' : 'minimal';
+            connectionTypes[i][j] = connectionType;
+            connectionTypes[j][i] = connectionType;
+          }
+        }
+      }
+    }
+  }
+  
+  // 2. Apply uniform width if enabled (must come after symmetric connections)
+  if (uniformWidth) {
+    matrixToUse = matrixToUse.map((row, i) => 
+      row.map((val, j) => {
+        if (val > 0) {
+          // Apply different uniform widths based on connection type
+          if (connectionTypes[i][j] === 'minimal') {
+            return minimalConnectionWidth * minimalConnectionWidthScaling;
+          }
+          return 1.0;
+        }
+        return 0;
+      })
+    );
+  }
+  
+  // 3. Apply width scaling and constraints (always last)
+  matrixToUse = matrixToUse.map((row, i) => 
+    row.map((val, j) => {
+      if (val === 0) return 0; // Keep zero values as zero
+      
+      // Apply different scaling based on connection type
+      let scaledValue;
+      if (connectionTypes[i][j] === 'minimal') {
+        scaledValue = val * minimalConnectionWidthScaling;
+        return Math.max(minimalConnectionWidth, Math.min(maxWidth, scaledValue));
+      } else {
+        scaledValue = val * widthScaling;
+        return Math.max(minWidth, Math.min(maxWidth, scaledValue));
+      }
+    })
+  );
+  
+  return { matrix: matrixToUse, connectionTypes };
 };
 
 // Helper functions for HEX to HSL conversion

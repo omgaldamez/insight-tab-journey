@@ -92,12 +92,63 @@ const NetworkExplorer: React.FC<NetworkExplorerProps> = ({ onCreditsClick }) => 
     }
   };
 
+  // Handle uploaded data visualization
+  const handleUploadedDataVisualization = (uploadedNodeData: NodeData[], uploadedLinkData: LinkData[]) => {
+    try {
+      setIsLoading(true);
+      setSelectedFolder("uploaded-files");
+      setIsDemo(false);
+      setErrorMessage("");
+      
+      toast({
+        title: "Processing Uploaded Files",
+        description: `Processing ${uploadedNodeData.length} nodes and ${uploadedLinkData.length} links...`,
+      });
+      
+      console.log(`Processing uploaded data: ${uploadedNodeData.length} nodes, ${uploadedLinkData.length} links`);
+      
+      // Validate the data
+      if (!uploadedNodeData || uploadedNodeData.length === 0) {
+        throw new Error("No node data found in uploaded files");
+      }
+      
+      if (!uploadedLinkData || uploadedLinkData.length === 0) {
+        throw new Error("No link data found in uploaded files");
+      }
+      
+      // Set the data and view
+      setNodeData(uploadedNodeData);
+      setLinkData(uploadedLinkData);
+      setIsLoading(false);
+      setView("visualization");
+      
+      toast({
+        title: "Uploaded Files Processed",
+        description: `Successfully loaded ${uploadedNodeData.length} nodes and ${uploadedLinkData.length} links`
+      });
+      
+    } catch (error) {
+      console.error("Error processing uploaded data:", error);
+      setIsLoading(false);
+      setView("error");
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      
+      toast({
+        title: "Error Processing Uploaded Files",
+        description: error instanceof Error ? error.message : "Failed to process uploaded data",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Handle returning to welcome screen
   const handleBackToWelcome = () => {
     setView("welcome");
     setSelectedFolder(null);
     setIsDemo(false);
     setErrorMessage("");
+    setNodeData([]);
+    setLinkData([]);
   };
 
   // Render based on current view
@@ -146,11 +197,21 @@ const NetworkExplorer: React.FC<NetworkExplorerProps> = ({ onCreditsClick }) => 
             </Button>
             <div className="flex items-center">
               <h2 className="text-2xl font-bold">
-                {selectedFolder ? selectedFolder.charAt(0).toUpperCase() + selectedFolder.slice(1).replace(/-/g, ' ') : 'Network Visualization'}
+                {selectedFolder === 'uploaded-files' 
+                  ? 'Custom Network Visualization' 
+                  : selectedFolder 
+                    ? selectedFolder.charAt(0).toUpperCase() + selectedFolder.slice(1).replace(/-/g, ' ') 
+                    : 'Network Visualization'
+                }
               </h2>
               {isDemo && (
                 <span className="ml-2 px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">
                   Demo
+                </span>
+              )}
+              {selectedFolder === 'uploaded-files' && (
+                <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                  Uploaded
                 </span>
               )}
             </div>
@@ -167,7 +228,12 @@ const NetworkExplorer: React.FC<NetworkExplorerProps> = ({ onCreditsClick }) => 
     }
     
     // Default view is welcome
-    return <WelcomeSelector onSelectFolder={loadVisualizationData} />;
+    return (
+      <WelcomeSelector 
+        onSelectFolder={loadVisualizationData} 
+        onVisualize={handleUploadedDataVisualization}
+      />
+    );
   };
 
   return (

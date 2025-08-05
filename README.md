@@ -1,86 +1,122 @@
 
-# Network Data Visualization Platform
+# Insight Tab Journey - Network Data Visualization Platform
 
 [![Built with Lovable](https://img.shields.io/badge/Built%20with-Lovable-7d3bdf.svg)](https://lovable.dev)
 
-An interactive data visualization platform for exploring complex relationships through dynamic graph networks. Built by Omar Galdámez at CENTRO | Diseño, Cine y Televisión with Generation 32 Marketing and Advertising students.
+An advanced interactive data visualization platform for exploring complex relationships through dynamic graph networks. Built by Omar Galdámez at CENTRO | Diseño, Cine y Televisión with Generation 32 Marketing and Advertising students for the "Redes y Creatividad 2025" course.
 
 ![Network Visualization Screenshot](public/og-image.png)
 
 ## Overview
 
-This project enables the exploration of complex data relationships through interactive network visualizations. Using D3.js and modern web technologies, it transforms CSV data into dynamic, explorable graph networks. The application was developed as part of the Graph Networks and Creativity course at CENTRO, focusing on the intersection of data visualization, graph theory, and creative storytelling.
+**Insight Tab Journey** is a comprehensive network visualization platform that transforms CSV data into interactive, explorable graph networks. Using cutting-edge web technologies including D3.js, Three.js, and modern React patterns, it provides multiple visualization modes for analyzing complex data relationships. The application was developed as part of the Graph Networks and Creativity course at CENTRO, focusing on the intersection of data visualization, graph theory, and creative storytelling.
 
-## Features
+## ✨ Features
 
-### Multiple Visualization Modes
+### 🎯 Multiple Visualization Modes
 
-- **Standard Network**: Traditional force-directed graph visualization
-- **Rad360**: Radial layout with nodes positioned in a circle
+- **Standard Network**: Traditional force-directed graph visualization with customizable physics
+- **Chord Diagram**: Advanced circular visualization showing categorical relationships with animated ribbons and particle effects
+- **3D Network**: Immersive three-dimensional graph visualization with spherical and network layouts
+- **Rad360**: Radial layout with nodes positioned in a circular pattern
 - **Arc Diagram**: Vertical arc visualization showing connections between nodes
-- **Arc Lineal**: Horizontal arc visualization with a linear node arrangement
-- **Node Navigation**: Interactive exploration that focuses on one node at a time
-- **3D Network**: Immersive three-dimensional graph visualization
+- **Arc Lineal**: Horizontal arc visualization with linear node arrangement
+- **Node Navigation**: Interactive exploration focusing on individual nodes and their connections
+- **Route Finder**: Specialized visualization for path discovery and network traversal
+- **Groupable Network**: Advanced network with dynamic node grouping capabilities
 
-### Interactive Controls
+### 🎮 Interactive Controls
 
-- **Dynamic Simulation**: Adjust force parameters to view different aspects of the network
-- **Search and Filter**: Find specific nodes and connections
-- **Zoom and Pan**: Navigate large networks with intuitive controls
-- **Node Selection**: Click on nodes to highlight connections and view details
-- **Tooltips**: Hover over nodes to view detailed information
-- **Layout Controls**: Adjust visualization parameters
+- **Advanced Physics Simulation**: Adjustable force parameters, link strength, and node charge
+- **Real-time Animation**: Smooth transitions and animated chord progressions
+- **Particle Systems**: WebGL-accelerated particle effects for enhanced visual appeal
+- **Dynamic Zoom & Pan**: Multi-level navigation with zoom-to-fit functionality
+- **Node Manipulation**: Click, drag, and fix nodes with persistent positioning
+- **Smart Tooltips**: Configurable hover and click-based information display
+- **Fullscreen Mode**: Distraction-free exploration with dedicated controls
 
-### Data Features
+### 🎨 Advanced Theming & Customization
 
-- **CSV Integration**: Upload and visualize your own network data from CSV files
-- **Preset Examples**: Explore sample datasets across various domains
-- **Export Options**: Download visualizations as SVG or PNG
-- **Debug Tools**: Analyze network structure and connectivity
+- **20+ Color Themes**: From basic palettes to specialized themes like "Exotic Plumage" and "Cosmic Drift"
+- **Dynamic Color Systems**: Automatic category-based color assignment
+- **Custom Node Colors**: Individual node color customization with real-time preview
+- **Background Controls**: Adjustable opacity, colors, and visual effects
+- **Export Customization**: Multiple format support with CSS effect toggles
 
-### User Interface
+### 📊 Data Management
 
-- **Tabbed Navigation**: Easily switch between introduction, visualization, and about sections
-- **Responsive Design**: Works on devices of all sizes
-- **Dark/Light Mode**: Visual options for different environments
-- **Customizable Styling**: Control node size, colors, and other visual parameters
+- **CSV Integration**: Seamless import of nodes.csv and links.csv files
+- **Multiple Datasets**: Pre-loaded examples including Artists, Movies, Concerts, Cuisine, Toys, and TasteAtlas
+- **Data Validation**: Automatic error checking and user feedback
+- **Export Capabilities**: SVG, PNG, JPG, PDF, and TIFF format support
+- **Batch Downloads**: Export all formats simultaneously
 
-## Current Status
+### 🖥️ Modern User Interface
 
-The project is fully functional with all primary visualization modes operational. Features currently implemented:
+- **Tabbed Navigation**: Introduction, Visualization, and About sections
+- **Responsive Design**: Optimized for desktop, tablet, and mobile devices
+- **Collapsible Sidebar**: Space-efficient controls with persistent state
+- **Draggable Panels**: Repositionable control elements for optimal workflow
+- **Toast Notifications**: Real-time feedback for all user actions
+- **Keyboard Shortcuts**: Enhanced productivity features
 
-- ✅ All six visualization types (Network, Rad360, Arc, Arc Lineal, Node Navigation, 3D)
-- ✅ CSV data loading from preset examples
-- ✅ Interactive controls and node selection
-- ✅ Tooltip information display
-- ✅ UI framework with tabbed interface
-- ✅ Responsive design for different screen sizes
-- ✅ Debug and diagnostic tools
+## 🚀 Current Status
 
-### Planned Enhancements
+The project is **production-ready** with all visualization modes fully operational:
 
-- 🔄 User file uploads for custom datasets
-- 🔄 Advanced filtering and search capabilities
-- 🔄 Additional visualization algorithms
-- 🔄 Enhanced export options
-- 🔄 More sample datasets
+- ✅ **9 Visualization Types**: Network, Chord, 3D, Rad360, Arc, Arc Lineal, Node Navigation, Route Finder, Groupable Network
+- ✅ **Advanced Chord Visualization**: With particle systems, WebGL rendering, and progressive animation
+- ✅ **3D Immersive Experience**: Spherical and network layouts with real-time interaction
+- ✅ **20+ Color Themes**: Including monochromatic, categorical, and divergent palettes
+- ✅ **Multi-format Export**: SVG, PNG, JPG, PDF, TIFF with batch download capability
+- ✅ **6 Sample Datasets**: Artists, Movies, Concerts, Cuisine, Toys, TasteAtlas
+- ✅ **Responsive Design**: Optimized for all screen sizes and devices
+- ✅ **Performance Optimized**: WebGL acceleration and efficient rendering
 
-## Technology Stack
+### 🔄 Planned Enhancements
 
-This project is built using a modern web technology stack:
+- **Custom Dataset Upload**: Direct CSV file upload functionality
+- **Advanced Analytics**: Network metrics and statistical analysis
+- **Collaboration Features**: Share and embed visualizations
+- **Additional Datasets**: More domain-specific examples
+- **Enhanced 3D Controls**: Advanced camera and lighting controls
 
-- **Framework**: React with TypeScript
-- **Styling**: Tailwind CSS with shadcn/ui component library
-- **Visualization**: D3.js for 2D visualizations, Three.js for 3D
-- **Build Tool**: Vite
-- **Deployment**: Static site deployment
+## 💻 Technology Stack
 
-## Getting Started
+Built with cutting-edge web technologies:
+
+### **Core Framework**
+- **React 18** with TypeScript for type-safe development
+- **Vite** for lightning-fast development and optimized builds
+- **React Router** for seamless navigation
+
+### **Visualization Libraries**
+- **D3.js v7** for advanced 2D data visualizations and DOM manipulation
+- **Three.js** for immersive 3D graphics and WebGL rendering
+- **Custom WebGL Shaders** for high-performance particle systems
+
+### **UI & Styling**
+- **Tailwind CSS** for utility-first styling
+- **shadcn/ui** component library for consistent design system
+- **Radix UI** for accessible, unstyled component primitives
+- **Lucide React** for beautiful, customizable icons
+
+### **Data Management**
+- **TanStack Query** for efficient data fetching and caching
+- **CSV Parsing** with robust error handling
+- **File Export** utilities for multiple formats
+
+### **Developer Experience**
+- **TypeScript** for enhanced code quality and IntelliSense
+- **ESLint** with React-specific rules
+- **Lovable Tagger** for component development workflow
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js (v16 or newer)
-- npm or yarn package manager
+- **Node.js** (v18 or newer recommended)
+- **npm** or **bun** package manager (bun.lockb present)
 
 ### Installation
 
@@ -89,53 +125,165 @@ This project is built using a modern web technology stack:
 git clone <repository-url>
 
 # Navigate to the project directory
-cd network-visualization
+cd insight-tab-journey
 
-# Install dependencies
+# Install dependencies (using npm)
 npm install
+
+# Or using bun for faster installation
+bun install
 
 # Start the development server
 npm run dev
+# or
+bun dev
 ```
 
-The application will be available at `http://localhost:5173`.
+The application will be available at `http://localhost:8080`.
 
-### Using the Application
+### 📖 Using the Application
 
-1. **Explore the Visualization**: Navigate to the Visualization tab to interact with the network graph
-2. **Select a Dataset**: Choose from the available preset datasets
-3. **Interact with Nodes**: Click and drag nodes to reposition them
-4. **View Node Details**: Hover over nodes to see additional information
-5. **Adjust Parameters**: Use the controls to modify the visualization
-6. **Switch Modes**: Try different visualization types using the mode selector
+#### **Getting Started**
+1. **Launch**: Open the application and explore the welcome interface
+2. **Choose Dataset**: Select from 6 pre-loaded datasets (Artists, Movies, etc.)
+3. **Select Visualization**: Choose from 9 different visualization modes
 
-## Project Structure
+#### **Visualization Modes**
+- **Network**: Traditional force-directed graph - perfect for general exploration
+- **Chord**: Circular diagram showing category relationships - ideal for categorical data
+- **3D**: Immersive three-dimensional experience - best for complex networks
+- **Rad360**: Radial layout - great for hierarchical data
+- **Arc/Arc Lineal**: Linear arrangements - useful for timeline or sequence data
+- **Node Navigation**: Focus mode - excellent for detailed node exploration
+- **Route Finder**: Path discovery - specialized for connectivity analysis
+- **Groupable**: Dynamic grouping - perfect for clustering analysis
+
+#### **Advanced Features**
+- **Particle Effects**: Enable in Chord mode for stunning visual effects
+- **WebGL Acceleration**: Available for high-performance rendering
+- **Export Options**: Download in multiple formats with customizable CSS effects
+- **Color Themes**: Apply from 20+ professional color palettes
+- **Fullscreen Mode**: Immersive exploration experience
+
+## 📁 Project Architecture
 
 ```
 src/
-├── components/          # React components
-│   ├── ui/              # UI components (shadcn/ui)
-│   ├── NetworkVisualization.tsx  # Main visualization component
+├── components/                    # React Components
+│   ├── ui/                       # shadcn/ui Components (40+ components)
+│   ├── *Visualization.tsx        # Visualization Components (9 types)
+│   ├── NetworkSidebar.tsx        # Control Panel
+│   ├── VisualizationCoordinator.tsx  # Main Router
 │   └── ...
-├── hooks/               # Custom React hooks
-├── pages/               # Application pages
-├── styles/              # Global styles
-├── types/               # TypeScript type definitions
-├── utils/               # Utility functions
-└── data/                # Sample datasets (CSV)
+├── hooks/                        # Custom React Hooks
+│   ├── useChordDiagram.ts        # Chord visualization logic
+│   ├── useNetworkColors.ts       # Color theme management
+│   ├── useThreeDGraph.ts         # 3D visualization logic
+│   └── ...
+├── utils/                        # Utility Functions
+│   ├── chordUtils.ts             # Chord diagram helpers
+│   ├── webglParticleSystem.ts    # WebGL particle engine
+│   ├── colorThemes.ts            # Color palette definitions
+│   └── ...
+├── types/                        # TypeScript Definitions
+│   ├── networkTypes.ts           # Network data structures
+│   └── types.ts                  # General types
+├── data/                         # Sample Datasets
+│   ├── Artists/                  # nodes.csv, links.csv
+│   ├── Movies/                   # nodes.csv, links.csv
+│   └── ...                       # 6 total datasets
+└── styles/                       # Styling
+    └── visualization.css         # Visualization-specific styles
 ```
 
-## Credits
+### 🎯 Key Components
 
-- **Lead Developer**: Omar Galdámez, CENTRO
-- **Contributors**: Generation 32 Marketing and Advertising students
-- **Project Advisor**: [Advisor Name]
+- **VisualizationCoordinator**: Central router managing all visualization types
+- **ChordVisualization**: Advanced chord diagram with particle systems
+- **ThreeDVisualization**: WebGL-powered 3D network rendering  
+- **NetworkSidebar**: Comprehensive control panel with 50+ settings
+- **BaseVisualization**: Shared foundation for all visualization types
+
+## 🏗️ Development & Build
+
+### Available Scripts
+
+```bash
+# Development
+npm run dev          # Start development server (localhost:8080)
+bun dev             # Start with Bun (faster)
+
+# Production
+npm run build       # Create production build
+npm run build:dev   # Development build with debugging
+
+# Code Quality  
+npm run lint        # Run ESLint
+npm run preview     # Preview production build
+```
+
+### Performance Optimization
+
+- **WebGL Rendering**: Hardware-accelerated graphics for particle systems
+- **Progressive Loading**: Efficient data streaming for large networks  
+- **Component Virtualization**: Optimized rendering for complex UIs
+- **Code Splitting**: Lazy loading for visualization components
+- **Bundle Analysis**: Optimized dependencies and tree shaking
+
+## 📊 Data Format
+
+The application expects CSV files in a specific format:
+
+### Nodes File (`nodes.csv`)
+```csv
+Node,Category
+ARTISTAS,TEMA
+Olafur Eliasson,Artist
+Zaha Hadid,Artist
+```
+
+### Links File (`links.csv`)
+```csv
+ORIGEN,DESTINO
+ARTISTAS,Olafur Eliasson
+ARTISTAS,Zaha Hadid
+```
+
+**Requirements:**
+- Nodes file must have `Node` and `Category` columns
+- Links file must have `ORIGEN` (source) and `DESTINO` (target) columns
+- All node references in links must exist in the nodes file
+- CSV files should be UTF-8 encoded
+
+## 🎓 Educational Context
+
+This project was developed as part of the **"Graph Networks and Creativity 2025"** course at CENTRO | Diseño, Cine y Televisión, exploring:
+
+- **Data Visualization Theory**: Principles of effective visual communication
+- **Graph Theory Applications**: Network analysis and relationship mapping  
+- **Creative Technology**: Intersection of art, design, and programming
+- **Interactive Media**: User experience design for complex data
+- **Modern Web Development**: Professional development practices
+
+## 👥 Credits & Acknowledgments
+
+- **Lead Developer**: Omar Galdámez, CENTRO | Diseño, Cine y Televisión
+- **Academic Program**: Generation 32 Marketing and Advertising
+- **Course**: Graph Networks and Creativity 2025
 - **Institution**: CENTRO | Diseño, Cine y Televisión
+- **Development Platform**: [Lovable](https://lovable.dev)
 
-## License
+### Special Thanks
+- Students of Generation 32 for their creative input and testing
+- CENTRO faculty for their guidance and support
+- The open-source community for the excellent libraries used
+
+## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ---
 
-Built with ❤️ using [Lovable](https://lovable.dev)
+**Built with ❤️ and ☕ using [Lovable](https://lovable.dev)**
+
+*Empowering creative exploration through interactive data visualization*

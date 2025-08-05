@@ -187,6 +187,19 @@ realConnectionThreshold: number;
 // More intuitive connection display properties
 showRealConnections: boolean;
 showMinimalConnections: boolean;
+
+// Connection width control properties
+uniformWidth: boolean;              // Make all connections the same width
+widthScaling: number;              // Scale all matrix values (0.1-5.0)
+symmetricConnections: boolean;      // Make origin/destination connections identical
+minWidth: number;                  // Minimum connection width (0.0-1.0)
+maxWidth: number;                  // Maximum connection width (1.0-10.0)
+
+// Minimal connection customization
+minimalConnectionWidth: number;         // Base width for minimal connections (0.05-1.0)
+minimalConnectionWidthScaling: number;  // Scaling factor for minimal connections (0.1-3.0)
+minimalConnectionColor: string;         // Color for minimal connections
+minimalConnectionOpacity: number;       // Opacity for minimal connections (0.1-1.0)
 }
 
 export interface ChordDiagramHookProps {
@@ -239,6 +252,7 @@ export const useChordDiagram = ({
   const [nodesByCategory, setNodesByCategory] = useState<Record<string, Node[]>>({});
   const [detailedNodeData, setDetailedNodeData] = useState<DetailedNode[]>([]);
   const [detailedMatrix, setDetailedMatrix] = useState<number[][]>([]);
+  const [connectionTypes, setConnectionTypes] = useState<string[][]>([]);
   const [needsRedraw, setNeedsRedraw] = useState(false);
   const [chordPaths, setChordPaths] = useState<SVGPathElement[]>([]);
 
@@ -401,6 +415,19 @@ realConnectionThreshold: 0.2, // Default threshold
 // Connection display properties with intuitive names
 showRealConnections: true,
 showMinimalConnections: true,
+
+// Connection width control defaults
+uniformWidth: false,              // Default: use data-driven widths
+widthScaling: 1.0,               // Default: no scaling (1.0x)
+symmetricConnections: false,      // Default: maintain directional differences
+minWidth: 0.1,                   // Default: minimal visible width
+maxWidth: 5.0,                   // Default: reasonable maximum width
+
+// Minimal connection customization defaults
+minimalConnectionWidth: 0.3,          // More visible width for forced connections
+minimalConnectionWidthScaling: 1.0,   // Same scaling as regular connections initially
+minimalConnectionColor: '#ff6b6b',    // Bright red for forced connections (more visible)
+minimalConnectionOpacity: 0.7,        // More opaque than before
 
   });
   
@@ -1549,6 +1576,14 @@ const isRealConnection = useCallback((d: any): boolean => {
   const sourceIndex = d.source.index;
   const targetIndex = d.target.index;
   
+  // First try to use the connection types data if available
+  if (connectionTypes.length > 0 && 
+      sourceIndex < connectionTypes.length && 
+      targetIndex < connectionTypes[0].length) {
+    return connectionTypes[sourceIndex][targetIndex] === 'real';
+  }
+  
+  // Fallback to the original value-based logic
   let connectionValue = 0;
   
   if (showDetailedView) {
@@ -1563,7 +1598,7 @@ const isRealConnection = useCallback((d: any): boolean => {
   
   // Use configurable threshold
   return connectionValue > chordConfig.realConnectionThreshold;
-}, [showDetailedView, detailedMatrix, categoryMatrix, chordConfig.realConnectionThreshold]);
+}, [showDetailedView, detailedMatrix, categoryMatrix, chordConfig.realConnectionThreshold, connectionTypes]);
 
 // Efficient update functions for different parts of the visualization
 const updateRibbonAppearance = useCallback(() => {
@@ -1591,7 +1626,7 @@ const updateRibbonAppearance = useCallback(() => {
       if (!chordConfig.useColoredRibbons) {
         return isRealConn ? 
           chordConfig.realConnectionRibbonColor : 
-          chordConfig.minimalConnectionRibbonColor;
+          (chordConfig.minimalConnectionColor || chordConfig.minimalConnectionRibbonColor);
       }
       
       // Otherwise use category colors
@@ -2269,17 +2304,26 @@ useEffect(() => {
     // Set a flag to force particle regeneration on next redraw
     window.forceParticleRegeneration = true;
   }
-}, [showDetailedView, showAllNodes, evenDistribution]);
+}, [showDetailedView, showAllNodes, evenDistribution, chordConfig.uniformWidth, chordConfig.symmetricConnections, chordConfig.widthScaling, chordConfig.showRealConnections, chordConfig.showMinimalConnections, chordConfig.minimalConnectionWidth, chordConfig.minimalConnectionWidthScaling]);
 
   // Use useMemo to calculate the matrix for rendering to avoid recalculation on every render
-  const preparedMatrix = useMemo(() => {
+  const preparedMatrixData = useMemo(() => {
     return prepareChordMatrix(
       categoryMatrix,
       detailedMatrix,
       showDetailedView,
       evenDistribution,
       uniqueCategories,
-      showAllNodes
+      showAllNodes,
+      chordConfig.uniformWidth,
+      chordConfig.widthScaling,
+      chordConfig.symmetricConnections,
+      chordConfig.minWidth,
+      chordConfig.maxWidth,
+      chordConfig.showRealConnections,
+      chordConfig.showMinimalConnections,
+      chordConfig.minimalConnectionWidth,
+      chordConfig.minimalConnectionWidthScaling
     );
   }, [
     categoryMatrix, 
@@ -2287,8 +2331,25 @@ useEffect(() => {
     showDetailedView, 
     evenDistribution, 
     uniqueCategories,
-    showAllNodes
+    showAllNodes,
+    chordConfig.uniformWidth,
+    chordConfig.widthScaling,
+    chordConfig.symmetricConnections,
+    chordConfig.minWidth,
+    chordConfig.maxWidth,
+    chordConfig.showRealConnections,
+    chordConfig.showMinimalConnections,
+    chordConfig.minimalConnectionWidth,
+    chordConfig.minimalConnectionWidthScaling
   ]);
+
+  // Extract matrix for easier use
+  const preparedMatrix = preparedMatrixData.matrix;
+  
+  // Update connection types when prepared matrix changes
+  useEffect(() => {
+    setConnectionTypes(preparedMatrixData.connectionTypes);
+  }, [preparedMatrixData.connectionTypes]);
 
   // Create custom zoom functionality specifically for chord visualization
   const setupChordZoom = useCallback(() => {
@@ -3003,7 +3064,7 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
                if (!useColoredRibbons) {
                  return isRealConn ? 
                    chordConfig.realConnectionRibbonColor : 
-                   chordConfig.minimalConnectionRibbonColor;
+                   (chordConfig.minimalConnectionColor || chordConfig.minimalConnectionRibbonColor);
                }
           
           // Otherwise use category colors
@@ -3085,7 +3146,7 @@ if (chordConfig.glowEffectEnabled && chordConfig.useIndividualGlowColors) {
             // Use connection-specific opacity
             return isRealConnection ? 
               chordConfig.realConnectionRibbonOpacity : 
-              chordConfig.minimalConnectionRibbonOpacity;
+              (chordConfig.minimalConnectionOpacity || chordConfig.minimalConnectionRibbonOpacity);
           })
           .on("click", function(event, d) {
             event.stopPropagation(); // Stop event propagation

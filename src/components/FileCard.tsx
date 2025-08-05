@@ -11,6 +11,7 @@ interface FileCardProps {
   rowCount: number;
   columnCount: number;
   onSelect: () => void;
+  buttonText?: string;
 }
 
 const FileCard: React.FC<FileCardProps> = ({
@@ -20,7 +21,8 @@ const FileCard: React.FC<FileCardProps> = ({
   fileType,
   rowCount,
   columnCount,
-  onSelect
+  onSelect,
+  buttonText = "Select File"
 }) => {
   return (
     <Card className="shadow-sm hover:shadow-md transition-shadow">
@@ -54,7 +56,7 @@ const FileCard: React.FC<FileCardProps> = ({
       </CardContent>
       <CardFooter className="p-4 pt-2">
         <Button onClick={onSelect} className="w-full" variant="default" size="sm">
-          Select File
+          {buttonText}
         </Button>
       </CardFooter>
     </Card>

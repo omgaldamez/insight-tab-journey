@@ -4,14 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Database, FileUp, Beaker } from "lucide-react";
 import DataFolderSelector from "./DataFolderSelector";
 import FileUploader from "./FileUploader";
+import { NodeData, LinkData } from "@/types/types";
 
 interface WelcomeSelectorProps {
   onSelectFolder: (folderId: string, isDemo?: boolean) => void;
+  onVisualize?: (nodeData: NodeData[], linkData: LinkData[]) => void;
 }
 
 type ViewMode = "main" | "data" | "demo" | "upload";
 
-const WelcomeSelector: React.FC<WelcomeSelectorProps> = ({ onSelectFolder }) => {
+const WelcomeSelector: React.FC<WelcomeSelectorProps> = ({ onSelectFolder, onVisualize }) => {
   const [viewMode, setViewMode] = useState<ViewMode>("main");
 
   const handleBackToMain = () => {
@@ -35,7 +37,7 @@ const WelcomeSelector: React.FC<WelcomeSelectorProps> = ({ onSelectFolder }) => 
   }
 
   if (viewMode === "upload") {
-    return <FileUploader onBack={handleBackToMain} />;
+    return <FileUploader onBack={handleBackToMain} onVisualize={onVisualize} />;
   }
 
   return (

@@ -82,7 +82,12 @@ const ChordDiagramControls: React.FC<ChordDiagramControlsProps> = ({
     useColoredRibbons,
     ribbonFillEnabled,
     animationSpeed,
-    useWebGLRenderer
+    useWebGLRenderer,
+    uniformWidth,
+    widthScaling,
+    symmetricConnections,
+    minWidth,
+    maxWidth
   } = config;
 
   // State for active tab
@@ -245,7 +250,10 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
             {activeTab === 'display' && (
               <div className="space-y-3">
                 <div className="text-xs mb-2 text-white/80">
-                  Hover over arcs and chords for details. The chord width represents connection strength.
+                  {showDetailedView 
+                    ? "Detailed view shows individual nodes. Use 'Show All Nodes' to include unconnected nodes, and connection width controls to adjust visual appearance."
+                    : "Hover over arcs and chords for details. The chord width represents connection strength."
+                  }
                 </div>
                 
                 {/* Visualization Mode Controls */}
@@ -292,21 +300,190 @@ const handleToggleChange = (field: keyof ChordDiagramConfig) => {
                     </label>
                   </div>
                   
-                  {/* Distribution Control */}
+                  {/* Distribution Control - Only relevant in category view */}
+                  {!showDetailedView && (
+                    <div className="flex items-center mt-1.5">
+                      <label className="flex items-center cursor-pointer">
+                        <div className="relative mr-2">
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={evenDistribution}
+                            onChange={() => handleToggleChange('evenDistribution')}
+                          />
+                          <div className={`w-8 h-4 rounded-full transition-colors ${evenDistribution ? 'bg-blue-500' : 'bg-gray-500'}`}></div>
+                          <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${evenDistribution ? 'translate-x-4' : ''}`}></div>
+                        </div>
+                        <span className="text-xs">Even Distribution</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Connection Width Controls */}
+                <div className="border-t border-white/10 mt-2 pt-2">
+                  <h3 className="text-xs font-semibold mb-1.5 text-white/80">Connection Width</h3>
+                  
+                  {/* Uniform Width Control */}
                   <div className="flex items-center mt-1.5">
                     <label className="flex items-center cursor-pointer">
                       <div className="relative mr-2">
                         <input
                           type="checkbox"
                           className="sr-only"
-                          checked={evenDistribution}
-                          onChange={() => handleToggleChange('evenDistribution')}
+                          checked={uniformWidth}
+                          onChange={() => handleToggleChange('uniformWidth')}
                         />
-                        <div className={`w-8 h-4 rounded-full transition-colors ${evenDistribution ? 'bg-blue-500' : 'bg-gray-500'}`}></div>
-                        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${evenDistribution ? 'translate-x-4' : ''}`}></div>
+                        <div className={`w-8 h-4 rounded-full transition-colors ${uniformWidth ? 'bg-orange-500' : 'bg-gray-500'}`}></div>
+                        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${uniformWidth ? 'translate-x-4' : ''}`}></div>
                       </div>
-                      <span className="text-xs">Even Distribution</span>
+                      <span className="text-xs">Uniform Width</span>
                     </label>
+                  </div>
+                  
+                  {/* Symmetric Connections Control */}
+                  <div className="flex items-center mt-1.5">
+                    <label className="flex items-center cursor-pointer">
+                      <div className="relative mr-2">
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={symmetricConnections}
+                          onChange={() => handleToggleChange('symmetricConnections')}
+                        />
+                        <div className={`w-8 h-4 rounded-full transition-colors ${symmetricConnections ? 'bg-cyan-500' : 'bg-gray-500'}`}></div>
+                        <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${symmetricConnections ? 'translate-x-4' : ''}`}></div>
+                      </div>
+                      <span className="text-xs">Symmetric Connections</span>
+                    </label>
+                  </div>
+                  
+                  {/* Width Scaling Control */}
+                  {!uniformWidth && (
+                    <div className="flex items-center justify-between mt-2 text-xs">
+                      <label>Width Scaling: {widthScaling.toFixed(1)}x</label>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="5.0"
+                        step="0.1"
+                        value={widthScaling}
+                        onChange={(e) => onConfigChange({ widthScaling: parseFloat(e.target.value) })}
+                        className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Min Width Control */}
+                  {!uniformWidth && (
+                    <div className="flex items-center justify-between mt-1.5 text-xs">
+                      <label>Min Width: {minWidth.toFixed(2)}</label>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        value={minWidth}
+                        onChange={(e) => onConfigChange({ minWidth: parseFloat(e.target.value) })}
+                        className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Max Width Control */}
+                  {!uniformWidth && (
+                    <div className="flex items-center justify-between mt-1.5 text-xs">
+                      <label>Max Width: {maxWidth.toFixed(1)}</label>
+                      <input
+                        type="range"
+                        min="1.0"
+                        max="10.0"
+                        step="0.5"
+                        value={maxWidth}
+                        onChange={(e) => onConfigChange({ maxWidth: parseFloat(e.target.value) })}
+                        className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Minimal Connection Customization */}
+                  <div className="border-t border-white/5 mt-2 pt-2">
+                    <h4 className="text-xs font-medium mb-1.5 text-white/70">Forced Connections</h4>
+                    
+                    {/* Show Minimal Connections Toggle */}
+                    <div className="flex items-center mt-1.5">
+                      <label className="flex items-center cursor-pointer">
+                        <div className="relative mr-2">
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={config.showMinimalConnections}
+                            onChange={() => onConfigChange({ showMinimalConnections: !config.showMinimalConnections })}
+                          />
+                          <div className={`w-8 h-4 rounded-full transition-colors ${config.showMinimalConnections ? 'bg-gray-400' : 'bg-gray-600'}`}></div>
+                          <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform transform ${config.showMinimalConnections ? 'translate-x-4' : ''}`}></div>
+                        </div>
+                        <span className="text-xs">Show Forced</span>
+                      </label>
+                    </div>
+                    
+                    {/* Minimal Connection Controls - only show when enabled */}
+                    {config.showMinimalConnections && (
+                      <div className="ml-2 mt-2 space-y-2">
+                        {/* Minimal Connection Width */}
+                        <div className="flex items-center justify-between text-xs">
+                          <label>Width: {config.minimalConnectionWidth.toFixed(2)}</label>
+                          <input
+                            type="range"
+                            min="0.05"
+                            max="1.0"
+                            step="0.01"
+                            value={config.minimalConnectionWidth}
+                            onChange={(e) => onConfigChange({ minimalConnectionWidth: parseFloat(e.target.value) })}
+                            className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        
+                        {/* Minimal Connection Width Scaling */}
+                        <div className="flex items-center justify-between text-xs">
+                          <label>Scaling: {config.minimalConnectionWidthScaling.toFixed(1)}x</label>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="3.0"
+                            step="0.1"
+                            value={config.minimalConnectionWidthScaling}
+                            onChange={(e) => onConfigChange({ minimalConnectionWidthScaling: parseFloat(e.target.value) })}
+                            className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                        
+                        {/* Minimal Connection Color */}
+                        <div className="flex items-center justify-between text-xs">
+                          <label>Color:</label>
+                          <input
+                            type="color"
+                            value={config.minimalConnectionColor}
+                            onChange={(e) => onConfigChange({ minimalConnectionColor: e.target.value })}
+                            className="w-8 h-4 rounded border-none cursor-pointer"
+                          />
+                        </div>
+                        
+                        {/* Minimal Connection Opacity */}
+                        <div className="flex items-center justify-between text-xs">
+                          <label>Opacity: {(config.minimalConnectionOpacity * 100).toFixed(0)}%</label>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="1.0"
+                            step="0.05"
+                            value={config.minimalConnectionOpacity}
+                            onChange={(e) => onConfigChange({ minimalConnectionOpacity: parseFloat(e.target.value) })}
+                            className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
