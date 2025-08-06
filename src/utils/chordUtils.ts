@@ -1071,9 +1071,60 @@ export const createSeededRandom = (seed: number): () => number => {
   };
 };
 
+// OPTIMIZED PARTICLE SYSTEM - Global particle pool for reuse
+interface ParticlePool {
+  available: SVGCircleElement[];
+  used: SVGCircleElement[];
+  maxSize: number;
+}
+
+const particlePool: ParticlePool = {
+  available: [],
+  used: [],
+  maxSize: 10000 // Max particles to pool
+};
+
 /**
- * Efficiently render pre-calculated particles with progressive fade-in
- * This reduces DOM thrashing by batching operations
+ * Get a particle from the pool or create a new one
+ */
+const getPooledParticle = (): SVGCircleElement => {
+  if (particlePool.available.length > 0) {
+    const particle = particlePool.available.pop()!;
+    particlePool.used.push(particle);
+    return particle;
+  }
+  
+  // Create new particle if pool is empty
+  const ns = "http://www.w3.org/2000/svg";
+  const circle = document.createElementNS(ns, "circle") as SVGCircleElement;
+  particlePool.used.push(circle);
+  return circle;
+};
+
+/**
+ * Return particles to the pool for reuse
+ */
+const returnParticlesToPool = (particles: SVGCircleElement[]): void => {
+  particles.forEach(particle => {
+    // Reset particle state
+    particle.style.opacity = "0";
+    particle.style.transform = "";
+    particle.style.transition = "";
+    
+    // Move from used to available
+    const usedIndex = particlePool.used.indexOf(particle);
+    if (usedIndex > -1) {
+      particlePool.used.splice(usedIndex, 1);
+      if (particlePool.available.length < particlePool.maxSize) {
+        particlePool.available.push(particle);
+      }
+    }
+  });
+};
+
+/**
+ * ULTRA-OPTIMIZED particle rendering with pooling and batching
+ * Major performance improvements for large particle counts
  */
 export const renderPrecalculatedParticles = (
   shapesGroup: d3.Selection<SVGGElement, unknown, null, undefined>,
@@ -1087,51 +1138,85 @@ export const renderPrecalculatedParticles = (
   progressiveFadeIn: boolean = false,
   fadeInDelay: number = 3
 ): void => {
-  // Create a document fragment for better performance
-  const frag = document.createDocumentFragment();
-  const ns = "http://www.w3.org/2000/svg";
+  const groupNode = shapesGroup.node();
+  if (!groupNode) return;
   
-  // Add all particles to the fragment
-  positions.forEach((pos, i) => {
-    const circle = document.createElementNS(ns, "circle");
+  // PERFORMANCE OPTIMIZATION: Limit particle count for very large datasets
+  const maxParticles = 2000; // Reasonable limit for smooth performance
+  const actualPositions = positions.length > maxParticles 
+    ? positions.slice(0, maxParticles)
+    : positions;
+  
+  console.log(`[PARTICLES-OPTIMIZED] Rendering ${actualPositions.length} particles (${positions.length} requested)`);
+  
+  // Return existing particles to pool before creating new ones
+  const existingCircles = Array.from(groupNode.querySelectorAll('circle')) as SVGCircleElement[];
+  if (existingCircles.length > 0) {
+    existingCircles.forEach(circle => circle.remove());
+    returnParticlesToPool(existingCircles);
+  }
+  
+  // BATCH DOM OPERATIONS: Create all particles at once
+  const frag = document.createDocumentFragment();
+  const particles: SVGCircleElement[] = [];
+  
+  // Pre-calculate styles to avoid repeated calculations
+  const baseStyles = {
+    fill: color,
+    stroke: strokeColor,
+    strokeWidth: strokeWidth.toString(),
+    strokeOpacity: strokeOpacity.toString()
+  };
+  
+  actualPositions.forEach((pos, i) => {
+    const circle = getPooledParticle();
     
-    // Set attributes
-    circle.setAttribute("cx", pos.x.toString());
-    circle.setAttribute("cy", pos.y.toString());
-    circle.setAttribute("r", (baseSize * pos.size).toString());
-    circle.setAttribute("fill", color);
-    circle.setAttribute("stroke", strokeColor);
-    circle.setAttribute("stroke-width", strokeWidth.toString());
-    circle.setAttribute("stroke-opacity", strokeOpacity.toString());
-    circle.setAttribute("data-original-x", pos.x.toString());
-    circle.setAttribute("data-original-y", pos.y.toString());
+    // OPTIMIZED: Use efficient property setting
+    circle.cx.baseVal.value = pos.x;
+    circle.cy.baseVal.value = pos.y;
+    circle.r.baseVal.value = baseSize * pos.size;
     
-    // Apply fade-in effect for smoother appearance
+    // Use CSS properties for better performance
+    Object.assign(circle.style, {
+      fill: baseStyles.fill,
+      stroke: baseStyles.stroke,
+      strokeWidth: baseStyles.strokeWidth,
+      strokeOpacity: baseStyles.strokeOpacity
+    });
+    
+    // Store original position for animation
+    circle.dataset.originalX = pos.x.toString();
+    circle.dataset.originalY = pos.y.toString();
+    
+    const finalOpacity = baseOpacity * pos.opacity;
+    
     if (progressiveFadeIn) {
-      // Start with opacity 0
+      // ENHANCED CASCADE EFFECT: Create more dramatic fade-in animation
       circle.style.opacity = "0";
-      // Set transition properties for smooth fade
-      circle.style.transition = "opacity 300ms ease-out";
+      circle.style.transform = "scale(0.5)"; // Start small
+      circle.style.transition = "opacity 500ms ease-out, transform 500ms cubic-bezier(0.175, 0.885, 0.32, 1.275)";
+      circle.dataset.finalOpacity = finalOpacity.toString();
       
-      // Store final opacity value as an attribute for reference
-      const finalOpacity = (baseOpacity * pos.opacity).toString();
-      circle.setAttribute("data-final-opacity", finalOpacity);
-      
-      // Gradually reveal each particle with a staggered delay
-      // This creates a cascade effect when many particles are added
-      setTimeout(() => {
-        circle.style.opacity = finalOpacity;
-      }, i * fadeInDelay);
+      // Create staggered cascade effect with scale and opacity animation
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          circle.style.opacity = finalOpacity.toString();
+          circle.style.transform = "scale(1)"; // Grow to full size
+        }, i * fadeInDelay);
+      });
     } else {
-      // Without progressive fade, just set the opacity directly
-      circle.style.opacity = (baseOpacity * pos.opacity).toString();
+      circle.style.opacity = finalOpacity.toString();
+      circle.style.transform = "scale(1)"; // Ensure no transform is applied for non-progressive
     }
     
+    particles.push(circle);
     frag.appendChild(circle);
   });
   
-  // Append the fragment to the group in a single operation
-  shapesGroup.node()?.appendChild(frag);
+  // BATCH INSERT: Single DOM operation
+  groupNode.appendChild(frag);
+  
+  console.log(`[PARTICLES-OPTIMIZED] Created ${particles.length} particles using ${particlePool.used.length} pooled elements`);
 };
 
 /**
@@ -1392,9 +1477,37 @@ export const hslToHex = (h: number, s: number, l: number) => {
 };
 
 /**
- * Setup and manage particle movement animation
+ * Check if a particle is visible in the current viewport
+ * Used for viewport culling optimization to improve performance
+ */
+const isParticleInViewport = (
+  particle: Element,
+  svgElement: SVGSVGElement,
+  margin: number = 50
+): boolean => {
+  try {
+    const svgRect = svgElement.getBoundingClientRect();
+    const particleRect = particle.getBoundingClientRect();
+    
+    // Calculate relative position within SVG bounds with margin
+    const inViewport = (
+      particleRect.right >= (svgRect.left - margin) &&
+      particleRect.left <= (svgRect.right + margin) &&
+      particleRect.bottom >= (svgRect.top - margin) &&
+      particleRect.top <= (svgRect.bottom + margin)
+    );
+    
+    return inViewport;
+  } catch (error) {
+    // Fallback: if calculation fails, assume particle is visible
+    return true;
+  }
+};
+
+/**
+ * Setup and manage particle movement animation with viewport culling
  * This function starts an animation loop that adds subtle movement to particles
- * Optimized for smoother performance
+ * Optimized for smoother performance with viewport culling and virtualization
  */
 export const setupParticleMovement = (
   svgRef: SVGSVGElement | null, 
@@ -1410,11 +1523,17 @@ export const setupParticleMovement = (
   const particleElements = Array.from(svgRef.querySelectorAll('.chord-particles circle'));
   const particleOriginalPositions = new Map<Element, { x: number, y: number }>();
   
+  // PERFORMANCE LIMIT: Cap animated particles for smooth performance
+  const MAX_ANIMATED_PARTICLES = 1500;
+  const actualParticleElements = particleElements.length > MAX_ANIMATED_PARTICLES 
+    ? particleElements.slice(0, MAX_ANIMATED_PARTICLES)
+    : particleElements;
+  
   // Diagnostic log for total particle count
-  console.log(`[MOVEMENT-DIAGNOSTICS] Total particle elements found: ${particleElements.length}`);
+  console.log(`[MOVEMENT-DIAGNOSTICS] Total particles found: ${particleElements.length}, animating: ${actualParticleElements.length}`);
   
   // Record initial positions from data attributes or current coordinates
-  particleElements.forEach(particle => {
+  actualParticleElements.forEach(particle => {
     const originalX = particle.getAttribute('data-original-x');
     const originalY = particle.getAttribute('data-original-y');
     
@@ -1442,7 +1561,12 @@ export const setupParticleMovement = (
   let frameCount = 0;
   let lastPerformanceLog = startTime;
   
-  // Animation function - optimized for smoother animation
+  // Viewport culling variables
+  let visibleParticles: Element[] = actualParticleElements;
+  let lastViewportCheck = 0;
+  const VIEWPORT_CHECK_INTERVAL = 500; // Check viewport every 500ms
+  
+  // Animation function - optimized with viewport culling
   const animateParticles = (timestamp: number) => {
     // Calculate elapsed time in seconds
     const elapsed = (timestamp - startTime) / 1000;
@@ -1452,11 +1576,26 @@ export const setupParticleMovement = (
     lastFrameTime = timestamp;
     frameCount++;
     
+    // VIEWPORT CULLING: Periodically update visible particles list
+    if (timestamp - lastViewportCheck > VIEWPORT_CHECK_INTERVAL) {
+      const previousVisibleCount = visibleParticles.length;
+      visibleParticles = actualParticleElements.filter(particle => 
+        isParticleInViewport(particle, svgRef)
+      );
+      lastViewportCheck = timestamp;
+      
+      // Log viewport culling statistics
+      const culledCount = actualParticleElements.length - visibleParticles.length;
+      if (culledCount > 0) {
+        console.log(`[VIEWPORT-CULLING] Visible: ${visibleParticles.length}/${actualParticleElements.length} particles (culled ${culledCount})`);
+      }
+    }
+    
     // Log performance metrics every second
     if (timestamp - lastPerformanceLog > 1000) {
       const fps = Math.round(frameCount * 1000 / (timestamp - lastPerformanceLog));
       const msPerFrame = ((timestamp - lastPerformanceLog) / frameCount).toFixed(2);
-      console.log(`[MOVEMENT-DIAGNOSTICS] Performance: ${fps} FPS (${msPerFrame}ms/frame), Particles: ${particleElements.length}`);
+      console.log(`[MOVEMENT-DIAGNOSTICS] Performance: ${fps} FPS (${msPerFrame}ms/frame), Visible: ${visibleParticles.length}/${particleElements.length} particles`);
       
       frameCount = 0;
       lastPerformanceLog = timestamp;
@@ -1469,46 +1608,45 @@ export const setupParticleMovement = (
       return;
     }
     
-    // Batch DOM operations to reduce reflow/repaint
+    // VIEWPORT CULLING: Only animate visible particles
     // Process particles in chunks for better performance with large numbers
     const CHUNK_SIZE = 100;
-    const totalParticles = particleElements.length;
+    const totalVisibleParticles = visibleParticles.length;
     
     // Start frame timing
     const frameStartTime = performance.now();
     
-    for (let i = 0; i < totalParticles; i += CHUNK_SIZE) {
-      const end = Math.min(i + CHUNK_SIZE, totalParticles);
+    for (let i = 0; i < totalVisibleParticles; i += CHUNK_SIZE) {
+      const end = Math.min(i + CHUNK_SIZE, totalVisibleParticles);
       
       for (let j = i; j < end; j++) {
-        const particle = particleElements[j];
+        const particle = visibleParticles[j];
         const originalPos = particleOriginalPositions.get(particle);
         if (!originalPos) continue;
         
-        // Use particle index for deterministic but varied motion
-        // This creates more stable patterns and better performance
-        const particleIndex = j;
+        // Find original index for deterministic motion
+        // This ensures consistent animation regardless of culling
+        const originalParticleIndex = actualParticleElements.indexOf(particle);
         
-        // Create phase shift based on index for varied movement
-        const phaseShift = (particleIndex % 100) / 20;
+        // Create phase shift based on original index for varied movement
+        const phaseShift = (originalParticleIndex % 100) / 20;
         
         // Use lower frequency values for smoother motion (0.3-0.7 Hz)
-        const frequency = 0.3 + (particleIndex % 8) / 20;
+        const frequency = 0.3 + (originalParticleIndex % 8) / 20;
         
         // Apply smooth oscillating motion with reduced complexity
         const dx = Math.sin(elapsed * frequency + phaseShift) * amplitude;
         const dy = Math.cos(elapsed * frequency * 0.7 + phaseShift) * amplitude * 0.8;
         
-        // Apply movement with a bias toward horizontal motion
-        particle.setAttribute('cx', (originalPos.x + dx).toString());
-        particle.setAttribute('cy', (originalPos.y + dy).toString());
+        // OPTIMIZED: Use CSS transforms instead of attribute changes (much faster)
+        (particle as HTMLElement).style.transform = `translate(${dx}px, ${dy}px)`;
       }
     }
     
-    // Log long frames (potential jank)
+    // Log long frames (potential jank) - now with culling info
     const frameTime = performance.now() - frameStartTime;
     if (frameTime > 16) { // 16ms = target for 60fps
-      console.log(`[MOVEMENT-DIAGNOSTICS] Long frame: ${frameTime.toFixed(1)}ms to process ${totalParticles} particles`);
+      console.log(`[MOVEMENT-DIAGNOSTICS] Long frame: ${frameTime.toFixed(1)}ms to process ${totalVisibleParticles} visible particles`);
     }
     
     // Continue animation loop with proper timing
@@ -1531,13 +1669,10 @@ export const setupParticleMovement = (
       animationFrameId = null;
     }
     
-    // Reset particles to original positions
-    particleElements.forEach(particle => {
-      const originalPos = particleOriginalPositions.get(particle);
-      if (originalPos) {
-        particle.setAttribute('cx', originalPos.x.toString());
-        particle.setAttribute('cy', originalPos.y.toString());
-      }
+    // Reset particles to original positions using CSS transforms (for consistency)
+    actualParticleElements.forEach(particle => {
+      // Reset CSS transform to remove animation positioning
+      particle.style.transform = '';
     });
   };
 };

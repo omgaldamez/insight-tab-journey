@@ -811,8 +811,13 @@ console.log(`[PARTICLE-DIAGNOSTIC] Batch ${startIdx}-${endIdx}:
               const chordData = chordParticleData[i];
               if (!chordData) continue;
               
-              // Clear existing particles for this chord
-              d3.selectAll(`.chord-particles[data-chord-index="${chordData.index}"]`).remove();
+              // FIXED: Don't clear existing particles during animation - only create new ones
+              // This prevents flickering and maintains stable particle positions
+              const existingParticles = d3.selectAll(`.chord-particles[data-chord-index="${chordData.index}"]`);
+              if (existingParticles.size() > 0) {
+                console.log(`[ANIMATION-PARTICLES] Skipping particle regeneration for chord ${chordData.index} - particles already exist`);
+                continue; // Skip this chord if particles already exist
+              }
               
               // Choose particle style based on connection type
               const styleConfig = chordData.isRealConnection ? 
@@ -848,8 +853,8 @@ console.log(`[PARTICLE-DIAGNOSTIC] Batch ${startIdx}-${endIdx}:
                 styleConfig.strokeColor,
                 styleConfig.strokeWidth,
                 styleConfig.strokeOpacity,
-                true, // Always enable progressive fade-in for better visuals
-                2  // Use a very small delay for faster but still visible transitions
+                true, // Enable cascade transition effect for new particles
+                5  // Staggered delay in ms for smooth cascade effect
               );
             }
             
@@ -1553,6 +1558,9 @@ const toggleAnimation = useCallback(() => {
     // Stop any running animation
     stopAnimation();
     
+    // FIXED: Preserve particles during manual animation control
+    window.preserveParticlesDuringAnimation = true;
+    
     // Decrement index, but don't go below 0
     setCurrentAnimatedIndex(prevIndex => Math.max(0, prevIndex - 1));
     
@@ -1565,6 +1573,9 @@ const toggleAnimation = useCallback(() => {
     // Stop any running animation
     stopAnimation();
     
+    // FIXED: Preserve particles during manual animation control
+    window.preserveParticlesDuringAnimation = true;
+    
     // Increment index, but don't exceed total count
     setCurrentAnimatedIndex(prevIndex => Math.min(totalRibbonCount, prevIndex + 1));
     
@@ -1575,6 +1586,11 @@ const toggleAnimation = useCallback(() => {
   // Reset animation
   const resetAnimation = useCallback(() => {
     stopAnimation();
+    
+    // FIXED: Clear preservation flag on reset to allow full clean slate
+    window.preserveParticlesDuringAnimation = false;
+    window.forceParticleRegeneration = true;
+    
     setCurrentAnimatedIndex(0);
     setNeedsRedraw(true);
   }, [stopAnimation]);
@@ -1582,6 +1598,9 @@ const toggleAnimation = useCallback(() => {
   const jumpToFrame = useCallback((frameIndex: number) => {
     // Stop any running animation
     stopAnimation();
+    
+    // FIXED: Preserve particles during frame jumping
+    window.preserveParticlesDuringAnimation = true;
     
     // Set the index directly to the requested frame
     // Clamp between 0 and total count
@@ -4042,8 +4061,8 @@ else if (particleMode && !useWebGLRenderer && chordConfig.showParticlesLayer && 
   // Check if particles already exist and should be preserved
   const existingParticles = ribbonGroup.selectAll(".chord-particles").size();
   const preserveParticles = existingParticles > 0 && particlesInitialized && 
-    // Only preserve when animation or visual-only changes happened
-    !window.forceParticleRegeneration;
+    // ENHANCED: Always preserve particles during animation unless explicitly regenerating
+    (!window.forceParticleRegeneration || window.preserveParticlesDuringAnimation);
   
   if (preserveParticles) {
     console.log('[PARTICLE-OPTIMIZATION] Preserving existing particles');
