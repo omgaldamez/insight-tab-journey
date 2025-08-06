@@ -55,6 +55,8 @@ export class WebGLParticleSystem {
   private particleColors: Float32Array | null = null;
   private particleOpacities: Float32Array | null = null;
   private originalPositions: Float32Array | null = null;
+  private lastPathsHash: string = '';
+  private isRegeneratingParticles: boolean = false;
   public getCanvas(): HTMLCanvasElement | null {
     return this.canvas;
   }
@@ -243,10 +245,49 @@ export class WebGLParticleSystem {
   }
 
   /**
-   * Extract points from SVG paths for particle positioning
+   * Generate a fast hash for SVG paths to detect changes
    */
-  public setPathsFromSVG(svgPaths: SVGPathElement[]): void {
+  private hashSVGPaths(svgPaths: SVGPathElement[]): string {
+    if (svgPaths.length === 0) return '';
+    
+    // Fast hash based on path count, first few path lengths, and bounding boxes
+    let hash = `count:${svgPaths.length}`;
+    
+    // Sample first few paths for hash (don't process all paths for performance)
+    const sampleSize = Math.min(5, svgPaths.length);
+    for (let i = 0; i < sampleSize; i++) {
+      const path = svgPaths[i];
+      const length = Math.round(path.getTotalLength());
+      const bbox = path.getBBox();
+      hash += `|${i}:${length}:${Math.round(bbox.x)}:${Math.round(bbox.y)}:${Math.round(bbox.width)}:${Math.round(bbox.height)}`;
+    }
+    
+    return hash;
+  }
+
+  /**
+   * Extract points from SVG paths for particle positioning with intelligent caching
+   */
+  public async setPathsFromSVG(svgPaths: SVGPathElement[]): Promise<void> {
     if (!this.initialized) this.init();
+    
+    // Prevent concurrent regeneration
+    if (this.isRegeneratingParticles) {
+      console.log('[WEBGL-PARTICLES] Skipping regeneration - already in progress');
+      return;
+    }
+    
+    // Fast hash check to avoid unnecessary regeneration
+    const currentHash = this.hashSVGPaths(svgPaths);
+    if (currentHash === this.lastPathsHash && this.pathData.length > 0) {
+      console.log(`[WEBGL-PARTICLES] Skipping regeneration - paths unchanged (${svgPaths.length} paths)`);
+      return;
+    }
+    
+    try {
+    
+    this.isRegeneratingParticles = true;
+    this.lastPathsHash = currentHash;
     
     console.log(`[WEBGL-PARTICLES] Processing ${svgPaths.length} SVG paths`);
     
@@ -310,14 +351,21 @@ export class WebGLParticleSystem {
     console.log(`[WEBGL-PARTICLES-DEBUG] Container dimensions: ${containerWidth}x${containerHeight}`);
     console.log(`[WEBGL-PARTICLES-DEBUG] Translation: (${translateX}, ${translateY}), Scale: ${scale}`);
     
-    // Process each SVG path
-    svgPaths.forEach((path, idx) => {
-      const points: Vector3[] = [];
-      const pathLength = path.getTotalLength();
+    // PERFORMANCE OPTIMIZATION: Process paths in batches to prevent UI blocking
+    const BATCH_SIZE = 50; // Process 50 paths at a time
+    const processBatch = (startIdx: number) => {
+      const endIdx = Math.min(startIdx + BATCH_SIZE, svgPaths.length);
       
-      // Sample points along the path
-      // More points for longer paths, fewer for shorter paths
-      const numSamples = Math.max(10, Math.ceil(pathLength / 5));
+      for (let idx = startIdx; idx < endIdx; idx++) {
+        const path = svgPaths[idx];
+        const points: Vector3[] = [];
+        const pathLength = path.getTotalLength();
+        
+        // OPTIMIZED: Adaptive sampling based on path length and quality
+        // Use fewer samples for very long paths to improve performance
+        const maxSamples = this.options.particleQuality === 'high' ? 50 : 
+                          this.options.particleQuality === 'medium' ? 30 : 20;
+        const numSamples = Math.max(5, Math.min(maxSamples, Math.ceil(pathLength / 10)));
       
       for (let i = 0; i < numSamples; i++) {
         const t = i / (numSamples - 1);
@@ -357,12 +405,32 @@ export class WebGLParticleSystem {
         points,
         length: pathLength
       });
-    });
+      }
+    };
+    
+    // Process all paths in batches
+    for (let i = 0; i < svgPaths.length; i += BATCH_SIZE) {
+      processBatch(i);
+      
+      // Yield control for large batches to prevent UI blocking
+      if (i + BATCH_SIZE < svgPaths.length) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
     
     // Create particles along paths
     this.createParticlesAlongPaths();
     
-    console.log(`[WEBGL-PARTICLES-DEBUG] Generated path data for ${this.pathData.length} paths`);
+    // Reset regeneration flag
+    this.isRegeneratingParticles = false;
+    
+    console.log(`[WEBGL-PARTICLES-DEBUG] Generated path data for ${this.pathData.length} paths (optimized processing)`);
+    
+    } catch (error) {
+      console.error('[WEBGL-PARTICLES] Error during particle generation:', error);
+      this.isRegeneratingParticles = false; // Reset flag on error
+      throw error;
+    }
   }
 
   /**
@@ -377,6 +445,13 @@ export class WebGLParticleSystem {
     // Calculate total particles based on density and path lengths
     const totalPathLength = this.pathData.reduce((sum, path) => sum + path.length, 0);
     let desiredParticleCount = Math.round(this.options.particleCount * densityMultiplier);
+    
+    // ENHANCED: Scale down particle count for very large numbers of paths
+    if (this.pathData.length > 200) {
+      const scaleFactor = Math.max(0.3, 200 / this.pathData.length);
+      desiredParticleCount = Math.round(desiredParticleCount * scaleFactor);
+      console.log(`[WEBGL-PARTICLES] Scaled down particle count by ${(1-scaleFactor)*100}% for ${this.pathData.length} paths`);
+    }
     
     // Cap particle count to avoid performance issues
     const actualParticleCount = Math.min(desiredParticleCount, maxParticles);

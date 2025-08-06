@@ -1330,13 +1330,18 @@ useEffect(() => {
     });
   }
 
-  // Apply chord paths if available
+  // Apply chord paths if available (optimized with async processing)
   if (chordPaths.length > 0 && webglParticleSystemRef.current) {
     console.log(`[CHORD-WEBGL] Setting ${chordPaths.length} paths to WebGL system`);
-    webglParticleSystemRef.current.setPathsFromSVG(chordPaths);
     
-    // Immediately sync the transform to ensure correct positioning
-    syncWebGLTransform();
+    // Use async processing for large path sets
+    webglParticleSystemRef.current.setPathsFromSVG(chordPaths).then(() => {
+      // Sync transform after particles are generated
+      syncWebGLTransform();
+      console.log(`[CHORD-WEBGL] WebGL particles ready for ${chordPaths.length} paths`);
+    }).catch(error => {
+      console.error('[CHORD-WEBGL] Error setting paths:', error);
+    });
     
     // Start or stop animation based on movement setting
     if (chordConfig.particleMovement) {
@@ -3890,10 +3895,17 @@ d3.select(this).style("display", isVisible ? "block" : "none");
       true
     );
   }
- // If using WebGL, update the paths there too
- if (useWebGLRenderer && webglParticleSystemRef.current) {
+ // If using WebGL, update the paths there too (but not during animation playback)
+ if (useWebGLRenderer && webglParticleSystemRef.current && !chordConfig.isAnimating) {
   const pathElements = Array.from(ribbonGroup.selectAll("path").nodes() as SVGPathElement[]);
-  webglParticleSystemRef.current.setPathsFromSVG(pathElements);
+  webglParticleSystemRef.current.setPathsFromSVG(pathElements).then(() => {
+    syncWebGLTransform();
+  }).catch(error => {
+    console.warn('[CHORD-WEBGL] Skipped particle update during animation:', error);
+  });
+} else if (useWebGLRenderer && webglParticleSystemRef.current && chordConfig.isAnimating) {
+  // During animation, just sync transform without regenerating particles
+  console.log('[CHORD-WEBGL] Skipping particle regeneration during animation - syncing transform only');
   syncWebGLTransform();
 }
 
